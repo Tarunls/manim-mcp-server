@@ -1,1 +1,5 @@
-*_pycache_/
+﻿__pycache__/
+*.py[cod]
+media/
+.venv/
+venv/
