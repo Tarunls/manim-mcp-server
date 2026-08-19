@@ -30,6 +30,10 @@ export interface RenderInfo {
     model?: string;
     voice?: string;
     segments?: number;
+    segmentDurations?: number[];
+    audioFormat?: string;
+    style?: string;
+    rate?: string;
     disclosure?: string;
   };
 }

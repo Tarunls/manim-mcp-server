@@ -44,6 +44,8 @@ npm run dev
 
 Never put the key in a `VITE_*` variable. Vite exposes those values to browser code. Narration is generated server-side through `https://api.speechify.ai` with Speechify `simba-3.2`; the UI labels the result as an AI voice. The default voice is `geffen_32`, configurable through `SPEECHIFY_VOICE_ID`.
 
+Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
+
 The app starts a local Codex App Server and reuses your existing Codex CLI authentication. If Codex is signed out, select **Connect Codex** in the sidebar and complete the managed ChatGPT browser flow. You can also authenticate before starting the app:
 
 ```sh

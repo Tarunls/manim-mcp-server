@@ -3,6 +3,7 @@
 
 import { SpeechifyClient } from "@speechify/api";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -36,8 +37,7 @@ async function main() {
 
   const apiKey = process.env.SPEECHIFY_API_KEY?.trim();
   if (!apiKey) {
-    console.log(JSON.stringify({ status: "setup_required", enabled: false, provider: "speechify" }));
-    return;
+    fail("SPEECHIFY_API_KEY is required. Narration will not use a fallback voice.");
   }
 
   let segments;
@@ -71,28 +71,62 @@ async function main() {
   const model = "simba-3.2";
   const client = new SpeechifyClient({ token: apiKey });
   const audioFiles = [];
+  const audioDurations = [];
+
+  const escapeXml = (value) => value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 
   for (let index = 0; index < normalized.length; index += 1) {
     const segment = normalized[index];
-    let response;
-    try {
-      response = await client.audio.speech({
-        input: segment.text,
-        voice_id: voice,
-        model,
-        audio_format: "mp3",
-      });
-    } catch (error) {
-      const code = typeof error?.statusCode === "number" ? ` (${error.statusCode})` : "";
-      fail(`Speechify speech request failed${code}. Check the server key, voice, and account limits.`);
+    const ssml = `<speak><speechify:style emotion="warm"><prosody rate="-5%">${escapeXml(segment.text)}</prosody></speechify:style></speak>`;
+    const cacheKey = createHash("sha256").update(JSON.stringify({ ssml, voice, model, output: "mp3_24000_160" })).digest("hex").slice(0, 16);
+    const target = path.join(audioDir, `speechify-${cacheKey}.mp3`);
+    if (!fs.existsSync(target)) {
+      let response;
+      try {
+        response = await client.audio.speech({
+          input: ssml,
+          voice_id: voice,
+          model,
+          audio_format: "mp3",
+          output_format: "mp3_24000_160",
+          language: "en-US",
+        });
+      } catch (error) {
+        const code = typeof error?.statusCode === "number" ? ` (${error.statusCode})` : "";
+        fail(`Speechify speech request failed${code}. Check the server key, voice, and account limits.`);
+      }
+      if (typeof response?.audio_data !== "string" || !response.audio_data) {
+        fail("Speechify returned no audio_data.");
+      }
+      fs.writeFileSync(target, Buffer.from(response.audio_data, "base64"));
     }
-    if (typeof response?.audio_data !== "string" || !response.audio_data) {
-      fail("Speechify returned no audio_data.");
-    }
-    const target = path.join(audioDir, `segment-${String(index + 1).padStart(2, "0")}.mp3`);
-    fs.writeFileSync(target, Buffer.from(response.audio_data, "base64"));
     audioFiles.push(target);
+    const segmentDuration = Number(run("ffprobe", [
+      "-v", "error", "-show_entries", "format=duration",
+      "-of", "default=noprint_wrappers=1:nokey=1", target,
+    ]).trim());
+    if (!Number.isFinite(segmentDuration) || segmentDuration <= 0) {
+      fail(`Could not inspect narration segment ${index + 1}.`);
+    }
+    audioDurations.push(segmentDuration);
   }
+
+  normalized.forEach((segment, index) => {
+    const slotEnd = index + 1 < normalized.length ? normalized[index + 1].start : duration;
+    const available = slotEnd - segment.start;
+    const required = audioDurations[index] + 0.22;
+    if (required > available) {
+      fail(
+        `Narration segment ${index + 1} needs ${required.toFixed(2)} seconds but its visual slot is only ${available.toFixed(2)} seconds. ` +
+        "Shorten the passage or extend the scene before rendering.",
+      );
+    }
+  });
 
   const narrationAudio = path.join(projectDir, "narration.m4a");
   const ffmpeg = ["-y"];
@@ -101,12 +135,16 @@ async function main() {
   const labels = [];
   normalized.forEach((segment, index) => {
     const label = `a${index}`;
-    chains.push(`[${index}:a]adelay=${Math.round(segment.start * 1000)}:all=1[${label}]`);
+    const fadeOutStart = Math.max(0, audioDurations[index] - 0.10).toFixed(3);
+    chains.push(
+      `[${index}:a]afade=t=in:st=0:d=0.025,afade=t=out:st=${fadeOutStart}:d=0.10,` +
+      `adelay=${Math.round(segment.start * 1000)}:all=1[${label}]`,
+    );
     labels.push(`[${label}]`);
   });
   chains.push(
     `${labels.join("")}amix=inputs=${labels.length}:duration=longest:normalize=0,` +
-    `apad,atrim=0:${duration.toFixed(3)},alimiter=limit=0.95[aout]`,
+    `loudnorm=I=-16:TP=-1.5:LRA=11,apad,atrim=0:${duration.toFixed(3)}[aout]`,
   );
   ffmpeg.push(
     "-filter_complex", chains.join(";"), "-map", "[aout]",
@@ -129,6 +167,10 @@ async function main() {
     model,
     voice,
     segments: normalized.length,
+    segmentDurations: audioDurations.map((value) => Number(value.toFixed(3))),
+    audioFormat: "mp3_24000_160",
+    style: "warm",
+    rate: "-5%",
     disclosure: "AI-generated voice",
   }));
 }

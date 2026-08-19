@@ -391,7 +391,14 @@ function VideoWorkspace({ project, runtime }: { project?: StudioProject; runtime
         <span className="canvas-meta">
           <span>16:9</span>
           {selectedVersion?.render?.width && <span>{selectedVersion.render.width}×{selectedVersion.render.height} · {selectedVersion.render.fps} fps</span>}
-          {selectedVersion?.render?.narration?.enabled && <span className="ai-voice"><SpeakerHigh size={15} /> Speechify AI voice</span>}
+          {selectedVersion?.render?.narration?.enabled && (
+            <span
+              className="ai-voice"
+              title={`${selectedVersion.render.narration.model || "Speechify"}, ${selectedVersion.render.narration.voice || "configured voice"}`}
+            >
+              <SpeakerHigh size={15} /> Speechify AI voice
+            </span>
+          )}
           {selectedVersion?.render?.narration?.status === "setup_required" && <span>Speechify setup needed</span>}
         </span>
         {videoUrl ? (
