@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Render one Manim Studio project into stable browser-facing assets."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+
+QUALITY_ARGS = {
+    "draft": ["-ql"],
+    "low": ["-ql"],
+    "preview": ["-qm"],
+    "medium": ["-qm"],
+    # Browser default: full HD with smooth motion and half the frames of -qh.
+    "balanced": ["-r", "1920,1080", "--fps", "30"],
+    "high": ["-qh"],
+}
+
+
+def fail(message: str) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        fail("Usage: render_scene.py PROJECT_DIR [draft|preview|balanced|high]")
+
+    root = Path(__file__).resolve().parents[1]
+    allowed_root = (root / "studio" / "projects").resolve()
+    project_dir = Path(sys.argv[1]).resolve()
+    quality = sys.argv[2] if len(sys.argv) > 2 else "balanced"
+
+    if allowed_root not in project_dir.parents:
+        fail("Project directory must be inside studio/projects.")
+    if quality not in QUALITY_ARGS:
+        fail(f"Unknown quality: {quality}")
+
+    source = project_dir / "scene.py"
+    if not source.exists():
+        fail("scene.py does not exist.")
+    code = source.read_text(encoding="utf-8")
+    if not re.search(r"class\s+GeneratedScene\s*\([^)]*Scene\s*\)", code):
+        fail("scene.py must define GeneratedScene as a Scene subclass.")
+    if "from manim_layout import" not in code:
+        fail("scene.py must import the shared manim_layout guards.")
+    if "assert_scene_safe(" not in code:
+        fail("scene.py must call assert_scene_safe for its important visual groups.")
+    if "RoundedRectangle(" in code and "assert_inside(" not in code:
+        fail("Panel-based scenes must call assert_inside for every panel's content.")
+
+    manim = root / ".venv" / "bin" / "manim"
+    if not manim.exists():
+        fail("Manim is not installed in .venv.")
+
+    media_dir = project_dir / ".media"
+    command = [
+        str(manim),
+        *QUALITY_ARGS[quality],
+        "--disable_caching",
+        "--media_dir",
+        str(media_dir),
+        str(source),
+        "GeneratedScene",
+    ]
+    started = time.time()
+    environment = dict(os.environ)
+    studio_root = str(root / "studio")
+    environment["PYTHONPATH"] = studio_root + os.pathsep + environment.get("PYTHONPATH", "")
+    result = subprocess.run(
+        command,
+        cwd=project_dir,
+        text=True,
+        capture_output=True,
+        timeout=900,
+        env=environment,
+    )
+    if result.returncode != 0:
+        fail(result.stderr[-5000:] or result.stdout[-5000:] or "Manim render failed.")
+
+    candidates = list((media_dir / "videos").rglob("GeneratedScene.mp4"))
+    if not candidates:
+        fail("Manim completed but no GeneratedScene.mp4 was found.")
+    rendered = max(candidates, key=lambda item: item.stat().st_mtime)
+    output = project_dir / "output.mp4"
+    optimized = project_dir / "output.faststart.mp4"
+    faststart = subprocess.run(
+        ["ffmpeg", "-y", "-i", str(rendered), "-c", "copy", "-movflags", "+faststart", str(optimized)],
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    if faststart.returncode != 0:
+        fail(faststart.stderr[-2000:] or "Could not optimize the browser video.")
+    optimized.replace(output)
+
+    narration_result = {"status": "not_requested", "enabled": False}
+    narration_file = project_dir / "narration.json"
+    if narration_file.exists():
+        narration = subprocess.run(
+            ["node", str(root / "scripts" / "generate_narration.mjs"), str(project_dir)],
+            text=True,
+            capture_output=True,
+            timeout=300,
+            env=environment,
+        )
+        if narration.returncode != 0:
+            fail(narration.stderr[-3000:] or "Could not synthesize the narration.")
+        try:
+            narration_result = json.loads(narration.stdout.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError):
+            narration_result = {"status": "error", "enabled": False}
+
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,avg_frame_rate:format=duration,bit_rate",
+            "-of", "json", str(output),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    if probe.returncode != 0:
+        fail(probe.stderr[-2000:] or "Could not inspect the rendered video.")
+    probe_data = json.loads(probe.stdout)
+    stream = probe_data["streams"][0]
+    duration = float(probe_data["format"]["duration"])
+    numerator, denominator = stream["avg_frame_rate"].split("/", 1)
+    fps = float(numerator) / max(float(denominator), 1.0)
+
+    poster = project_dir / "poster.png"
+    poster_time = min(max(duration * 0.18, 0.5), max(duration - 0.1, 0.5))
+    frame = subprocess.run(
+        ["ffmpeg", "-y", "-ss", f"{poster_time:.3f}", "-i", str(output), "-frames:v", "1", str(poster)],
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    if frame.returncode != 0:
+        fail(frame.stderr[-2000:] or "Could not extract the poster frame.")
+
+    contact_sheet = project_dir / "contact-sheet.png"
+    interval = max(duration / 6.0, 0.25)
+    sheet = subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(output),
+            "-vf", f"fps=1/{interval:.4f},scale=480:-2,tile=3x2:padding=8:margin=8:color=white",
+            "-frames:v", "1", str(contact_sheet),
+        ],
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    if sheet.returncode != 0:
+        fail(sheet.stderr[-2000:] or "Could not create the contact sheet.")
+
+    metadata = {
+        "scene": "GeneratedScene",
+        "quality": quality,
+        "duration": duration,
+        "width": int(stream["width"]),
+        "height": int(stream["height"]),
+        "fps": round(fps, 3),
+        "bitRate": int(probe_data["format"].get("bit_rate", 0)),
+        "bytes": output.stat().st_size,
+        "renderSeconds": round(time.time() - started, 2),
+        "source": "scene.py",
+        "output": "output.mp4",
+        "poster": "poster.png",
+        "contactSheet": "contact-sheet.png",
+        "narration": narration_result,
+    }
+    (project_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    print(json.dumps(metadata))
+
+
+if __name__ == "__main__":
+    main()

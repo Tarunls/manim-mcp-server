@@ -1,0 +1,31 @@
+{
+  "name": "manim-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs watch server/index.ts",
+    "build": "vite build && tsc --noEmit",
+    "start": "NODE_ENV=production TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
+    "check": "tsc --noEmit",
+    "setup:manim": "bash scripts/setup_manim.sh"
+  },
+  "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.7",
+    "@phosphor-icons/react": "^2.1.10",
+    "@speechify/api": "^4.0.1",
+    "express": "^5.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
