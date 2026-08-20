@@ -15,6 +15,10 @@
     "smoke:incremental": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_incremental.ts",
     "check:project": "node --import tsx scripts/check_project.ts",
     "smoke:quality": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_quality.ts",
+    "regression": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/regression.ts",
+    "regression:render": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/regression.ts --render",
+    "verify": "npm run check && npm test && npm run regression && npm run build",
+    "verify:media": "npm run smoke:remotion && npm run smoke:incremental && npm run smoke:quality",
     "setup:manim": "bash scripts/setup_manim.sh"
   },
   "dependencies": {

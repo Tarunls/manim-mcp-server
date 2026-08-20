@@ -1,224 +1,159 @@
-# Manim MCP Server
+# Manim Studio
 
-## Manim Studio MVP
+Manim Studio is a local AI video production MVP. Give it a prompt in the browser; a Codex production agent plans a storyboard, builds an editable timeline, creates narration and licensed assets, routes each shot to the right renderer, checks the result, and retains every revision.
 
-This repository now includes a minimal local prompt-to-Manim website. It provides a collapsible project sidebar, streamed Codex agent activity, an editable `scene.py` per project, 1080p browser playback, revision history, optional timed AI narration, and MP4 download.
+The UI stays intentionally small: project sidebar, streamed agent chat, live video canvas, timeline, inspector, asset browser, and revision history.
 
-### Run it
+## What works
+
+- Canonical `project.json` video IR with shots, tracks, clips, transforms, assets, narration, design tokens, and renderer routing.
+- Live Remotion preview plus full-quality MP4 rendering at the project resolution and frame rate.
+- Specialized Manim shots inside mixed timelines, constrained Blender 3D scenes, and optional generated footage providers.
+- Speechify `simba-3.2` narration with measured segment/word timing and no synthetic fallback.
+- Licensed search/import through Openverse, Pexels, Poly Haven, and Iconify with hashes, credits, and provenance.
+- Shot-level render cache, durable jobs, fast proxies, proper seeking/fullscreen controls, and cancellable work.
+- Automated schema, safe-area, typography, contrast, asset, audio, video, duration, and provenance checks.
+- Immutable version history and non-destructive branches from any saved revision.
+- Delivery ZIP with MP4, proxy, rendered shots, `.otio`, `project.json`, captions, credits, assets, timing, provenance, and QA results.
+
+## Quick start
 
 Prerequisites:
 
-- Node.js 20 or newer
-- Python 3.10 or newer
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-- FFmpeg and FFprobe available on `PATH`
-- The [Codex CLI](https://developers.openai.com/codex/cli/) installed and authenticated
-
-From a fresh clone:
+- Node.js 20+
+- Python 3.10+
+- [`uv`](https://docs.astral.sh/uv/)
+- FFmpeg and FFprobe on `PATH`
+- `zip` and `unzip`
+- [Codex CLI](https://developers.openai.com/codex/cli/) installed
+- Optional: Blender on `PATH` for 3D shots
 
 ```sh
+git clone https://github.com/Tarunls/manim-mcp-server.git
+cd manim-mcp-server
+git checkout codex/manim-studio-mvp
 npm install
 npm run setup:manim
-npm run build
-npm run dev
-```
-
-Open `http://127.0.0.1:4321`.
-
-`npm run setup:manim` creates a repository-local `.venv` and installs Manim Community Edition 0.19.x. The app stores local conversations and rendered media under `studio/projects/`; that directory is intentionally excluded from Git.
-
-For narration, revoke any key that has been pasted into chat or committed anywhere, then place a replacement in a local `.env` file that is never committed:
-
-```sh
 cp .env.example .env
-# Edit .env and set SPEECHIFY_API_KEY on the server only.
-npm run dev
-```
-
-Or export it for the current shell before starting the server:
-
-```sh
-export SPEECHIFY_API_KEY="your-replacement-key"
-npm run dev
-```
-
-Never put the key in a `VITE_*` variable. Vite exposes those values to browser code. Narration is generated server-side through `https://api.speechify.ai` with Speechify `simba-3.2`; the UI labels the result as an AI voice. The default voice is `geffen_32`, configurable through `SPEECHIFY_VOICE_ID`.
-
-Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
-
-The app starts a local Codex App Server and reuses your existing Codex CLI authentication. If Codex is signed out, select **Connect Codex** in the sidebar and complete the managed ChatGPT browser flow. You can also authenticate before starting the app:
-
-```sh
 codex login
+npm run dev
 ```
 
-### Useful commands
+Open [http://127.0.0.1:4321](http://127.0.0.1:4321).
+
+The app reuses local Codex CLI authentication. If it is signed out, use **Connect Codex** in the sidebar. No Codex token is sent to browser JavaScript.
+
+## Environment
+
+All keys are server-only. Never use a `VITE_*` name for a secret.
+
+| Variable | Purpose |
+| --- | --- |
+| `SPEECHIFY_API_KEY` | Required when narration is requested |
+| `SPEECHIFY_VOICE_ID` | Optional voice override; default `geffen_32` |
+| `PEXELS_API_KEY` | Optional Pexels footage/image search |
+| `OPENAI_API_KEY` | Optional OpenAI generated-video provider |
+| `RUNWAYML_API_SECRET` | Optional Runway generated-video provider |
+| `GEMINI_API_KEY` | Optional Google generated-video provider |
+| `VIDEO_GENERATION_PROVIDER` | Optional preference: `openai`, `runway`, or `google` |
+| `PORT` | Local port; default `4321` |
+
+Openverse, Poly Haven, and Iconify search do not require provider keys. Legacy aliases `RUNWAY_API_KEY` and `GOOGLE_API_KEY` remain supported.
+
+Never commit `.env`. If a key was pasted into a chat, issue, or commit, replace it at the provider before using the project.
+
+## Development commands
 
 ```sh
-npm run dev          # local server with reload
-npm run check        # TypeScript validation
-npm run build        # production client build + validation
-npm start            # serve the production build
-npm run setup:manim  # create/update the local Manim environment
+npm run dev                # local server with reload
+npm run build              # production client + TypeScript validation
+npm start                  # serve the production build
+npm run test               # unit and integration tests
+npm run regression         # six creative contract fixtures
+npm run regression:render  # also render the Remotion fixtures
+npm run verify             # check + tests + regression + build
+npm run verify:media       # real Remotion/cache/QA MP4 smoke tests
+npm run setup:manim        # repository-local Manim CE environment
 ```
 
-If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.
-
-### How generation works
-
-1. The Node backend starts one long-lived `codex app-server` process over stdio.
-2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
-3. Codex writes or revises `scene.py` inside that folder.
-4. `scripts/render_scene.py` renders the browser default at 1920×1080 and 30 fps, validates scene and panel bounds, optimizes MP4 seeking, extracts a poster and six-frame contact sheet, and records render metadata.
-5. If `narration.json` and a server API key are present, timed speech segments are generated and muxed into the MP4.
-6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
-7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
-
-The server binds to `127.0.0.1` for local MVP use. Do not expose it directly to the internet. A hosted version should move rendering into isolated workers and add application authentication, rate limits, object storage, and per-user project authorization.
-
-### Production build
+Project-level tools:
 
 ```sh
-npm run build
-npm start
+npm run validate:project -- studio/projects/PROJECT_ID
+npm run render:project -- studio/projects/PROJECT_ID
+npm run check:project -- studio/projects/PROJECT_ID
 ```
 
-### Project output
+## How a prompt becomes a video
 
-Every successful generation remains editable:
+```text
+Prompt
+  → storyboard and asset queries
+  → narration synthesis and measured timing
+  → editable project.json timeline
+  → shot routing: Remotion | Manim | Blender | generated footage
+  → shot cache and FFmpeg assembly
+  → proxy, poster, contact sheet, QA, provenance
+  → immutable revision and delivery bundle
+```
+
+`project.json` is always the source of truth. Renderer files and MP4s are derived artifacts. Targeted chat revisions patch the smallest affected project region, then produce a new immutable `versions/vNNN` snapshot.
+
+Generated-video jobs are asynchronous and may take minutes. Their external job ID is saved under `.generations/`, so an interrupted worker resumes polling instead of submitting a duplicate paid request. Finished provider files are copied locally before their temporary URLs expire.
+
+## Project layout
 
 ```text
 studio/projects/<project-id>/
-  scene.py
+  project.json
+  scene.py                         # optional Manim source
+  assets/
   narration.json
+  narration-timing.json
   output.mp4
+  proxy.mp4
   poster.png
   contact-sheet.png
   metadata.json
-  versions/
-    v001/
-    v002/
+  quality-report.json
+  provenance.json
+  versions/v001/...
+  exports/<timestamp>/...zip
 ```
 
-## MCP server
+Local projects, jobs, caches, exports, and credentials are gitignored.
 
-![Manim MCP Demo](Demo-manim-mcp.gif)
+## Renderer contract
 
+- **Remotion**: typography, captions, UI, shapes, footage, charts, audio, and final browser preview.
+- **Manim**: equations, graphs, geometry, and technical vector explanations. A shot declares `metadata.sceneFile` and optional `metadata.sceneClass`.
+- **Blender**: safe JSON scene descriptions containing primitives, transforms, materials, lights, cameras, and keyframes. Project-authored Blender Python is not executed.
+- **Generated footage**: cinematic/organic footage through an explicitly configured provider. A shot declares `metadata.generationPrompt` and may choose a provider/model.
+- **FFmpeg**: normalization, audio contract, concatenation, proxies, posters, contact sheets, and delivery encoding.
 
-## Overview
+Every rendered shot is normalized to the same dimensions, frame rate, H.264 pixel format, AAC audio stream, and exact timeline duration before assembly.
 
-This is an MCP (Model Context Protocol) server that executes Manim animation code and returns the generated video. It allows users to send Manim scripts and receive the rendered animation.
+## Quality and licensing
 
-## Features
+A render does not enter version history when required checks fail. Errors include invalid IR, unsafe text/diagram bounds, unreadable contrast, missing asset licenses/hashes/credits, narration overlaps, missing audio, and duration mismatch. Sustained black, frozen, or silent regions are warnings recorded in `quality-report.json`.
 
-- Executes Manim Python scripts.
-- Saves animation output in a visible media folder.
-- Allows users to clean up temporary files after execution.
-- Portable and configurable via environment variables.
+Online media must be imported through the asset service. Raw URLs are not accepted as project assets because they omit content hashes, license fields, creator credits, and source provenance.
 
-## Installation
+## Production boundary
 
-### Prerequisites
+This branch is a correctly structured local MVP, not a hardened multi-tenant service. It binds to `127.0.0.1`. Before public hosting, move renderers to isolated workers, add user authentication and authorization, rate/spend limits, object storage, a database-backed job queue, webhook verification, malware scanning, and tenant-level secret management.
 
-Ensure you have the following installed:
+Further documentation:
 
-- Python 3.8+
-- Manim (Community Version)
-- MCP
+- [Architecture](docs/ARCHITECTURE.md)
+- [API](docs/API.md)
+- [Operations and troubleshooting](docs/OPERATIONS.md)
+- [Video IR authoring](docs/VIDEO_IR.md)
 
-### Install Manim
+## Legacy MCP server
 
-```sh
-pip install manim
-```
-
-### Install MCP
-
-```sh
-pip install mcp
-```
-
-### Clone the Repository
-
-```sh
-git clone https://github.com/abhiemj/manim-mcp-server.git
-cd manim-mcp-server
-```
-
-## Integration with Claude
-
-To integrate the Manim MCP server with Claude, add the following to your `claude_desktop_config.json` file:
-
-```json
-{
-  "mcpServers": {
-     "manim-server": {
-      "command": "/absolute/path/to/python",
-      "args": [
-        "/absolute/path/to/manim-mcp-server/src/manim_server.py"
-      ],
-      "env": {
-        "MANIM_EXECUTABLE": "/Users/[Your_username]/anaconda3/envs/manim2/Scripts/manim.exe"
-      }
-    }
-  }
-}
-```
-
-### Finding Your Python Path
-
-To find your Python executable path, use the following command:
-
-#### Windows (PowerShell):
-```sh
-(Get-Command python).Source
-```
-
-#### Windows (Command Prompt/Terminal):
-```sh
-where python
-```
-
-#### Linux/macOS (Terminal):
-```sh
-which python
-```
-
-This ensures that Claude can communicate with the Manim MCP server to generate animations dynamically.
-
-## Contributing
-
-1. Fork the repository.
-2. Create a new branch:
-   ```sh
-   git checkout -b add-feature
-   ```
-3. Make changes and commit:
-   ```sh
-   git commit -m "Added a new feature"
-   ```
-4. Push to your fork:
-   ```sh
-   git push origin add-feature
-   ```
-5. Open a pull request.
+The original Python MCP server remains at `src/manim_server.py` for existing integrations. It executes Manim code and returns rendered media. The Studio website is the primary product path on this branch.
 
 ## License
 
-This MCP server is licensed under the MIT License. This means you are free to use, modify, and distribute the software, subject to the terms and conditions of the MIT License. For more details, please see the LICENSE file in the project repository.
-
-## Author
-
-Created by **[abhiemj](https://github.com/abhiemj)**. Contributions welcome! 🚀
-
-### **Listed in Awesome MCP Servers**  
-This repository is featured in the [Awesome MCP Servers](https://github.com/punkpeye/awesome-mcp-servers) repository under the **Animation & Video** category. Check it out along with other great MCP server implementations!
-
-
-## **Acknowledgments**  
-- Thanks to the [Manim Community](https://www.manim.community/) for their amazing animation library.  
-- Inspired by the open-source MCP ecosystem.
-
-## Find me at
-<a href="https://www.instagram.com/aiburner_official" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/instagram.svg" alt="aiburner_official" height="30" width="40" /></a>
-@aiburner_official
+MIT. See [LICENSE.txt](LICENSE.txt).

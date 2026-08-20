@@ -17,4 +17,7 @@ Projects below this directory are editable multi-renderer videos created by the 
 - Completed outputs are copied into immutable `versions/vNNN/` folders by the Studio server. Never edit those archived folders.
 - Never delete earlier project folders or write outside the current project.
 - Prefer deterministic components. Download only storyboard-selected assets through the provided import tool.
+- Use generated footage only for cinematic or organic shots that deterministic tools cannot author efficiently. Put a concrete `generationPrompt` in shot metadata and never use it for text or factual diagrams.
+- Use `metadata.blenderScene` for 3D shots. Author only the constrained primitives, transforms, materials, lights, cameras, and keyframes accepted by the worker.
+- Run `node --import tsx ../../../scripts/check_project.ts .` after the final render. Do not finish with quality errors.
 - Check text and object bounds before completing a render.
