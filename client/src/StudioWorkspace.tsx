@@ -10,6 +10,7 @@ import {
   Images,
   MagnifyingGlass,
   MonitorPlay,
+  Package,
   Play,
   Plus,
   SlidersHorizontal,
@@ -329,6 +330,20 @@ export function StudioWorkspace({
     }
   }
 
+  async function exportBundle() {
+    if (!project) return;
+    setBusy("Packaging");
+    setError("");
+    try {
+      const result = await api<{ url: string }>(`/api/projects/${project.id}/exports`, { method: "POST", body: JSON.stringify({ format: "bundle" }) });
+      window.location.assign(result.url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not package the project.");
+    } finally {
+      setBusy("");
+    }
+  }
+
   if (!project) {
     return <section className="workspace studio-workspace"><div className="studio-empty"><MonitorPlay size={34} /><h2>Prompt to preview</h2><p>{runtime.manim ? "Your editable video will appear here." : "Install Manim to render a preview."}</p></div></section>;
   }
@@ -377,6 +392,7 @@ export function StudioWorkspace({
             <div>
               <button onClick={() => void playerShell.current?.requestFullscreen()}><ArrowsOut size={17} /> Fullscreen</button>
               {videoUrl && <a href={videoUrl} download={`${project.title}.mp4`}><DownloadSimple size={17} /> Download</a>}
+              <button onClick={() => void exportBundle()}><Package size={17} /> Project</button>
             </div>
           </div>
         </div>

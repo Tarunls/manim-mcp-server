@@ -18,6 +18,7 @@ import { RenderCache, createProxy, renderIncrementally } from "./renderers/incre
 import { createQualityReport } from "./quality/project-quality.js";
 import type { QualityReport } from "../shared/quality.js";
 import { GeneratedVideoRegistry } from "./generation/video-providers.js";
+import { createDeliveryBundle, writeInterchange } from "./exports/interchange.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -374,6 +375,18 @@ export class StudioService extends EventEmitter {
   getGenerationProviders() {
     const available = new Set(this.generatedVideos.available());
     return this.generatedVideos.providers.map((provider) => ({ id: provider.id, available: available.has(provider.id) }));
+  }
+
+  async exportProject(projectId: string, format: string) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    const projectDir = path.join(this.projectRoot, projectId);
+    const timeline = this.getTimeline(projectId);
+    const target = format === "bundle"
+      ? await createDeliveryBundle(this.root, projectDir, timeline)
+      : writeInterchange(projectDir, timeline, format as "otio" | "credits" | "srt");
+    if (!target.startsWith(projectDir + path.sep)) throw new Error("Invalid export path.");
+    return { format, filename: path.basename(target), url: `/media/${projectId}/${path.relative(projectDir, target).split(path.sep).map(encodeURIComponent).join("/")}` };
   }
 
   routeTimeline(projectId: string) {

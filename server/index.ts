@@ -171,6 +171,16 @@ app.post("/api/projects/:id/assets/import", async (request, response) => {
   }
 });
 
+app.post("/api/projects/:id/exports", async (request, response) => {
+  const format = String(request.body?.format || "bundle");
+  if (!["bundle", "otio", "credits", "srt"].includes(format)) return response.status(400).json({ error: "Unsupported export format." });
+  try {
+    response.status(201).json(await studio.exportProject(request.params.id, format));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Export failed." });
+  }
+});
+
 app.use("/media", express.static(path.join(root, "studio", "projects"), {
   fallthrough: false,
   immutable: false,
