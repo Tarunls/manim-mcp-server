@@ -1,3 +1,6 @@
+import type { StudioJob } from "../shared/jobs.js";
+import type { VideoProjectIR } from "../shared/video-ir.js";
+
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
 
@@ -47,6 +50,7 @@ export interface ProjectVersion {
   posterUrl?: string;
   render?: RenderInfo;
   projectUrl?: string;
+  proxyUrl?: string;
 }
 
 export interface StudioProject {
@@ -61,6 +65,7 @@ export interface StudioProject {
   turnId?: string;
   videoUrl?: string;
   posterUrl?: string;
+  proxyUrl?: string;
   versions: ProjectVersion[];
   error?: string;
   messages: ChatMessage[];
@@ -69,11 +74,12 @@ export interface StudioProject {
 }
 
 export type StudioEvent =
-  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState }
+  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState; jobs: StudioJob[] }
   | { type: "project"; project: StudioProject }
   | { type: "assistant_delta"; projectId: string; messageId: string; delta: string }
   | { type: "auth"; auth: AuthState }
-  | { type: "runtime"; runtime: RuntimeState };
+  | { type: "runtime"; runtime: RuntimeState }
+  | { type: "job"; job: StudioJob };
 
 export interface AuthState {
   connected: boolean;
@@ -87,4 +93,3 @@ export interface RuntimeState {
   manim: boolean;
   ffmpeg: boolean;
 }
-import type { VideoProjectIR } from "../shared/video-ir.js";

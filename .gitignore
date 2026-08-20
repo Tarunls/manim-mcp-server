@@ -11,3 +11,5 @@ dist/
 studio/projects.json
 studio/projects/*/
 !studio/projects/.gitkeep
+studio/cache/
+studio/jobs.json

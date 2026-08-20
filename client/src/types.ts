@@ -1,3 +1,6 @@
+import type { StudioJob } from "../../shared/jobs";
+import type { VideoProjectIR } from "../../shared/video-ir";
+
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
 
@@ -47,6 +50,7 @@ export interface ProjectVersion {
   posterUrl?: string;
   render?: RenderInfo;
   projectUrl?: string;
+  proxyUrl?: string;
 }
 
 export interface StudioProject {
@@ -61,6 +65,7 @@ export interface StudioProject {
   turnId?: string;
   videoUrl?: string;
   posterUrl?: string;
+  proxyUrl?: string;
   versions: ProjectVersion[];
   error?: string;
   messages: ChatMessage[];
@@ -82,9 +87,9 @@ export interface RuntimeState {
 }
 
 export type StudioEvent =
-  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState }
+  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState; jobs: StudioJob[] }
   | { type: "project"; project: StudioProject }
   | { type: "assistant_delta"; projectId: string; messageId: string; delta: string }
   | { type: "auth"; auth: AuthState }
-  | { type: "runtime"; runtime: RuntimeState };
-import type { VideoProjectIR } from "../../shared/video-ir";
+  | { type: "runtime"; runtime: RuntimeState }
+  | { type: "job"; job: StudioJob };

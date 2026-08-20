@@ -103,9 +103,21 @@ app.post("/api/projects/:id/timeline/route", (request, response) => {
 
 app.post("/api/projects/:id/render", async (request, response) => {
   try {
-    response.status(201).json(await studio.renderTimeline(request.params.id));
+    response.status(202).json(await studio.renderTimeline(request.params.id));
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : "Could not render timeline." });
+  }
+});
+
+app.get("/api/jobs", (request, response) => {
+  response.json(studio.jobs.list(typeof request.query.projectId === "string" ? request.query.projectId : undefined));
+});
+
+app.post("/api/jobs/:id/cancel", (request, response) => {
+  try {
+    response.json(studio.jobs.cancel(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Job not found." });
   }
 });
 

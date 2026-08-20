@@ -9,18 +9,21 @@ export function RemotionRoot() {
   return (
     <Composition
       id="VideoProject"
-      component={VideoComposition}
+      component={VideoComposition as React.FC<Record<string, unknown>>}
       width={defaultProject.format.width}
       height={defaultProject.format.height}
       fps={defaultProject.format.fps}
       durationInFrames={defaultProject.format.fps * defaultProject.format.duration}
       defaultProps={{ project: defaultProject, assetUrls: {} }}
-      calculateMetadata={({ props }: { props: VideoCompositionProps }) => ({
-        width: props.project.format.width,
-        height: props.project.format.height,
-        fps: props.project.format.fps,
-        durationInFrames: Math.max(1, Math.ceil(props.project.format.duration * props.project.format.fps)),
-      })}
+      calculateMetadata={({ props }) => {
+        const typed = props as VideoCompositionProps;
+        return {
+          width: typed.project.format.width,
+          height: typed.project.format.height,
+          fps: typed.project.format.fps,
+          durationInFrames: Math.max(1, Math.ceil(typed.project.format.duration * typed.project.format.fps)),
+        };
+      }}
     />
   );
 }

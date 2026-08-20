@@ -13,6 +13,8 @@ import { renderRemotionProject } from "./renderers/remotion-renderer.js";
 import { AssetService } from "./assets/service.js";
 import type { AssetCandidate } from "../shared/assets.js";
 import { productionRequest } from "./planning.js";
+import { JobStore } from "./jobs/job-store.js";
+import { RenderCache, createProxy, renderIncrementally } from "./renderers/incremental-renderer.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -61,6 +63,8 @@ export class StudioService extends EventEmitter {
   readonly projectRoot: string;
   readonly bridge = new CodexBridge();
   readonly assets = new AssetService();
+  readonly jobs: JobStore;
+  readonly renderCache: RenderCache;
   private projects = new Map<string, StudioProject>();
   private threadToProject = new Map<string, string>();
   private assistantMessageByItem = new Map<string, string>();
@@ -72,6 +76,9 @@ export class StudioService extends EventEmitter {
     super();
     this.root = root;
     this.projectRoot = path.join(root, "studio", "projects");
+    this.jobs = new JobStore(path.join(root, "studio", "jobs.json"));
+    this.renderCache = new RenderCache(path.join(root, "studio", "cache"));
+    this.jobs.on("job", (job) => this.emitEvent({ type: "job", job }));
     fs.mkdirSync(this.projectRoot, { recursive: true });
     this.loadProjects();
     this.bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
@@ -137,6 +144,9 @@ export class StudioService extends EventEmitter {
     this.runtimeState = { codex, manim, ffmpeg };
     if (codex) await this.refreshAuth();
     this.emitEvent({ type: "runtime", runtime: this.runtimeState });
+    for (const job of this.jobs.list().filter((candidate) => candidate.type === "render" && candidate.status === "queued")) {
+      void this.runRenderJob(job.id, job.projectId);
+    }
   }
 
   listProjects() {
@@ -153,6 +163,7 @@ export class StudioService extends EventEmitter {
       projects: this.listProjects(),
       auth: this.authState,
       runtime: this.runtimeState,
+      jobs: this.jobs.list(),
     };
   }
 
@@ -179,7 +190,7 @@ export class StudioService extends EventEmitter {
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["project.json", "scene.py", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
+    const assets = ["project.json", "scene.py", "output.mp4", "proxy.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration-timing.json", "narration.m4a"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
@@ -201,6 +212,9 @@ export class StudioService extends EventEmitter {
       videoUrl: `/media/${project.id}/versions/${id}/output.mp4`,
       posterUrl: fs.existsSync(path.join(versionDir, "poster.png"))
         ? `/media/${project.id}/versions/${id}/poster.png`
+        : undefined,
+      proxyUrl: fs.existsSync(path.join(versionDir, "proxy.mp4"))
+        ? `/media/${project.id}/versions/${id}/proxy.mp4`
         : undefined,
       render,
     };
@@ -323,10 +337,21 @@ export class StudioService extends EventEmitter {
     return this.updateTimeline(projectId, routed);
   }
 
-  async renderTimeline(projectId: string) {
+  renderTimeline(projectId: string) {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("The project is already rendering.");
+    const job = this.jobs.create(projectId, "render");
+    void this.runRenderJob(job.id, projectId);
+    return job;
+  }
+
+  private async runRenderJob(jobId: string, projectId: string) {
+    const project = this.projects.get(projectId);
+    if (!project) {
+      this.jobs.update(jobId, { status: "failed", stage: "Project missing", error: "Project not found.", completedAt: now() });
+      return;
+    }
     const projectDir = path.join(this.projectRoot, projectId);
     const timeline = this.getTimeline(projectId);
     project.status = "running";
@@ -334,14 +359,26 @@ export class StudioService extends EventEmitter {
     const action: AgentAction = { id: randomUUID(), label: "Rendering editable timeline", status: "running", createdAt: now() };
     project.actions.push(action);
     this.updateProject(project);
+    this.jobs.update(jobId, { status: "running", stage: "Rendering shots", startedAt: now(), progress: 0.02 });
     try {
-      await renderRemotionProject(this.root, projectDir, timeline, path.join(projectDir, "output.mp4"));
+      const render = await renderIncrementally(this.root, projectDir, timeline, this.renderCache, (progress, stage, checkpoint) => {
+        if (this.jobs.get(jobId)?.status === "cancelled") throw new Error("Render cancelled.");
+        this.jobs.update(jobId, { progress, stage, checkpoint });
+      });
+      for (const shot of timeline.shots) {
+        shot.cacheKey = render.shotKeys[shot.id];
+        shot.status = "complete";
+      }
+      writeProjectBundle(projectDir, timeline);
       let narration: Record<string, unknown> = { status: "not_requested", enabled: false };
       if (fs.existsSync(path.join(projectDir, "narration.json"))) {
         const result = await execFileAsync("node", [path.join(this.root, "scripts", "generate_narration.mjs"), projectDir], { env: process.env });
         narration = JSON.parse(result.stdout.trim().split("\n").at(-1) || "{}");
       }
+      await createProxy(path.join(projectDir, "output.mp4"), path.join(projectDir, "proxy.mp4"));
       await execFileAsync("ffmpeg", ["-y", "-ss", "0", "-i", path.join(projectDir, "output.mp4"), "-frames:v", "1", path.join(projectDir, "poster.png")]);
+      const interval = Math.max(timeline.format.duration / 6, 0.25);
+      await execFileAsync("ffmpeg", ["-y", "-i", path.join(projectDir, "output.mp4"), "-vf", `fps=1/${interval},scale=480:-2,tile=3x2:padding=8:margin=8:color=white`, "-frames:v", "1", path.join(projectDir, "contact-sheet.png")]);
       const metadata = {
         quality: "timeline",
         duration: timeline.format.duration,
@@ -351,6 +388,7 @@ export class StudioService extends EventEmitter {
         renderer: "remotion",
         renderedAt: now(),
         narration,
+        cache: { hits: render.hits, misses: render.misses },
       };
       fs.writeFileSync(path.join(projectDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
       action.status = "done";
@@ -359,17 +397,19 @@ export class StudioService extends EventEmitter {
       const version = this.archiveVersion(project);
       if (version) {
         project.videoUrl = version.videoUrl;
+        project.proxyUrl = version.proxyUrl;
         project.posterUrl = version.posterUrl;
       }
       this.updateProject(project);
-      return version;
+      this.jobs.update(jobId, { status: "complete", stage: "Complete", progress: 1, completedAt: now(), checkpoint: { versionId: version?.id, shotKeys: render.shotKeys } });
     } catch (error) {
       action.status = "failed";
-      project.status = "error";
+      const cancelled = this.jobs.get(jobId)?.status === "cancelled";
+      project.status = cancelled ? "cancelled" : "error";
       project.stage = "ready";
       project.error = error instanceof Error ? error.message : "Timeline render failed.";
       this.updateProject(project);
-      throw error;
+      if (!cancelled) this.jobs.update(jobId, { status: "failed", stage: "Failed", error: project.error, completedAt: now() });
     }
   }
 

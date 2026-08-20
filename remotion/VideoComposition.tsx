@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from "remotion";
 import type { ClipTransform, VideoAsset, VideoClip, VideoProjectIR } from "../shared/video-ir";
 
-export interface VideoCompositionProps {
+export interface VideoCompositionProps extends Record<string, unknown> {
   project: VideoProjectIR;
   assetUrls?: Record<string, string>;
 }
