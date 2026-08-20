@@ -4,6 +4,7 @@ Projects below this directory are editable multi-renderer videos created by the 
 
 - Keep every project self-contained.
 - The editable source of truth is `project.json`. `scene.py` is used only by shots routed to Manim and contains one scene named `GeneratedScene`.
+- A Manim timeline shot points to its project-local source with `metadata.sceneFile` and may select `metadata.sceneClass`. Mixed timelines render each Manim shot independently and normalize it before assembly.
 - Validate the storyboard and timeline with `node --import tsx ../../../scripts/validate_project.ts .` before rendering.
 - Use the asset scripts for storyboard-selected media. Every import must retain license, attribution, content hash, and provenance in `project.json`.
 - Import the shared guards from `manim_layout` and use `assert_inside` plus `assert_scene_safe` before animations.

@@ -7,6 +7,7 @@ import type { VideoProjectIR, VideoShot } from "../../shared/video-ir.js";
 import { renderRemotionProject } from "./remotion-renderer.js";
 import { renderBlenderShot } from "./blender-renderer.js";
 import { renderGeneratedShot } from "../generation/generated-renderer.js";
+import { renderManimShot } from "./manim-renderer.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -63,7 +64,8 @@ export async function renderIncrementally(
       partial.shots = [{ ...structuredClone(shot), start: 0 }];
       partial.narration = [];
       const target = cache.prepare(key);
-      if (shot.renderer === "blender") await renderBlenderShot(root, projectDir, partial, partial.shots[0], target);
+      if (shot.renderer === "manim") await renderManimShot(root, projectDir, partial, partial.shots[0], target);
+      else if (shot.renderer === "blender") await renderBlenderShot(root, projectDir, partial, partial.shots[0], target);
       else if (shot.renderer === "generated") await renderGeneratedShot(projectDir, partial, partial.shots[0], target, undefined, (providerProgress, detail) => onProgress?.((index + providerProgress / 100) / (project.shots.length + 1), `Generating ${shot.name}`, { ...detail, shotId: shot.id, shotKeys }));
       else await renderRemotionProject(root, projectDir, partial, target);
     }

@@ -31,6 +31,7 @@ Requirements:
 - Keep the source of truth in project.json. It contains the brief, storyboard, shots, tracks, clips, assets, design tokens, narration, and renderer routing.
 - Plan before authoring. Every storyboard beat must state its purpose, narration, visual, duration, asset queries, and renderer. Run the project validator after planning and after timing changes.
 - Route typography, footage, UI, captions, shapes, charts, and compositing to Remotion. Route only equations, graphs, and technical vector explanations to Manim. Use generated footage and Blender only when their configured capability is available.
+- For a Manim timeline shot, put sceneFile and optional sceneClass in shot metadata. Keep every source inside the project directory and use the shared layout guards.
 - For generated footage, put generationPrompt plus an optional provider and model in the shot metadata. The render worker archives the result locally and resumes provider jobs from .generations.
 - For 3D, put a constrained blenderScene object in shot metadata. Use primitives, transforms, materials, lights, camera settings, and keyframes; never author or execute arbitrary Blender Python.
 - Search online assets with: node --import tsx ../../../scripts/search_assets.ts "QUERY" [KIND] [PROVIDER]. Import only storyboard-selected results with the provided import script. Never use a raw web URL without license and provenance metadata in project.json.
