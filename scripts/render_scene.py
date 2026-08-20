@@ -200,6 +200,14 @@ def main() -> None:
     duration = float(probe_data["format"]["duration"])
     numerator, denominator = stream["avg_frame_rate"].split("/", 1)
     fps = float(numerator) / max(float(denominator), 1.0)
+    if compiled_vir is not None:
+        duration_delta = abs(duration - compiled_vir.report.duration_seconds)
+        tolerance = max(2.0 / max(fps, 1.0), 0.08)
+        if duration_delta > tolerance:
+            fail(
+                f"Rendered duration {duration:.3f}s drifted from the Video IR timeline "
+                f"{compiled_vir.report.duration_seconds:.3f}s by {duration_delta:.3f}s."
+            )
 
     poster = project_dir / "poster.png"
     poster_time = min(max(duration * 0.18, 0.5), max(duration - 0.1, 0.5))
@@ -302,6 +310,27 @@ def main() -> None:
             "narrationWordCounts": narration_contract.word_counts if narration_contract else [],
             "virBeatCount": compiled_vir.report.beat_count if compiled_vir else None,
             "virStaticWaitRatio": compiled_vir.report.static_wait_ratio if compiled_vir else None,
+            "virConnectorCount": (
+                sum(
+                    1
+                    for beat in vir_spec["beats"]
+                    for node in beat["nodes"]
+                    if node["type"] == "connector"
+                )
+                if vir_spec else None
+            ),
+            "virTransitionStyles": (
+                [
+                    beat.get("transition", {}).get("style", "fade")
+                    for beat in vir_spec["beats"]
+                    if beat.get("transition") or beat.get("transitionDuration")
+                ]
+                if vir_spec else []
+            ),
+            "virFrameCount": (
+                round(compiled_vir.report.duration_seconds * vir_spec["format"]["fps"])
+                if compiled_vir and vir_spec else None
+            ),
         },
     }
     (project_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

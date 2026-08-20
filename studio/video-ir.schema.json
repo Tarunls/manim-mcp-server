@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://manim-studio.local/schemas/video-ir-0.1.json",
+  "$id": "https://manim-studio.local/schemas/video-ir.json",
   "title": "Manim Studio Video Intermediate Representation",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "format", "theme", "beats"],
   "properties": {
-    "schemaVersion": { "const": "0.1" },
+    "schemaVersion": { "enum": ["0.1", "0.2"] },
     "format": { "$ref": "#/$defs/format" },
     "theme": { "$ref": "#/$defs/theme" },
     "beats": {
@@ -68,6 +68,23 @@
           "type": "object",
           "minProperties": 3,
           "additionalProperties": { "$ref": "#/$defs/textStyle" }
+        },
+        "motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["durations", "distance", "defaultEase"],
+          "properties": {
+            "durations": {
+              "type": "object",
+              "additionalProperties": { "type": "number", "minimum": 0.1, "maximum": 4 },
+              "required": ["fast", "base", "slow"]
+            },
+            "distance": { "type": "number", "minimum": 0.05, "maximum": 2 },
+            "defaultEase": {
+              "type": "string",
+              "enum": ["smooth", "linear", "thereAndBack", "rushIn", "rushOut"]
+            }
+          }
         }
       }
     },
@@ -158,6 +175,21 @@
         "align": { "type": "string", "enum": ["start", "center", "end"] }
       }
     },
+    "connectorNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "from", "to", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "connector" },
+        "from": { "$ref": "#/$defs/id" },
+        "to": { "$ref": "#/$defs/id" },
+        "kind": { "type": "string", "enum": ["arrow", "line"] },
+        "color": { "type": "string" },
+        "strokeWidth": { "type": "number", "minimum": 0.5, "maximum": 20 },
+        "buff": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] }
+      }
+    },
     "node": {
       "oneOf": [
         { "$ref": "#/$defs/textNode" },
@@ -165,7 +197,8 @@
         { "$ref": "#/$defs/rectangleNode" },
         { "$ref": "#/$defs/circleNode" },
         { "$ref": "#/$defs/squareNode" },
-        { "$ref": "#/$defs/groupNode" }
+        { "$ref": "#/$defs/groupNode" },
+        { "$ref": "#/$defs/connectorNode" }
       ]
     },
     "anchorConstraint": {
@@ -243,14 +276,50 @@
       "required": ["start", "duration", "action", "targets"],
       "properties": {
         "start": { "type": "number", "minimum": 0 },
-        "duration": { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
-        "action": { "type": "string", "enum": ["fadeIn", "create", "write", "grow", "indicate", "fadeOut"] },
+        "duration": {
+          "oneOf": [
+            { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
+            { "type": "string" }
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "fadeIn", "create", "write", "grow", "slideIn", "draw",
+            "indicate", "circumscribe", "wiggle", "flash",
+            "fadeOut", "slideOut", "shrink", "uncreate"
+          ]
+        },
+        "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+        "ease": { "type": "string", "enum": ["smooth", "linear", "thereAndBack", "rushIn", "rushOut"] },
+        "stagger": { "type": "number", "minimum": 0, "maximum": 1 },
+        "color": { "type": "string" },
+        "distance": { "type": "number", "minimum": 0.05, "maximum": 4 },
         "targets": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/id" }
         }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style", "duration"],
+      "properties": {
+        "style": {
+          "type": "string",
+          "enum": ["fade", "slide", "shrink", "uncreate", "crossfade", "push", "morph"]
+        },
+        "duration": {
+          "oneOf": [
+            { "type": "number", "minimum": 0.1, "maximum": 10 },
+            { "type": "string" }
+          ]
+        },
+        "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+        "distance": { "type": "number", "minimum": 0.05, "maximum": 4 }
       }
     },
     "beat": {
@@ -264,6 +333,7 @@
         "duration": { "type": "number", "minimum": 3, "maximum": 30 },
         "narration": { "type": "string", "minLength": 1, "maxLength": 500 },
         "transitionDuration": { "type": "number", "minimum": 0.2, "maximum": 2 },
+        "transition": { "$ref": "#/$defs/transition" },
         "allowLongHold": { "type": "boolean" },
         "nodes": {
           "type": "array",

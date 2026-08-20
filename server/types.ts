@@ -47,6 +47,9 @@ export interface RenderInfo {
     narrationWordCounts?: number[];
     virBeatCount?: number | null;
     virStaticWaitRatio?: number | null;
+    virConnectorCount?: number | null;
+    virTransitionStyles?: string[];
+    virFrameCount?: number | null;
   };
   narration?: {
     status?: string;

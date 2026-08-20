@@ -21,6 +21,11 @@ REQUIRED_LAYOUT_IMPORTS = {
 }
 
 HELPER_SIGNATURES = {
+    "connect_mobjects": {
+        "min_args": 2,
+        "max_args": 2,
+        "keywords": {"kind", "buff", "color", "stroke_width"},
+    },
     "fit_inside": {"min_args": 2, "max_args": 3, "keywords": {"padding"}},
     "stack_in_panel": {
         "min_args": 1,

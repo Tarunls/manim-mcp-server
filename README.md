@@ -76,9 +76,18 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim
 
 Render metadata includes canonical and file-level Video IR hashes, a generated-source fingerprint, narration-spec fingerprint, Manim and Python versions, referenced font families, semantic contact-sheet timestamps, and explicit static-wait metrics. The IR contract rejects unpositioned top-level nodes, invalid constraint ordering, group cycles, uncontained panels, impossible visibility transitions, overlapping cues, and unexplained static holds before invoking Manim. The Python contract remains active for both compiled and hand-authored scenes.
 
-### Video IR v0.1
+### Video IR
 
-`studio/video-ir.schema.json` defines the renderer-independent authoring contract and `studio/video-ir.example.json` is a complete working example. It includes design tokens, 3-5 narrative beats, basic visual nodes, ordered relational constraints, and explicit animation cues.
+`studio/video-ir.schema.json` defines the renderer-independent authoring contract and `studio/video-ir.example.json` is a complete working v0.2 example. The compiler remains backward compatible with v0.1.
+
+Video IR v0.2 adds:
+
+- frame-aligned motion tokens and named easing curves;
+- boundary-derived arrow and line connectors that remain attached after relational layout;
+- directional entrance and exit presets, drawing, flashes, wiggles, and circumscription;
+- staggered multi-object animation;
+- fade, slide, shrink, uncreate, crossfade, push, and shape-matching morph transitions;
+- continuity-aware visibility validation and a motion-variety lint that prevents repetitive slideshow animation.
 
 Compile without rendering with `python3 scripts/compile_vir.py studio/projects/PROJECT_ID`. If `video.vir.json` is present, `scripts/render_scene.py` always recompiles generated artifacts before rendering, preventing drift between the declarative source and the final video. Hand-authored Manim remains the escape hatch for unsupported graphics.
 

@@ -83,6 +83,64 @@ def valid_video_ir() -> dict:
     }
 
 
+def valid_video_ir_v02() -> dict:
+    data = valid_video_ir()
+    data["schemaVersion"] = "0.2"
+    data["theme"]["motion"] = {
+        "durations": {"fast": 0.4, "base": 0.8, "slow": 1.2},
+        "distance": 0.6,
+        "defaultEase": "smooth",
+    }
+    for beat in data["beats"]:
+        beat["nodes"].append(
+            {
+                "id": "relationship",
+                "type": "connector",
+                "from": "headline",
+                "to": "message",
+                "kind": "arrow",
+                "color": "accent",
+                "strokeWidth": 3,
+                "buff": "sm",
+            }
+        )
+        beat["nodes"][3]["gap"] = 0.9
+    data["beats"][0]["transition"] = {
+        "style": "push", "duration": "slow", "direction": "left", "distance": 0.7
+    }
+    data["beats"][0].pop("transitionDuration")
+    data["beats"][1]["transition"] = {"style": "morph", "duration": "slow"}
+    data["beats"][1].pop("transitionDuration")
+    data["beats"][0]["cues"] = [
+        {"start": 0, "duration": "base", "action": "slideIn", "targets": ["panel"], "direction": "down"},
+        {"start": 0.8, "duration": "slow", "action": "write", "targets": ["content"]},
+        {"start": 2, "duration": "fast", "action": "draw", "targets": ["relationship"]},
+        {"start": 2.8, "duration": "base", "action": "circumscribe", "targets": ["message"], "color": "accent"},
+        {"start": 4, "duration": "fast", "action": "flash", "targets": ["message"]},
+        {"start": 4.8, "duration": "slow", "action": "wiggle", "targets": ["message"]},
+        {"start": 6.6, "duration": "base", "action": "indicate", "targets": ["message"]},
+    ]
+    data["beats"][1]["cues"] = [
+        {"start": 0, "duration": "base", "action": "circumscribe", "targets": ["panel"]},
+        {"start": 1.2, "duration": "slow", "action": "wiggle", "targets": ["headline", "message"], "stagger": 0.18},
+        {"start": 2.8, "duration": "fast", "action": "flash", "targets": ["message"]},
+        {"start": 3.6, "duration": "base", "action": "indicate", "targets": ["relationship"]},
+        {"start": 4.8, "duration": "base", "action": "circumscribe", "targets": ["message"]},
+        {"start": 6, "duration": "slow", "action": "wiggle", "targets": ["message"]},
+    ]
+    data["beats"][2]["duration"] = 8.4
+    data["beats"][2]["cues"] = [
+        {"start": 0, "duration": "base", "action": "circumscribe", "targets": ["panel"]},
+        {"start": 1.2, "duration": "slow", "action": "wiggle", "targets": ["message"]},
+        {"start": 2.8, "duration": "fast", "action": "flash", "targets": ["message"]},
+        {"start": 3.6, "duration": "base", "action": "indicate", "targets": ["relationship"]},
+        {"start": 4.8, "duration": "base", "action": "circumscribe", "targets": ["message"]},
+        {"start": 6, "duration": "slow", "action": "wiggle", "targets": ["message"]},
+        {"start": 7.6, "duration": "fast", "action": "indicate", "targets": ["message"]},
+    ]
+    return data
+
+
 class VideoIRTests(unittest.TestCase):
     def test_valid_ir_compiles_deterministically(self) -> None:
         data = valid_video_ir()
@@ -96,6 +154,28 @@ class VideoIRTests(unittest.TestCase):
         self.assertEqual(first.narration["segments"][1]["start"], 9.0)
         self.assertTrue(validate_scene_source(first.source).valid)
         self.assertTrue(validate_narration_spec(first.narration, 27).valid)
+
+    def test_v02_compiles_connectors_motion_tokens_and_continuity(self) -> None:
+        compiled = compile_video_ir(valid_video_ir_v02())
+        self.assertTrue(compiled.report.valid)
+        self.assertIn("connect_mobjects(b1_headline, b1_message", compiled.source)
+        self.assertIn("LaggedStart(Wiggle(b2_headline), Wiggle(b2_message), lag_ratio=0.18)", compiled.source)
+        self.assertIn("FadeIn(beat_2_group, shift=-LEFT", compiled.source)
+        self.assertIn("TransformMatchingShapes(beat_2_group, beat_3_group)", compiled.source)
+
+    def test_v02_features_are_rejected_under_v01_version(self) -> None:
+        data = valid_video_ir_v02()
+        data["schemaVersion"] = "0.1"
+        messages = [issue.message for issue in validate_video_ir(data).issues]
+        self.assertTrue(any("require schemaVersion '0.2'" in message for message in messages))
+
+    def test_v02_rejects_repetitive_motion_grammar(self) -> None:
+        data = valid_video_ir_v02()
+        for cue in data["beats"][2]["cues"]:
+            if cue["action"] in {"circumscribe", "flash", "wiggle"}:
+                cue["action"] = "indicate"
+        messages = [issue.message for issue in validate_video_ir(data).issues]
+        self.assertTrue(any("repeat motion actions more than twice" in message for message in messages))
 
     def test_compile_project_writes_both_generated_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -179,6 +259,12 @@ class VideoIRTests(unittest.TestCase):
         data["beats"][0]["nodes"][0]["style"]["fillOpacity"] = "opaque"
         messages = [issue.message for issue in validate_video_ir(data).issues]
         self.assertIn("must be from 0 to 1.", messages)
+
+    def test_timing_must_land_on_the_output_frame_grid(self) -> None:
+        data = valid_video_ir_v02()
+        data["beats"][0]["cues"][0]["start"] = 0.01
+        messages = [issue.message for issue in validate_video_ir(data).issues]
+        self.assertIn("must align to the 30 fps frame grid.", messages)
 
 
 if __name__ == "__main__":

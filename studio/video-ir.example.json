@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "0.1",
+  "schemaVersion": "0.2",
   "format": {
     "width": 1920,
     "height": 1080,
@@ -21,6 +21,11 @@
       "headline": { "fontSize": 52, "color": "text", "weight": "BOLD" },
       "body": { "fontSize": 31, "color": "text", "weight": "NORMAL" },
       "caption": { "fontSize": 22, "color": "muted", "weight": "MEDIUM" }
+    },
+    "motion": {
+      "durations": { "fast": 0.4, "base": 0.8, "slow": 1.2 },
+      "distance": 0.6,
+      "defaultEase": "smooth"
     }
   },
   "beats": [
@@ -29,6 +34,7 @@
       "intent": "Introduce the central idea with one strong visual hierarchy",
       "focus": "message",
       "duration": 9,
+      "transition": { "style": "push", "duration": "slow", "direction": "left", "distance": 0.7 },
       "narration": "A strong video begins with an explicit hierarchy, so the viewer immediately knows where to look and why the relationship matters.",
       "nodes": [
         {
@@ -46,8 +52,18 @@
           "type": "group",
           "children": ["headline", "message"],
           "layout": "column",
-          "gap": "md",
+          "gap": 0.9,
           "align": "center"
+        },
+        {
+          "id": "relationship",
+          "type": "connector",
+          "from": "headline",
+          "to": "message",
+          "kind": "arrow",
+          "color": "accent",
+          "strokeWidth": 3,
+          "buff": "sm"
         }
       ],
       "constraints": [
@@ -55,12 +71,13 @@
         { "type": "inside", "target": "content", "container": "panel", "padding": "lg" }
       ],
       "cues": [
-        { "start": 0, "duration": 1, "action": "fadeIn", "targets": ["panel"] },
-        { "start": 1, "duration": 1, "action": "write", "targets": ["content"] },
-        { "start": 2.5, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 4, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 5.5, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 7, "duration": 1, "action": "indicate", "targets": ["message"] }
+        { "start": 0, "duration": "base", "action": "slideIn", "targets": ["panel"], "direction": "down" },
+        { "start": 0.8, "duration": "slow", "action": "write", "targets": ["content"] },
+        { "start": 2, "duration": "fast", "action": "draw", "targets": ["relationship"] },
+        { "start": 2.8, "duration": "base", "action": "circumscribe", "targets": ["message"], "color": "accent" },
+        { "start": 4, "duration": "fast", "action": "flash", "targets": ["message"] },
+        { "start": 4.8, "duration": "slow", "action": "wiggle", "targets": ["message"] },
+        { "start": 6.6, "duration": "base", "action": "indicate", "targets": ["message"] }
       ]
     },
     {
@@ -68,6 +85,7 @@
       "intent": "Show that relationships are constraints rather than guessed coordinates",
       "focus": "message",
       "duration": 9,
+      "transition": { "style": "morph", "duration": "slow" },
       "narration": "Relational constraints replace guessed coordinates, letting the compiler prove containment, spacing, and safe margins before expensive rendering ever begins.",
       "nodes": [
         {
@@ -84,8 +102,18 @@
           "type": "group",
           "children": ["headline", "message"],
           "layout": "column",
-          "gap": "md",
+          "gap": 0.9,
           "align": "center"
+        },
+        {
+          "id": "relationship",
+          "type": "connector",
+          "from": "headline",
+          "to": "message",
+          "kind": "arrow",
+          "color": "accent",
+          "strokeWidth": 3,
+          "buff": "sm"
         }
       ],
       "constraints": [
@@ -93,19 +121,19 @@
         { "type": "inside", "target": "content", "container": "panel", "padding": "lg" }
       ],
       "cues": [
-        { "start": 0, "duration": 1, "action": "fadeIn", "targets": ["panel"] },
-        { "start": 1, "duration": 1, "action": "write", "targets": ["content"] },
-        { "start": 2.5, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 4, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 5.5, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 7, "duration": 1, "action": "indicate", "targets": ["message"] }
+        { "start": 0, "duration": "base", "action": "circumscribe", "targets": ["panel"] },
+        { "start": 1.2, "duration": "slow", "action": "wiggle", "targets": ["headline", "message"], "stagger": 0.18 },
+        { "start": 2.8, "duration": "fast", "action": "flash", "targets": ["message"] },
+        { "start": 3.6, "duration": "base", "action": "indicate", "targets": ["relationship"] },
+        { "start": 4.8, "duration": "base", "action": "circumscribe", "targets": ["message"] },
+        { "start": 6, "duration": "slow", "action": "wiggle", "targets": ["message"] }
       ]
     },
     {
       "id": "direct-attention",
       "intent": "Connect reliable geometry to deliberate motion and pacing",
       "focus": "message",
-      "duration": 9,
+      "duration": 8.4,
       "narration": "Once geometry is reliable, motion can direct attention instead of hiding layout mistakes, producing videos that feel deliberate rather than merely decorated.",
       "nodes": [
         {
@@ -122,8 +150,18 @@
           "type": "group",
           "children": ["headline", "message"],
           "layout": "column",
-          "gap": "md",
+          "gap": 0.9,
           "align": "center"
+        },
+        {
+          "id": "relationship",
+          "type": "connector",
+          "from": "headline",
+          "to": "message",
+          "kind": "arrow",
+          "color": "accent",
+          "strokeWidth": 3,
+          "buff": "sm"
         }
       ],
       "constraints": [
@@ -131,12 +169,13 @@
         { "type": "inside", "target": "content", "container": "panel", "padding": "lg" }
       ],
       "cues": [
-        { "start": 0, "duration": 1, "action": "fadeIn", "targets": ["panel"] },
-        { "start": 1, "duration": 1, "action": "write", "targets": ["content"] },
-        { "start": 2.5, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 4, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 5.5, "duration": 1, "action": "indicate", "targets": ["message"] },
-        { "start": 7, "duration": 1, "action": "indicate", "targets": ["message"] }
+        { "start": 0, "duration": "base", "action": "circumscribe", "targets": ["panel"] },
+        { "start": 1.2, "duration": "slow", "action": "wiggle", "targets": ["message"] },
+        { "start": 2.8, "duration": "fast", "action": "flash", "targets": ["message"] },
+        { "start": 3.6, "duration": "base", "action": "indicate", "targets": ["relationship"] },
+        { "start": 4.8, "duration": "base", "action": "circumscribe", "targets": ["message"] },
+        { "start": 6, "duration": "slow", "action": "wiggle", "targets": ["message"] },
+        { "start": 7.6, "duration": "fast", "action": "indicate", "targets": ["message"] }
       ]
     }
   ]

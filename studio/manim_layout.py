@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from manim import Mobject, VGroup, config
+import numpy as np
+
+from manim import Arrow, Line, Mobject, VGroup, config
 
 
 def fit_inside(mobject: Mobject, container: Mobject, padding: float = 0.30) -> Mobject:
@@ -71,3 +73,32 @@ def assert_scene_safe(*mobjects: Mobject, margin: float = 0.32) -> None:
     if violations:
         joined = ", ".join(violations)
         raise ValueError(f"Frame overflow: {joined} exceed the scene safe area.")
+
+
+def connect_mobjects(
+    source: Mobject,
+    target: Mobject,
+    *,
+    kind: str = "arrow",
+    buff: float = 0.12,
+    color: str = "#888888",
+    stroke_width: float = 4.0,
+) -> Mobject:
+    """Connect actual object boundaries instead of guessing endpoint coordinates."""
+    delta = target.get_center() - source.get_center()
+    length = float(np.linalg.norm(delta))
+    if length < 1e-6:
+        raise ValueError("Connector endpoints have the same center; position them separately first.")
+    unit = delta / length
+    start = source.get_boundary_point(unit)
+    end = target.get_boundary_point(-unit)
+    connector_type = Arrow if kind == "arrow" else Line
+    connector = connector_type(
+        start,
+        end,
+        buff=buff,
+        color=color,
+        stroke_width=stroke_width,
+    )
+    connector.set_z_index(-1)
+    return connector
