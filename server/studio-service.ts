@@ -7,6 +7,9 @@ import { promisify } from "node:util";
 import { CodexBridge } from "./codex-bridge.js";
 import { ensureProjectBundle, readProjectBundle, snapshotProjectBundle, writeProjectBundle } from "./project-bundle.js";
 import { validateVideoIR, type VideoProjectIR } from "../shared/video-ir.js";
+import { routeProjectShots } from "../shared/renderers.js";
+import { rendererCapabilities } from "./renderers/registry.js";
+import { renderRemotionProject } from "./renderers/remotion-renderer.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -306,6 +309,59 @@ export class StudioService extends EventEmitter {
     project.title = timeline.title;
     this.updateProject(project);
     return timeline;
+  }
+
+  getRenderers() {
+    return rendererCapabilities(this.root);
+  }
+
+  routeTimeline(projectId: string) {
+    const routed = routeProjectShots(this.getTimeline(projectId));
+    return this.updateTimeline(projectId, routed);
+  }
+
+  async renderTimeline(projectId: string) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    if (project.status === "running") throw new Error("The project is already rendering.");
+    const projectDir = path.join(this.projectRoot, projectId);
+    const timeline = this.getTimeline(projectId);
+    project.status = "running";
+    project.stage = "rendering";
+    const action: AgentAction = { id: randomUUID(), label: "Rendering editable timeline", status: "running", createdAt: now() };
+    project.actions.push(action);
+    this.updateProject(project);
+    try {
+      await renderRemotionProject(this.root, projectDir, timeline, path.join(projectDir, "output.mp4"));
+      await execFileAsync("ffmpeg", ["-y", "-ss", "0", "-i", path.join(projectDir, "output.mp4"), "-frames:v", "1", path.join(projectDir, "poster.png")]);
+      const metadata = {
+        quality: "timeline",
+        duration: timeline.format.duration,
+        width: timeline.format.width,
+        height: timeline.format.height,
+        fps: timeline.format.fps,
+        renderer: "remotion",
+        renderedAt: now(),
+      };
+      fs.writeFileSync(path.join(projectDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
+      action.status = "done";
+      project.status = "complete";
+      project.stage = "complete";
+      const version = this.archiveVersion(project);
+      if (version) {
+        project.videoUrl = version.videoUrl;
+        project.posterUrl = version.posterUrl;
+      }
+      this.updateProject(project);
+      return version;
+    } catch (error) {
+      action.status = "failed";
+      project.status = "error";
+      project.stage = "ready";
+      project.error = error instanceof Error ? error.message : "Timeline render failed.";
+      this.updateProject(project);
+      throw error;
+    }
   }
 
   async sendMessage(projectId: string, text: string) {

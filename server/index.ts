@@ -90,6 +90,24 @@ app.put("/api/projects/:id/timeline", (request, response) => {
   }
 });
 
+app.get("/api/renderers", (_request, response) => response.json(studio.getRenderers()));
+
+app.post("/api/projects/:id/timeline/route", (request, response) => {
+  try {
+    response.json(studio.routeTimeline(request.params.id));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Could not route shots." });
+  }
+});
+
+app.post("/api/projects/:id/render", async (request, response) => {
+  try {
+    response.status(201).json(await studio.renderTimeline(request.params.id));
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : "Could not render timeline." });
+  }
+});
+
 app.use("/media", express.static(path.join(root, "studio", "projects"), {
   fallthrough: false,
   immutable: false,

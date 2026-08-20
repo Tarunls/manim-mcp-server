@@ -9,15 +9,20 @@
     "start": "NODE_ENV=production TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test server/*.test.ts",
+    "smoke:remotion": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_remotion.ts",
     "setup:manim": "bash scripts/setup_manim.sh"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.2.7",
     "@phosphor-icons/react": "^2.1.10",
+    "@remotion/bundler": "^4.0.513",
+    "@remotion/player": "^4.0.513",
+    "@remotion/renderer": "^4.0.513",
     "@speechify/api": "^4.0.1",
     "express": "^5.1.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "remotion": "^4.0.513"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
