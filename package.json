@@ -13,6 +13,8 @@
     "validate:project": "node --import tsx scripts/validate_project.ts",
     "render:project": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/render_project.ts",
     "smoke:incremental": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_incremental.ts",
+    "check:project": "node --import tsx scripts/check_project.ts",
+    "smoke:quality": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_quality.ts",
     "setup:manim": "bash scripts/setup_manim.sh"
   },
   "dependencies": {

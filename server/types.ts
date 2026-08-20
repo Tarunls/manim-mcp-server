@@ -1,5 +1,6 @@
 import type { StudioJob } from "../shared/jobs.js";
 import type { VideoProjectIR } from "../shared/video-ir.js";
+import type { QualityReport } from "../shared/quality.js";
 
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
@@ -51,6 +52,7 @@ export interface ProjectVersion {
   render?: RenderInfo;
   projectUrl?: string;
   proxyUrl?: string;
+  quality?: QualityReport;
 }
 
 export interface StudioProject {
@@ -71,6 +73,7 @@ export interface StudioProject {
   messages: ChatMessage[];
   actions: AgentAction[];
   timeline?: VideoProjectIR;
+  quality?: QualityReport;
 }
 
 export type StudioEvent =

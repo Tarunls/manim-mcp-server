@@ -15,6 +15,8 @@ import type { AssetCandidate } from "../shared/assets.js";
 import { productionRequest } from "./planning.js";
 import { JobStore } from "./jobs/job-store.js";
 import { RenderCache, createProxy, renderIncrementally } from "./renderers/incremental-renderer.js";
+import { createQualityReport } from "./quality/project-quality.js";
+import type { QualityReport } from "../shared/quality.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -81,7 +83,7 @@ export class StudioService extends EventEmitter {
     this.jobs.on("job", (job) => this.emitEvent({ type: "job", job }));
     fs.mkdirSync(this.projectRoot, { recursive: true });
     this.loadProjects();
-    this.bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
+    this.bridge.on("notification", (message) => void this.onCodexNotification(message as { method: string; params: any }));
     this.bridge.on("ready", () => {
       this.runtimeState.codex = true;
       this.emitEvent({ type: "runtime", runtime: this.runtimeState });
@@ -190,7 +192,7 @@ export class StudioService extends EventEmitter {
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["project.json", "scene.py", "output.mp4", "proxy.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration-timing.json", "narration.m4a"];
+    const assets = ["project.json", "scene.py", "output.mp4", "proxy.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration-timing.json", "narration.m4a", "quality-report.json", "provenance.json"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
@@ -201,6 +203,12 @@ export class StudioService extends EventEmitter {
       render = JSON.parse(fs.readFileSync(path.join(versionDir, "metadata.json"), "utf8")) as RenderInfo;
     } catch {
       render = undefined;
+    }
+    let quality: QualityReport | undefined;
+    try {
+      quality = JSON.parse(fs.readFileSync(path.join(versionDir, "quality-report.json"), "utf8")) as QualityReport;
+    } catch {
+      quality = undefined;
     }
     const createdAt = now();
     const latestPrompt = [...project.messages].reverse().find((message) => message.role === "user")?.text || project.prompt;
@@ -217,6 +225,7 @@ export class StudioService extends EventEmitter {
         ? `/media/${project.id}/versions/${id}/proxy.mp4`
         : undefined,
       render,
+      quality,
     };
     project.versions.push(version);
     version.projectUrl = `/media/${project.id}/versions/${id}/project.json`;
@@ -337,6 +346,16 @@ export class StudioService extends EventEmitter {
     return this.updateTimeline(projectId, routed);
   }
 
+  async runQuality(projectId: string) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    const projectDir = path.join(this.projectRoot, projectId);
+    const report = await createQualityReport(projectDir, this.getTimeline(projectId));
+    project.quality = report;
+    this.updateProject(project);
+    return report;
+  }
+
   renderTimeline(projectId: string) {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
@@ -391,6 +410,13 @@ export class StudioService extends EventEmitter {
         cache: { hits: render.hits, misses: render.misses },
       };
       fs.writeFileSync(path.join(projectDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
+      this.jobs.update(jobId, { progress: 0.98, stage: "Checking quality" });
+      const quality = await createQualityReport(projectDir, timeline);
+      project.quality = quality;
+      if (!quality.passed) {
+        const failures = quality.checks.filter((item) => item.severity === "error").slice(0, 3).map((item) => item.message).join(" ");
+        throw new Error(`Quality gate failed. ${failures}`);
+      }
       action.status = "done";
       project.status = "complete";
       project.stage = "complete";
@@ -476,7 +502,7 @@ export class StudioService extends EventEmitter {
     this.updateProject(project);
   }
 
-  private onCodexNotification(message: { method: string; params: any }) {
+  private async onCodexNotification(message: { method: string; params: any }) {
     if (message.method === "account/updated" || message.method === "account/login/completed") {
       void this.refreshAuth();
       return;
@@ -554,7 +580,19 @@ export class StudioService extends EventEmitter {
       const output = path.join(this.projectRoot, project.id, "output.mp4");
       const poster = path.join(this.projectRoot, project.id, "poster.png");
       const narrationError = this.narrationValidationError(path.join(this.projectRoot, project.id));
+      let qualityError: string | undefined;
       if (message.params.turn.status === "completed" && fs.existsSync(output) && !narrationError) {
+        try {
+          const timeline = ensureProjectBundle(path.join(this.projectRoot, project.id), project.id, project.title, project.prompt);
+          project.quality = await createQualityReport(path.join(this.projectRoot, project.id), timeline);
+          if (!project.quality.passed) {
+            qualityError = project.quality.checks.filter((item) => item.severity === "error").slice(0, 3).map((item) => item.message).join(" ");
+          }
+        } catch (error) {
+          qualityError = error instanceof Error ? error.message : "Quality inspection failed.";
+        }
+      }
+      if (message.params.turn.status === "completed" && fs.existsSync(output) && !narrationError && !qualityError) {
         const version = this.archiveVersion(project);
         project.status = "complete";
         project.stage = "complete";
@@ -569,7 +607,7 @@ export class StudioService extends EventEmitter {
       } else {
         project.status = "error";
         project.stage = "ready";
-        project.error = narrationError || message.params.turn.error?.message || "The agent finished without a playable render.";
+        project.error = narrationError || qualityError || message.params.turn.error?.message || "The agent finished without a playable render.";
       }
       project.turnId = undefined;
       this.updateProject(project);

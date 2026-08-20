@@ -109,6 +109,22 @@ app.post("/api/projects/:id/render", async (request, response) => {
   }
 });
 
+app.get("/api/projects/:id/quality", async (request, response) => {
+  try {
+    response.json(await studio.runQuality(request.params.id));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Quality inspection failed." });
+  }
+});
+
+app.post("/api/projects/:id/quality", async (request, response) => {
+  try {
+    response.json(await studio.runQuality(request.params.id));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Quality inspection failed." });
+  }
+});
+
 app.get("/api/jobs", (request, response) => {
   response.json(studio.jobs.list(typeof request.query.projectId === "string" ? request.query.projectId : undefined));
 });
