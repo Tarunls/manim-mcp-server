@@ -17,6 +17,7 @@ import { JobStore } from "./jobs/job-store.js";
 import { RenderCache, createProxy, renderIncrementally } from "./renderers/incremental-renderer.js";
 import { createQualityReport } from "./quality/project-quality.js";
 import type { QualityReport } from "../shared/quality.js";
+import { GeneratedVideoRegistry } from "./generation/video-providers.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -29,6 +30,8 @@ Requirements:
 - Keep the source of truth in project.json. It contains the brief, storyboard, shots, tracks, clips, assets, design tokens, narration, and renderer routing.
 - Plan before authoring. Every storyboard beat must state its purpose, narration, visual, duration, asset queries, and renderer. Run the project validator after planning and after timing changes.
 - Route typography, footage, UI, captions, shapes, charts, and compositing to Remotion. Route only equations, graphs, and technical vector explanations to Manim. Use generated footage and Blender only when their configured capability is available.
+- For generated footage, put generationPrompt plus an optional provider and model in the shot metadata. The render worker archives the result locally and resumes provider jobs from .generations.
+- For 3D, put a constrained blenderScene object in shot metadata. Use primitives, transforms, materials, lights, camera settings, and keyframes; never author or execute arbitrary Blender Python.
 - Search online assets with: node --import tsx ../../../scripts/search_assets.ts "QUERY" [KIND] [PROVIDER]. Import only storyboard-selected results with the provided import script. Never use a raw web URL without license and provenance metadata in project.json.
 - Write narration.json before animation. Run: node ../../../scripts/generate_narration.mjs . --prepare. Read narration-timing.json and make the shot timing fit the actual voice instead of an estimated word count.
 - For a timeline render, run: node --import tsx ../../../scripts/render_project.ts .
@@ -65,6 +68,7 @@ export class StudioService extends EventEmitter {
   readonly projectRoot: string;
   readonly bridge = new CodexBridge();
   readonly assets = new AssetService();
+  readonly generatedVideos = new GeneratedVideoRegistry();
   readonly jobs: JobStore;
   readonly renderCache: RenderCache;
   private projects = new Map<string, StudioProject>();
@@ -365,6 +369,11 @@ export class StudioService extends EventEmitter {
 
   getRenderers() {
     return rendererCapabilities(this.root);
+  }
+
+  getGenerationProviders() {
+    const available = new Set(this.generatedVideos.available());
+    return this.generatedVideos.providers.map((provider) => ({ id: provider.id, available: available.has(provider.id) }));
   }
 
   routeTimeline(projectId: string) {

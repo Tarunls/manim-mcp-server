@@ -92,6 +92,7 @@ export interface VideoShot {
   status: "planned" | "ready" | "rendering" | "complete" | "error";
   cacheKey?: string;
   thumbnailUrl?: string;
+  metadata?: Record<string, unknown>;
   tracks: VideoTrack[];
 }
 

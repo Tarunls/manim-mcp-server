@@ -17,7 +17,7 @@ export function rendererCapabilities(root: string): RendererCapability[] {
     remotion: fs.existsSync(path.join(root, "node_modules", "@remotion", "renderer")),
     manim: fs.existsSync(path.join(root, ".venv", "bin", "manim")),
     blender: executable("blender"),
-    generated: Boolean(process.env.OPENAI_API_KEY || process.env.RUNWAY_API_KEY || process.env.GOOGLE_API_KEY),
+    generated: Boolean(process.env.OPENAI_API_KEY || process.env.RUNWAYML_API_SECRET || process.env.RUNWAY_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
     ffmpeg: executable("ffmpeg", ["-version"]),
   };
   return RENDERER_CATALOG.map((renderer) => ({

@@ -5,6 +5,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { VideoProjectIR, VideoShot } from "../../shared/video-ir.js";
 import { renderRemotionProject } from "./remotion-renderer.js";
+import { renderBlenderShot } from "./blender-renderer.js";
+import { renderGeneratedShot } from "../generation/generated-renderer.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -60,7 +62,10 @@ export async function renderIncrementally(
       partial.format.duration = shot.duration;
       partial.shots = [{ ...structuredClone(shot), start: 0 }];
       partial.narration = [];
-      await renderRemotionProject(root, projectDir, partial, cache.prepare(key));
+      const target = cache.prepare(key);
+      if (shot.renderer === "blender") await renderBlenderShot(root, projectDir, partial, partial.shots[0], target);
+      else if (shot.renderer === "generated") await renderGeneratedShot(projectDir, partial, partial.shots[0], target, undefined, (providerProgress, detail) => onProgress?.((index + providerProgress / 100) / (project.shots.length + 1), `Generating ${shot.name}`, { ...detail, shotId: shot.id, shotKeys }));
+      else await renderRemotionProject(root, projectDir, partial, target);
     }
     files.push(cached);
     onProgress?.((index + 1) / (project.shots.length + 1), `Rendered ${index + 1} of ${project.shots.length} shots`, { completedShotIds: project.shots.slice(0, index + 1).map((item) => item.id), shotKeys });

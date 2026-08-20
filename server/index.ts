@@ -100,6 +100,7 @@ app.post("/api/projects/:id/versions/:versionId/branch", (request, response) => 
 });
 
 app.get("/api/renderers", (_request, response) => response.json(studio.getRenderers()));
+app.get("/api/generation/providers", (_request, response) => response.json(studio.getGenerationProviders()));
 
 app.post("/api/projects/:id/timeline/route", (request, response) => {
   try {
