@@ -1,7 +1,3 @@
-import type { StudioJob } from "../shared/jobs.js";
-import type { VideoProjectIR } from "../shared/video-ir.js";
-import type { QualityReport } from "../shared/quality.js";
-
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
 
@@ -50,9 +46,6 @@ export interface ProjectVersion {
   videoUrl: string;
   posterUrl?: string;
   render?: RenderInfo;
-  projectUrl?: string;
-  proxyUrl?: string;
-  quality?: QualityReport;
 }
 
 export interface StudioProject {
@@ -67,22 +60,18 @@ export interface StudioProject {
   turnId?: string;
   videoUrl?: string;
   posterUrl?: string;
-  proxyUrl?: string;
   versions: ProjectVersion[];
   error?: string;
   messages: ChatMessage[];
   actions: AgentAction[];
-  timeline?: VideoProjectIR;
-  quality?: QualityReport;
 }
 
 export type StudioEvent =
-  | { type: "snapshot"; protocol: number; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState; jobs: StudioJob[] }
+  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState }
   | { type: "project"; project: StudioProject }
   | { type: "assistant_delta"; projectId: string; messageId: string; delta: string }
   | { type: "auth"; auth: AuthState }
-  | { type: "runtime"; runtime: RuntimeState }
-  | { type: "job"; job: StudioJob };
+  | { type: "runtime"; runtime: RuntimeState };
 
 export interface AuthState {
   connected: boolean;

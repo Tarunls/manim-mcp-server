@@ -1,8 +1,0 @@
-{
-  "editorial-title": { "renderer": "remotion", "width": 1920, "height": 1080, "duration": 6, "minimumClips": 2 },
-  "math-diagram": { "renderer": "manim", "width": 1920, "height": 1080, "duration": 8, "minimumClips": 1 },
-  "vertical-social": { "renderer": "remotion", "width": 1080, "height": 1920, "duration": 7, "minimumClips": 2 },
-  "narrated-explainer": { "renderer": "remotion", "width": 1920, "height": 1080, "duration": 8, "minimumClips": 1 },
-  "generated-footage": { "renderer": "generated", "width": 1920, "height": 1080, "duration": 8, "minimumClips": 0 },
-  "product-3d": { "renderer": "blender", "width": 1920, "height": 1080, "duration": 6, "minimumClips": 0 }
-}

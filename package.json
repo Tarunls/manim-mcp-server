@@ -8,30 +8,15 @@
     "build": "vite build && tsc --noEmit",
     "start": "NODE_ENV=production TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
     "check": "tsc --noEmit",
-    "test": "node --import tsx --test server/*.test.ts",
-    "smoke:remotion": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_remotion.ts",
-    "validate:project": "node --import tsx scripts/validate_project.ts",
-    "render:project": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/render_project.ts",
-    "smoke:incremental": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_incremental.ts",
-    "check:project": "node --import tsx scripts/check_project.ts",
-    "smoke:quality": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_quality.ts",
-    "regression": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/regression.ts",
-    "regression:render": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/regression.ts --render",
-    "verify": "npm run check && npm test && npm run regression && npm run build",
-    "verify:media": "npm run smoke:remotion && npm run smoke:incremental && npm run smoke:quality",
     "setup:manim": "bash scripts/setup_manim.sh"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.2.7",
     "@phosphor-icons/react": "^2.1.10",
-    "@remotion/bundler": "^4.0.513",
-    "@remotion/player": "^4.0.513",
-    "@remotion/renderer": "^4.0.513",
     "@speechify/api": "^4.0.1",
     "express": "^5.1.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "remotion": "^4.0.513"
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

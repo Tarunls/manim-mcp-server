@@ -26,14 +26,13 @@ function run(command, args, options = {}) {
 }
 
 async function main() {
-  if (process.argv.length < 3 || process.argv.length > 4) fail("Usage: generate_narration.mjs PROJECT_DIR [--prepare]");
+  if (process.argv.length !== 3) fail("Usage: generate_narration.mjs PROJECT_DIR");
 
   const projectDir = path.resolve(process.argv[2]);
-  const prepareOnly = process.argv[3] === "--prepare";
   const video = path.join(projectDir, "output.mp4");
   const specPath = path.join(projectDir, "narration.json");
-  if (!fs.existsSync(specPath) || (!prepareOnly && !fs.existsSync(video))) {
-    fail(prepareOnly ? "narration.json is required." : "output.mp4 and narration.json are required.");
+  if (!fs.existsSync(video) || !fs.existsSync(specPath)) {
+    fail("output.mp4 and narration.json are required.");
   }
 
   const apiKey = process.env.SPEECHIFY_API_KEY?.trim();
@@ -59,6 +58,12 @@ async function main() {
     }
     return { start, text };
   }).sort((a, b) => a.start - b.start);
+
+  const duration = Number(run("ffprobe", [
+    "-v", "error", "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1", video,
+  ]).trim());
+  if (!Number.isFinite(duration) || duration <= 0) fail("Could not inspect video duration.");
 
   const audioDir = path.join(projectDir, ".narration");
   fs.mkdirSync(audioDir, { recursive: true });
@@ -110,54 +115,6 @@ async function main() {
     }
     audioDurations.push(segmentDuration);
   }
-
-  const timedSegments = normalized.map((segment, index) => {
-    const words = segment.text.split(/\s+/).filter(Boolean);
-    const weights = words.map((word) => Math.max(1, word.replace(/[^a-z0-9]/gi, "").length));
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-    let cursor = segment.start;
-    const wordTimings = words.map((word, wordIndex) => {
-      const wordDuration = audioDurations[index] * (weights[wordIndex] / totalWeight);
-      const timing = { text: word, start: Number(cursor.toFixed(3)), end: Number((cursor + wordDuration).toFixed(3)) };
-      cursor += wordDuration;
-      return timing;
-    });
-    return {
-      id: `narration-${index + 1}`,
-      start: segment.start,
-      end: Number((segment.start + audioDurations[index]).toFixed(3)),
-      duration: Number(audioDurations[index].toFixed(3)),
-      text: segment.text,
-      words: wordTimings,
-    };
-  });
-  const recommendedDuration = Number((Math.max(...timedSegments.map((segment) => segment.end)) + 0.8).toFixed(3));
-  const timing = { provider: "speechify", model, voice, recommendedDuration, segments: timedSegments };
-  fs.writeFileSync(path.join(projectDir, "narration-timing.json"), `${JSON.stringify(timing, null, 2)}\n`);
-
-  const projectPath = path.join(projectDir, "project.json");
-  if (fs.existsSync(projectPath)) {
-    try {
-      const project = JSON.parse(fs.readFileSync(projectPath, "utf8"));
-      project.narration = timedSegments.map(({ id, start, end, text, words }) => ({ id, start, end, text, voice, words }));
-      project.format.duration = Math.max(Number(project.format.duration || 0), recommendedDuration);
-      project.updatedAt = new Date().toISOString();
-      fs.writeFileSync(projectPath, `${JSON.stringify(project, null, 2)}\n`);
-    } catch (error) {
-      fail(`Could not update project.json with narration timing: ${error instanceof Error ? error.message : "invalid project"}`);
-    }
-  }
-
-  if (prepareOnly) {
-    console.log(JSON.stringify({ status: "prepared", enabled: true, provider: "speechify", model, voice, recommendedDuration, segments: timedSegments.length }));
-    return;
-  }
-
-  const duration = Number(run("ffprobe", [
-    "-v", "error", "-show_entries", "format=duration",
-    "-of", "default=noprint_wrappers=1:nokey=1", video,
-  ]).trim());
-  if (!Number.isFinite(duration) || duration <= 0) fail("Could not inspect video duration.");
 
   normalized.forEach((segment, index) => {
     const slotEnd = index + 1 < normalized.length ? normalized[index + 1].start : duration;

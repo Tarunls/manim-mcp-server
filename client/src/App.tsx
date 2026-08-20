@@ -26,12 +26,21 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AuthState, ProjectVersion, RuntimeState, StudioEvent, StudioProject } from "./types";
-import { StudioWorkspace } from "./StudioWorkspace";
-import { apiRequest } from "./api";
-import { STUDIO_PROTOCOL_VERSION } from "../../shared/protocol";
 
 const EMPTY_AUTH: AuthState = { connected: false };
 const EMPTY_RUNTIME: RuntimeState = { codex: false, manim: false, ffmpeg: false };
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || "Something went wrong.");
+  }
+  return response.status === 204 ? (undefined as T) : response.json();
+}
 
 function mergeProject(projects: StudioProject[], project: StudioProject) {
   const next = projects.filter((item) => item.id !== project.id);
@@ -150,7 +159,6 @@ function ChatPanel({
   project,
   auth,
   runtime,
-  online,
   onSend,
   onCancel,
   onConnect,
@@ -158,7 +166,6 @@ function ChatPanel({
   project?: StudioProject;
   auth: AuthState;
   runtime: RuntimeState;
-  online: boolean;
   onSend: (text: string) => Promise<void>;
   onCancel: () => Promise<void>;
   onConnect: () => void;
@@ -230,9 +237,6 @@ function ChatPanel({
       </div>
 
       <div className="composer-wrap">
-        {!online && (
-          <div className="runtime-callout"><Warning size={15} /> Server offline · retrying</div>
-        )}
         {!auth.connected && (
           <button className="auth-callout" onClick={onConnect}><Sparkle size={15} weight="fill" /> Connect Codex to generate</button>
         )}
@@ -258,7 +262,7 @@ function ChatPanel({
           {running ? (
             <button className="send-button stop-button" onClick={() => void onCancel()} aria-label="Stop generation"><Stop size={15} weight="fill" /></button>
           ) : (
-            <button className="send-button" onClick={() => void submit()} disabled={!text.trim() || !auth.connected || !runtime.manim || !online} aria-label="Send prompt"><ArrowUpIcon /></button>
+            <button className="send-button" onClick={() => void submit()} disabled={!text.trim() || !auth.connected || !runtime.manim} aria-label="Send prompt"><ArrowUpIcon /></button>
           )}
         </div>
         {error && <span className="form-error">{error}</span>}
@@ -416,8 +420,6 @@ export function App() {
   const [auth, setAuth] = useState<AuthState>(EMPTY_AUTH);
   const [runtime, setRuntime] = useState<RuntimeState>(EMPTY_RUNTIME);
   const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [online, setOnline] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -429,19 +431,11 @@ export function App() {
   useEffect(() => {
     const applyEvent = (event: StudioEvent) => {
       if (event.type === "snapshot") {
-        if (event.protocol !== STUDIO_PROTOCOL_VERSION) {
-          setLoadError("The browser and local server are different versions. Restart Manim Studio, then refresh.");
-          setLoaded(true);
-          setOnline(false);
-          return;
-        }
         setProjects(event.projects);
         setAuth(event.auth);
         setRuntime(event.runtime);
         setActiveId((current) => current || event.projects[0]?.id);
         setLoaded(true);
-        setLoadError("");
-        setOnline(true);
       } else if (event.type === "project") {
         setProjects((current) => mergeProject(current, event.project));
       } else if (event.type === "assistant_delta") {
@@ -460,25 +454,17 @@ export function App() {
       }
     };
 
-    void apiRequest<StudioEvent>("/api/state")
-      .then((event) => applyEvent(event))
-      .catch((reason) => {
-        setLoadError(reason instanceof Error ? reason.message : "Cannot reach the local server.");
-        setLoaded(true);
-        setOnline(false);
-      });
+    void fetch("/api/state").then((response) => response.json()).then((event: StudioEvent) => applyEvent(event));
     const events = new EventSource("/api/events");
-    events.onopen = () => setOnline(true);
     events.onmessage = (message) => {
       const event = JSON.parse(message.data) as StudioEvent;
       applyEvent(event);
     };
-    events.onerror = () => setOnline(false);
     return () => events.close();
   }, []);
 
   async function createProject() {
-    const project = await apiRequest<StudioProject>("/api/projects", { method: "POST", body: JSON.stringify({}) });
+    const project = await request<StudioProject>("/api/projects", { method: "POST", body: JSON.stringify({}) });
     setProjects((current) => mergeProject(current, project));
     setActiveId(project.id);
     setSidebarOpen(false);
@@ -487,7 +473,7 @@ export function App() {
 
   async function ensureProject() {
     if (activeProject) return activeProject;
-    const project = await apiRequest<StudioProject>("/api/projects", { method: "POST", body: JSON.stringify({}) });
+    const project = await request<StudioProject>("/api/projects", { method: "POST", body: JSON.stringify({}) });
     setProjects((current) => mergeProject(current, project));
     setActiveId(project.id);
     return project;
@@ -495,19 +481,19 @@ export function App() {
 
   async function sendMessage(text: string) {
     const project = await ensureProject();
-    await apiRequest(`/api/projects/${project.id}/messages`, { method: "POST", body: JSON.stringify({ text }) });
+    await request(`/api/projects/${project.id}/messages`, { method: "POST", body: JSON.stringify({ text }) });
     setMobilePane("preview");
   }
 
   async function cancel() {
     if (!activeProject) return;
-    await apiRequest(`/api/projects/${activeProject.id}/cancel`, { method: "POST" });
+    await request(`/api/projects/${activeProject.id}/cancel`, { method: "POST" });
   }
 
   async function connect() {
     const popup = window.open("about:blank", "codex-login", "width=560,height=720");
     try {
-      const result = await apiRequest<{ authUrl: string }>("/api/auth/login", { method: "POST" });
+      const result = await request<{ authUrl: string }>("/api/auth/login", { method: "POST" });
       if (popup) popup.location.href = result.authUrl;
       else window.location.href = result.authUrl;
     } catch (error) {
@@ -517,7 +503,7 @@ export function App() {
   }
 
   async function logout() {
-    await apiRequest("/api/auth/logout", { method: "POST" });
+    await request("/api/auth/logout", { method: "POST" });
   }
 
   if (!loaded) {
@@ -525,18 +511,6 @@ export function App() {
       <main className="app-loading" aria-label="Loading Manim Studio">
         <div className="loading-brand"><span className="brand-mark"><FilmSlate size={18} weight="fill" /></span><strong>Manim Studio</strong></div>
         <div className="loading-line"><span /></div>
-      </main>
-    );
-  }
-
-  if (loadError && !projects.length) {
-    return (
-      <main className="connection-error" aria-label="Manim Studio is offline">
-        <span className="brand-mark"><FilmSlate size={20} weight="fill" /></span>
-        <h1>Local server offline</h1>
-        <p>{loadError}</p>
-        <button onClick={() => window.location.reload()}>Retry</button>
-        <code>npm run dev</code>
       </main>
     );
   }
@@ -579,9 +553,9 @@ export function App() {
               aria-label={previewCollapsed ? "Show video" : "Collapse video"}
               title={previewCollapsed ? "Show video" : "Collapse video"}
             ><MonitorPlay size={18} /><span>Video</span></button>
-            <span className="runtime-status" title={online ? "Local rendering status" : "Reconnecting to the local server"}>
-              <span className={!online ? "runtime-offline" : runtime.codex && runtime.manim && runtime.ffmpeg ? "runtime-good" : "runtime-warn"} />
-              {!online ? "Offline" : runtime.codex && runtime.manim && runtime.ffmpeg ? "Local" : "Setup"}
+            <span className="runtime-status" title="Local rendering status">
+              <span className={runtime.codex && runtime.manim && runtime.ffmpeg ? "runtime-good" : "runtime-warn"} />
+              {runtime.codex && runtime.manim && runtime.ffmpeg ? "Local" : "Setup"}
             </span>
           </div>
         </header>
@@ -591,20 +565,11 @@ export function App() {
             project={activeProject}
             auth={auth}
             runtime={runtime}
-            online={online}
             onSend={sendMessage}
             onCancel={cancel}
             onConnect={() => void connect()}
           />
-          <StudioWorkspace
-            project={activeProject}
-            runtime={runtime}
-            onProject={(project) => setProjects((current) => mergeProject(current, project))}
-            onBranch={(project) => {
-              setProjects((current) => mergeProject(current, project));
-              setActiveId(project.id);
-            }}
-          />
+          <VideoWorkspace project={activeProject} runtime={runtime} />
         </div>
 
         <nav className="mobile-tabs mobile-only" aria-label="Workspace view">

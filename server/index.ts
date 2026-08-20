@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { StudioService } from "./studio-service.js";
 import type { StudioEvent } from "./types.js";
-import { parseProvider } from "./assets/service.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -72,112 +71,6 @@ app.post("/api/projects/:id/cancel", async (request, response) => {
     response.status(204).end();
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : "Could not cancel generation." });
-  }
-});
-
-app.get("/api/projects/:id/timeline", (request, response) => {
-  try {
-    response.json(studio.getTimeline(request.params.id));
-  } catch (error) {
-    response.status(404).json({ error: error instanceof Error ? error.message : "Project not found." });
-  }
-});
-
-app.put("/api/projects/:id/timeline", (request, response) => {
-  try {
-    response.json(studio.updateTimeline(request.params.id, request.body));
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Invalid timeline." });
-  }
-});
-
-app.post("/api/projects/:id/versions/:versionId/branch", (request, response) => {
-  try {
-    response.status(201).json(studio.branchVersion(request.params.id, request.params.versionId));
-  } catch (error) {
-    response.status(404).json({ error: error instanceof Error ? error.message : "Could not branch revision." });
-  }
-});
-
-app.get("/api/renderers", (_request, response) => response.json(studio.getRenderers()));
-app.get("/api/generation/providers", (_request, response) => response.json(studio.getGenerationProviders()));
-
-app.post("/api/projects/:id/timeline/route", (request, response) => {
-  try {
-    response.json(studio.routeTimeline(request.params.id));
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Could not route shots." });
-  }
-});
-
-app.post("/api/projects/:id/render", async (request, response) => {
-  try {
-    response.status(202).json(await studio.renderTimeline(request.params.id));
-  } catch (error) {
-    response.status(500).json({ error: error instanceof Error ? error.message : "Could not render timeline." });
-  }
-});
-
-app.get("/api/projects/:id/quality", async (request, response) => {
-  try {
-    response.json(await studio.runQuality(request.params.id));
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Quality inspection failed." });
-  }
-});
-
-app.post("/api/projects/:id/quality", async (request, response) => {
-  try {
-    response.json(await studio.runQuality(request.params.id));
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Quality inspection failed." });
-  }
-});
-
-app.get("/api/jobs", (request, response) => {
-  response.json(studio.jobs.list(typeof request.query.projectId === "string" ? request.query.projectId : undefined));
-});
-
-app.post("/api/jobs/:id/cancel", (request, response) => {
-  try {
-    response.json(studio.jobs.cancel(request.params.id));
-  } catch (error) {
-    response.status(404).json({ error: error instanceof Error ? error.message : "Job not found." });
-  }
-});
-
-app.get("/api/assets/search", async (request, response) => {
-  const query = typeof request.query.query === "string" ? request.query.query.trim() : "";
-  if (!query) return response.status(400).json({ error: "Asset search requires a query." });
-  try {
-    response.json(await studio.assets.search({
-      query,
-      kind: typeof request.query.kind === "string" ? request.query.kind as any : undefined,
-      provider: parseProvider(request.query.provider),
-      commercialUse: request.query.commercial !== "false",
-      modifications: request.query.modifications !== "false",
-      limit: Number(request.query.limit || 24),
-    }));
-  } catch (error) {
-    response.status(502).json({ error: error instanceof Error ? error.message : "Asset search failed." });
-  }
-});
-
-app.post("/api/projects/:id/assets/import", async (request, response) => {
-  try {
-    response.status(201).json(await studio.importAsset(request.params.id, request.body));
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Asset import failed." });
-  }
-});
-
-app.post("/api/projects/:id/exports", async (request, response) => {
-  const format = String(request.body?.format || "bundle");
-  if (!["bundle", "otio", "credits", "srt"].includes(format)) return response.status(400).json({ error: "Unsupported export format." });
-  try {
-    response.status(201).json(await studio.exportProject(request.params.id, format));
-  } catch (error) {
-    response.status(400).json({ error: error instanceof Error ? error.message : "Export failed." });
   }
 });
 
