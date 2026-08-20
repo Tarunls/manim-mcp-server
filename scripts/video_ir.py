@@ -377,7 +377,7 @@ def validate_video_ir(data: Any) -> VideoIRReport:
             allowed = set(common)
             if node_type == "text":
                 required |= {"text", "role"}
-                allowed |= {"text", "role", "color"}
+                allowed |= {"text", "role", "color", "maxWidth", "minFontSize", "lineSpacing", "align"}
             elif node_type in {"panel", "rectangle"}:
                 required |= {"width", "height"}
                 allowed |= {"width", "height", "style"}
@@ -391,7 +391,7 @@ def validate_video_ir(data: Any) -> VideoIRReport:
                 allowed |= {"sideLength", "style"}
             elif node_type == "group":
                 required |= {"children", "layout", "gap", "align"}
-                allowed |= {"children", "layout", "gap", "align"}
+                allowed |= {"children", "layout", "gap", "align", "columns", "rowGap"}
             elif node_type == "connector":
                 required |= {"from", "to", "kind"}
                 allowed |= {"from", "to", "kind", "color", "strokeWidth", "buff"}
@@ -409,6 +409,27 @@ def validate_video_ir(data: Any) -> VideoIRReport:
                     issues.append(VideoIRIssue(f"{node_path}.text", "must contain 1-500 characters."))
                 if node.get("role") not in text_styles:
                     issues.append(VideoIRIssue(f"{node_path}.role", "must reference a theme.textStyles role."))
+                if any(key in node for key in ("maxWidth", "minFontSize", "lineSpacing", "align")) and schema_version == "0.1":
+                    issues.append(VideoIRIssue(node_path, "wrapped typography requires schemaVersion '0.2'."))
+                if "maxWidth" in node and (
+                    not _is_number(node["maxWidth"]) or not 0 < float(node["maxWidth"]) <= 14
+                ):
+                    issues.append(VideoIRIssue(f"{node_path}.maxWidth", "must be greater than zero and at most 14."))
+                if "minFontSize" in node:
+                    role_style = text_styles.get(node.get("role"), {})
+                    role_size = role_style.get("fontSize") if isinstance(role_style, dict) else None
+                    if (
+                        not _is_number(node["minFontSize"])
+                        or not 10 <= float(node["minFontSize"]) <= 160
+                        or (_is_number(role_size) and float(node["minFontSize"]) > float(role_size))
+                    ):
+                        issues.append(VideoIRIssue(f"{node_path}.minFontSize", "must be from 10 through the role's fontSize."))
+                if "lineSpacing" in node and (
+                    not _is_number(node["lineSpacing"]) or not 0 <= float(node["lineSpacing"]) <= 1
+                ):
+                    issues.append(VideoIRIssue(f"{node_path}.lineSpacing", "must be from 0 to 1."))
+                if "align" in node and node["align"] not in {"left", "center", "right"}:
+                    issues.append(VideoIRIssue(f"{node_path}.align", "must be left, center, or right."))
             elif node_type in {"panel", "rectangle"}:
                 for dimension in ("width", "height"):
                     if not _is_number(node.get(dimension)) or float(node[dimension]) <= 0:
@@ -450,11 +471,23 @@ def validate_video_ir(data: Any) -> VideoIRReport:
                     issues.append(VideoIRIssue(f"{node_path}.children", "must contain unique child ids."))
                     children = children if valid_children else []
                 groups[str(node_id)] = [child for child in children if isinstance(child, str)]
-                if node.get("layout") not in {"row", "column"}:
-                    issues.append(VideoIRIssue(f"{node_path}.layout", "must be row or column."))
+                if node.get("layout") not in {"row", "column", "grid"}:
+                    issues.append(VideoIRIssue(f"{node_path}.layout", "must be row, column, or grid."))
                 if node.get("align") not in {"start", "center", "end"}:
                     issues.append(VideoIRIssue(f"{node_path}.align", "must be start, center, or end."))
                 _token_number(node.get("gap"), spacing, f"{node_path}.gap", issues)
+                if node.get("layout") == "grid":
+                    if schema_version == "0.1":
+                        issues.append(VideoIRIssue(node_path, "grid groups require schemaVersion '0.2'."))
+                    columns = node.get("columns")
+                    if not isinstance(columns, int) or isinstance(columns, bool) or not 2 <= columns <= 6:
+                        issues.append(VideoIRIssue(f"{node_path}.columns", "must be an integer from 2 to 6 for grid groups."))
+                    elif columns > len(children):
+                        issues.append(VideoIRIssue(f"{node_path}.columns", "cannot exceed the number of children."))
+                    if "rowGap" in node:
+                        _token_number(node["rowGap"], spacing, f"{node_path}.rowGap", issues)
+                elif any(key in node for key in ("columns", "rowGap")):
+                    issues.append(VideoIRIssue(node_path, "columns and rowGap are only valid for grid groups."))
             elif node_type == "connector":
                 if schema_version == "0.1":
                     issues.append(VideoIRIssue(node_path, "connector nodes require schemaVersion '0.2'."))
@@ -852,7 +885,7 @@ def compile_video_ir(data: dict[str, Any]) -> CompiledVideo:
         "# GENERATED FROM video.vir.json; DO NOT EDIT.",
         f"# Video IR v{data['schemaVersion']}; canonical SHA-256 {vir_hash}",
         "from manim import *",
-        "from manim_layout import assert_inside, assert_scene_safe, connect_mobjects, fit_inside, stack_in_panel",
+        "from manim_layout import assert_inside, assert_scene_safe, connect_mobjects, fit_inside, stack_in_panel, wrapped_text",
         "",
         "",
         "class GeneratedScene(Scene):",
@@ -881,10 +914,19 @@ def compile_video_ir(data: dict[str, Any]) -> CompiledVideo:
             if node["type"] == "text":
                 style = theme["textStyles"][node["role"]]
                 color = _resolve_color(node.get("color", style["color"]), palette, "text")
-                lines.append(
-                    f"        {variable} = Text({_py(node['text'])}, font={_py(theme['fontFamily'])}, "
-                    f"font_size={float(style['fontSize']):g}, color={_py(color)}, weight={_py(style['weight'])})"
-                )
+                if "maxWidth" in node:
+                    minimum = float(node.get("minFontSize", max(10, float(style["fontSize"]) * 0.7)))
+                    lines.append(
+                        f"        {variable} = wrapped_text({_py(node['text'])}, max_width={float(node['maxWidth']):g}, "
+                        f"font={_py(theme['fontFamily'])}, font_size={float(style['fontSize']):g}, "
+                        f"min_font_size={minimum:g}, color={_py(color)}, weight={_py(style['weight'])}, "
+                        f"line_spacing={float(node.get('lineSpacing', 0.18)):g}, align={_py(node.get('align', 'left'))})"
+                    )
+                else:
+                    lines.append(
+                        f"        {variable} = Text({_py(node['text'])}, font={_py(theme['fontFamily'])}, "
+                        f"font_size={float(style['fontSize']):g}, color={_py(color)}, weight={_py(style['weight'])})"
+                    )
             elif node["type"] == "panel":
                 radius = float(node.get("cornerRadius", 0.18))
                 lines.append(
@@ -916,7 +958,14 @@ def compile_video_ir(data: dict[str, Any]) -> CompiledVideo:
                 else {"start": "LEFT", "center": "ORIGIN", "end": "RIGHT"}
             )
             lines.append(f"        {variable} = VGroup({children})")
-            if node["align"] == "center":
+            if node["layout"] == "grid":
+                row_gap = _resolve_spacing(node.get("rowGap"), spacing, gap)
+                cell_alignment = {"start": "LEFT", "center": "ORIGIN", "end": "RIGHT"}[node["align"]]
+                lines.append(
+                    f"        {variable}.arrange_in_grid(cols={int(node['columns'])}, "
+                    f"buff=({row_gap:g}, {gap:g}), cell_alignment={cell_alignment})"
+                )
+            elif node["align"] == "center":
                 lines.append(f"        {variable}.arrange({arrange_direction}, buff={gap:g})")
             else:
                 lines.append(

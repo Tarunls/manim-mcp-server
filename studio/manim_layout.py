@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from manim import Arrow, Line, Mobject, VGroup, config
+from manim import Arrow, DOWN, LEFT, Line, Mobject, ORIGIN, RIGHT, Text, VGroup, config
 
 
 def fit_inside(mobject: Mobject, container: Mobject, padding: float = 0.30) -> Mobject:
@@ -102,3 +102,51 @@ def connect_mobjects(
     )
     connector.set_z_index(-1)
     return connector
+
+
+def wrapped_text(
+    text: str,
+    *,
+    max_width: float,
+    font: str,
+    font_size: float,
+    min_font_size: float,
+    color: str,
+    weight: str = "NORMAL",
+    line_spacing: float = 0.18,
+    align: str = "left",
+) -> VGroup:
+    """Greedily wrap using actual Pango metrics and refuse unreadably small type."""
+    words = text.split()
+    if not words:
+        raise ValueError("Wrapped text cannot be empty.")
+    size = float(font_size)
+    minimum = float(min_font_size)
+    while size >= minimum:
+        rendered_words = [Text(word, font=font, font_size=size, color=color, weight=weight) for word in words]
+        if all(word.width <= max_width for word in rendered_words):
+            break
+        size -= 1.0
+    else:
+        raise ValueError(
+            f"A word cannot fit within {max_width:.2f} units at the minimum font size {minimum:.1f}."
+        )
+
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        probe = Text(candidate, font=font, font_size=size, color=color, weight=weight)
+        if current and probe.width > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    lines.append(current)
+    rendered = VGroup(
+        *(Text(line, font=font, font_size=size, color=color, weight=weight) for line in lines)
+    )
+    aligned_edge = {"left": LEFT, "center": ORIGIN, "right": RIGHT}[align]
+    if len(rendered) > 1:
+        rendered.arrange(DOWN, buff=line_spacing, aligned_edge=aligned_edge)
+    return rendered

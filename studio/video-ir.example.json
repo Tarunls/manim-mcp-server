@@ -144,7 +144,17 @@
           "style": { "fill": "surface", "stroke": "muted", "fillOpacity": 1 }
         },
         { "id": "headline", "type": "text", "text": "Motion directs attention", "role": "headline" },
-        { "id": "message", "type": "text", "text": "Precision becomes a creative primitive", "role": "body", "color": "accent" },
+        {
+          "id": "message",
+          "type": "text",
+          "text": "Precision becomes a creative primitive",
+          "role": "body",
+          "color": "accent",
+          "maxWidth": 4.8,
+          "minFontSize": 24,
+          "lineSpacing": 0.16,
+          "align": "center"
+        },
         {
           "id": "content",
           "type": "group",

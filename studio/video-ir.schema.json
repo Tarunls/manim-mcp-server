@@ -107,7 +107,11 @@
         "type": { "const": "text" },
         "text": { "type": "string", "minLength": 1, "maxLength": 500 },
         "role": { "type": "string" },
-        "color": { "type": "string" }
+        "color": { "type": "string" },
+        "maxWidth": { "type": "number", "exclusiveMinimum": 0, "maximum": 14 },
+        "minFontSize": { "type": "number", "minimum": 10, "maximum": 160 },
+        "lineSpacing": { "type": "number", "minimum": 0, "maximum": 1 },
+        "align": { "type": "string", "enum": ["left", "center", "right"] }
       }
     },
     "panelNode": {
@@ -170,9 +174,11 @@
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/id" }
         },
-        "layout": { "type": "string", "enum": ["row", "column"] },
+        "layout": { "type": "string", "enum": ["row", "column", "grid"] },
         "gap": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] },
-        "align": { "type": "string", "enum": ["start", "center", "end"] }
+        "align": { "type": "string", "enum": ["start", "center", "end"] },
+        "columns": { "type": "integer", "minimum": 2, "maximum": 6 },
+        "rowGap": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] }
       }
     },
     "connectorNode": {

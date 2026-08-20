@@ -88,6 +88,7 @@ Video IR v0.2 adds:
 - staggered multi-object animation;
 - fade, slide, shrink, uncreate, crossfade, push, and shape-matching morph transitions;
 - continuity-aware visibility validation and a motion-variety lint that prevents repetitive slideshow animation.
+- Pango-measured text wrapping with a declared minimum readable font size, plus deterministic grid groups for comparison and dashboard compositions.
 
 Compile without rendering with `python3 scripts/compile_vir.py studio/projects/PROJECT_ID`. If `video.vir.json` is present, `scripts/render_scene.py` always recompiles generated artifacts before rendering, preventing drift between the declarative source and the final video. Hand-authored Manim remains the escape hatch for unsupported graphics.
 

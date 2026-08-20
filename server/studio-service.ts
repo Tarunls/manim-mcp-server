@@ -25,6 +25,7 @@ Requirements:
 - Use a restrained palette, readable type, consistent spacing, and purposeful motion.
 - Define motion duration tokens on the output frame grid. Use connector nodes instead of guessed arrow endpoints. Use push, crossfade, or morph transitions where an idea continues; these pre-reveal the next beat, whose cues must emphasize rather than enter its nodes again.
 - Every beat focus needs an entrance or emphasis cue. Do not repeat one action more than twice within a v0.2 beat; vary reveal, emphasis, and transition roles without decorative motion noise.
+- Give long text maxWidth and minFontSize so wrapping uses real Pango metrics and never silently shrinks below the readability floor. Use grid groups for comparisons and repeated cards instead of hand-positioning rows.
 - Use only a renderer-installed font family. Font preflight fails instead of allowing Pango to silently substitute different text metrics.
 - Derive the runtime from the narration plan before animating. Three 18-word passages already require about 25 seconds at the required speaking rate and breathing allowance; never stretch an 8-15 second visual plan with long frozen holds. Keep explicit self.wait() time below 35% of the video unless the subject genuinely requires a sustained reading hold.
 - Seed every use of random or numpy.random explicitly. The render contract rejects unseeded randomness.

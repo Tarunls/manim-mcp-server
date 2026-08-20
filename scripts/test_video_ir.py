@@ -266,6 +266,19 @@ class VideoIRTests(unittest.TestCase):
         messages = [issue.message for issue in validate_video_ir(data).issues]
         self.assertIn("must align to the 30 fps frame grid.", messages)
 
+    def test_v02_compiles_wrapped_text_and_grid_groups(self) -> None:
+        data = valid_video_ir_v02()
+        beat = data["beats"][0]
+        beat["nodes"][2].update(
+            {"text": "A longer relationship that wraps using measured glyph widths", "maxWidth": 3.4,
+             "minFontSize": 22, "lineSpacing": 0.16, "align": "center"}
+        )
+        beat["nodes"][3].update({"layout": "grid", "columns": 2, "rowGap": "sm"})
+        compiled = compile_video_ir(data)
+        self.assertIn("b1_message = wrapped_text(", compiled.source)
+        self.assertIn("b1_content.arrange_in_grid(cols=2", compiled.source)
+        self.assertTrue(validate_scene_source(compiled.source).valid)
+
 
 if __name__ == "__main__":
     unittest.main()

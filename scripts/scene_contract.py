@@ -26,6 +26,14 @@ HELPER_SIGNATURES = {
         "max_args": 2,
         "keywords": {"kind", "buff", "color", "stroke_width"},
     },
+    "wrapped_text": {
+        "min_args": 1,
+        "max_args": 1,
+        "keywords": {
+            "max_width", "font", "font_size", "min_font_size", "color",
+            "weight", "line_spacing", "align",
+        },
+    },
     "fit_inside": {"min_args": 2, "max_args": 3, "keywords": {"padding"}},
     "stack_in_panel": {
         "min_args": 1,
@@ -36,7 +44,7 @@ HELPER_SIGNATURES = {
     "assert_scene_safe": {"min_args": 1, "max_args": None, "keywords": {"margin"}},
 }
 
-TEXT_CONSTRUCTORS = {"Text", "MarkupText", "Paragraph"}
+TEXT_CONSTRUCTORS = {"Text", "MarkupText", "Paragraph", "wrapped_text"}
 PANEL_CONSTRUCTORS = {"RoundedRectangle"}
 
 
