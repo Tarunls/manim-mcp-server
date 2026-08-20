@@ -26,6 +26,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AuthState, ProjectVersion, RuntimeState, StudioEvent, StudioProject } from "./types";
+import { StudioWorkspace } from "./StudioWorkspace";
 
 const EMPTY_AUTH: AuthState = { connected: false };
 const EMPTY_RUNTIME: RuntimeState = { codex: false, manim: false, ffmpeg: false };
@@ -569,7 +570,15 @@ export function App() {
             onCancel={cancel}
             onConnect={() => void connect()}
           />
-          <VideoWorkspace project={activeProject} runtime={runtime} />
+          <StudioWorkspace
+            project={activeProject}
+            runtime={runtime}
+            onProject={(project) => setProjects((current) => mergeProject(current, project))}
+            onBranch={(project) => {
+              setProjects((current) => mergeProject(current, project));
+              setActiveId(project.id);
+            }}
+          />
         </div>
 
         <nav className="mobile-tabs mobile-only" aria-label="Workspace view">

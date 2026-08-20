@@ -91,6 +91,14 @@ app.put("/api/projects/:id/timeline", (request, response) => {
   }
 });
 
+app.post("/api/projects/:id/versions/:versionId/branch", (request, response) => {
+  try {
+    response.status(201).json(studio.branchVersion(request.params.id, request.params.versionId));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Could not branch revision." });
+  }
+});
+
 app.get("/api/renderers", (_request, response) => response.json(studio.getRenderers()));
 
 app.post("/api/projects/:id/timeline/route", (request, response) => {

@@ -337,6 +337,32 @@ export class StudioService extends EventEmitter {
     return timeline;
   }
 
+  branchVersion(projectId: string, versionId: string) {
+    const source = this.projects.get(projectId);
+    if (!source) throw new Error("Project not found.");
+    const version = source.versions.find((candidate) => candidate.id === versionId);
+    if (!version) throw new Error("Revision not found.");
+    const sourceDir = path.join(this.projectRoot, projectId);
+    const versionDir = path.join(sourceDir, "versions", versionId);
+    const archived = readProjectBundle(versionDir);
+    const branch = this.createProject();
+    const branchDir = path.join(this.projectRoot, branch.id);
+    const timeline = structuredClone(archived);
+    timeline.id = branch.id;
+    timeline.title = `${source.title} branch`;
+    timeline.createdAt = now();
+    timeline.metadata = { ...timeline.metadata, revision: 0, branchedFrom: { projectId, versionId, version: version.number } };
+    writeProjectBundle(branchDir, timeline);
+    const sourceAssets = path.join(sourceDir, "assets");
+    if (fs.existsSync(sourceAssets)) fs.cpSync(sourceAssets, path.join(branchDir, "assets"), { recursive: true });
+    branch.title = timeline.title;
+    branch.prompt = version.prompt;
+    branch.timeline = timeline;
+    branch.messages = [{ id: randomUUID(), role: "assistant", text: `Branched from ${source.title}, revision ${version.number}.`, createdAt: now() }];
+    this.updateProject(branch);
+    return branch;
+  }
+
   getRenderers() {
     return rendererCapabilities(this.root);
   }
