@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { StudioService } from "./studio-service.js";
 import type { StudioEvent } from "./types.js";
+import { parseProvider } from "./assets/service.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -105,6 +106,31 @@ app.post("/api/projects/:id/render", async (request, response) => {
     response.status(201).json(await studio.renderTimeline(request.params.id));
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : "Could not render timeline." });
+  }
+});
+
+app.get("/api/assets/search", async (request, response) => {
+  const query = typeof request.query.query === "string" ? request.query.query.trim() : "";
+  if (!query) return response.status(400).json({ error: "Asset search requires a query." });
+  try {
+    response.json(await studio.assets.search({
+      query,
+      kind: typeof request.query.kind === "string" ? request.query.kind as any : undefined,
+      provider: parseProvider(request.query.provider),
+      commercialUse: request.query.commercial !== "false",
+      modifications: request.query.modifications !== "false",
+      limit: Number(request.query.limit || 24),
+    }));
+  } catch (error) {
+    response.status(502).json({ error: error instanceof Error ? error.message : "Asset search failed." });
+  }
+});
+
+app.post("/api/projects/:id/assets/import", async (request, response) => {
+  try {
+    response.status(201).json(await studio.importAsset(request.params.id, request.body));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Asset import failed." });
   }
 });
 

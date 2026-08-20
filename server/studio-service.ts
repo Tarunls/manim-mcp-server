@@ -10,6 +10,8 @@ import { validateVideoIR, type VideoProjectIR } from "../shared/video-ir.js";
 import { routeProjectShots } from "../shared/renderers.js";
 import { rendererCapabilities } from "./renderers/registry.js";
 import { renderRemotionProject } from "./renderers/remotion-renderer.js";
+import { AssetService } from "./assets/service.js";
+import type { AssetCandidate } from "../shared/assets.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -58,6 +60,7 @@ export class StudioService extends EventEmitter {
   readonly root: string;
   readonly projectRoot: string;
   readonly bridge = new CodexBridge();
+  readonly assets = new AssetService();
   private projects = new Map<string, StudioProject>();
   private threadToProject = new Map<string, string>();
   private assistantMessageByItem = new Map<string, string>();
@@ -362,6 +365,17 @@ export class StudioService extends EventEmitter {
       this.updateProject(project);
       throw error;
     }
+  }
+
+  async importAsset(projectId: string, candidate: AssetCandidate) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    const projectDir = path.join(this.projectRoot, projectId);
+    const asset = await this.assets.import(projectDir, candidate);
+    const timeline = this.getTimeline(projectId);
+    timeline.assets.push(asset);
+    this.updateTimeline(projectId, timeline);
+    return asset;
   }
 
   async sendMessage(projectId: string, text: string) {
