@@ -8,6 +8,7 @@ import { renderRemotionProject } from "./remotion-renderer.js";
 import { renderBlenderShot } from "./blender-renderer.js";
 import { renderGeneratedShot } from "../generation/generated-renderer.js";
 import { renderManimShot } from "./manim-renderer.js";
+import { normalizeShot } from "./media-normalize.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,7 +16,7 @@ function shotDigest(project: VideoProjectIR, shot: VideoShot) {
   const assetIds = new Set(shot.tracks.flatMap((track) => track.clips.map((clip) => clip.assetId).filter(Boolean)));
   const assets = project.assets.filter((asset) => assetIds.has(asset.id)).map((asset) => ({ id: asset.id, hash: asset.hash, sourceUrl: asset.sourceUrl }));
   const { cacheKey: _cacheKey, status: _status, thumbnailUrl: _thumbnailUrl, ...stableShot } = shot;
-  return createHash("sha256").update(JSON.stringify({ schema: project.schemaVersion, format: project.format, design: project.design, shot: stableShot, assets })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ pipeline: 2, schema: project.schemaVersion, format: project.format, design: project.design, shot: stableShot, assets })).digest("hex");
 }
 
 export class RenderCache {
@@ -67,7 +68,12 @@ export async function renderIncrementally(
       if (shot.renderer === "manim") await renderManimShot(root, projectDir, partial, partial.shots[0], target);
       else if (shot.renderer === "blender") await renderBlenderShot(root, projectDir, partial, partial.shots[0], target);
       else if (shot.renderer === "generated") await renderGeneratedShot(projectDir, partial, partial.shots[0], target, undefined, (providerProgress, detail) => onProgress?.((index + providerProgress / 100) / (project.shots.length + 1), `Generating ${shot.name}`, { ...detail, shotId: shot.id, shotKeys }));
-      else await renderRemotionProject(root, projectDir, partial, target);
+      else {
+        const raw = `${target}.raw.mp4`;
+        await renderRemotionProject(root, projectDir, partial, raw);
+        await normalizeShot(raw, target, partial.format, shot.duration);
+        fs.unlinkSync(raw);
+      }
     }
     files.push(cached);
     onProgress?.((index + 1) / (project.shots.length + 1), `Rendered ${index + 1} of ${project.shots.length} shots`, { completedShotIds: project.shots.slice(0, index + 1).map((item) => item.id), shotKeys });

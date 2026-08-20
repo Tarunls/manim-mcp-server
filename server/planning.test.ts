@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { productionRequest } from "./planning.js";
 
-test("production requests enforce planning and audio-first gates", () => {
+test("production requests stop after authoring and leave privileged work to the host", () => {
   const request = productionRequest("Explain orbital motion", false);
   assert.match(request, /project\.json/);
   assert.match(request, /validate_project/);
-  assert.match(request, /--prepare/);
-  assert.match(request, /actual speech/);
+  assert.match(request, /host worker/);
+  assert.match(request, /Do not render/);
+  assert.doesNotMatch(request, /generate_narration/);
+  assert.doesNotMatch(request, /render_project/);
 });
 
 test("revision requests constrain edits to the smallest project region", () => {

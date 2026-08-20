@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CodexBridge } from "./codex-bridge.js";
 import { ensureProjectBundle, readProjectBundle, snapshotProjectBundle, writeProjectBundle } from "./project-bundle.js";
@@ -21,12 +21,13 @@ import { GeneratedVideoRegistry } from "./generation/video-providers.js";
 import { createDeliveryBundle, writeInterchange } from "./exports/interchange.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 import { STUDIO_PROTOCOL_VERSION } from "../shared/protocol.js";
+import { muxSpeechifyNarration, narrationRequested, prepareSpeechifyNarration } from "./narration-worker.js";
 
 const execFileAsync = promisify(execFile);
 
 const AGENT_INSTRUCTIONS = `You are the production agent for an editable AI video studio.
 
-Your job is to create or revise the structured project in the current working directory, then render and inspect it.
+Your job is to create or revise the structured project in the current working directory. The host application renders and inspects it after your turn.
 
 Requirements:
 - Keep the source of truth in project.json. It contains the brief, storyboard, shots, tracks, clips, assets, design tokens, narration, and renderer routing.
@@ -36,19 +37,18 @@ Requirements:
 - For generated footage, put generationPrompt plus an optional provider and model in the shot metadata. The render worker archives the result locally and resumes provider jobs from .generations.
 - For 3D, put a constrained blenderScene object in shot metadata. Use primitives, transforms, materials, lights, camera settings, and keyframes; never author or execute arbitrary Blender Python.
 - Search online assets with: node --import tsx ../../../scripts/search_assets.ts "QUERY" [KIND] [PROVIDER]. Import only storyboard-selected results with the provided import script. Never use a raw web URL without license and provenance metadata in project.json.
-- Write narration.json before animation. Run: node ../../../scripts/generate_narration.mjs . --prepare. Read narration-timing.json and make the shot timing fit the actual voice instead of an estimated word count.
-- For a timeline render, run: node --import tsx ../../../scripts/render_project.ts .
-- If the project contains a specialized Manim scene, keep scene.py and define exactly one renderable Scene subclass named GeneratedScene. A pure Manim project may render with: python3 ../../../scripts/render_scene.py . balanced
+- Write narration.json before animation. Do not call Speechify or any narration service. The host worker has the provider credential and will measure and fit the narration after your turn.
+- If the project contains a specialized Manim scene, keep scene.py and define exactly one renderable Scene subclass named GeneratedScene. Do not invoke Manim; the host worker renders it.
 - Use only Manim CE APIs available in the local environment. Prefer shapes, Text, MarkupText, NumberPlane, Axes, graphs, and deterministic animations. Avoid MathTex unless you first verify LaTeX is installed.
 - Import fit_inside, stack_in_panel, assert_inside, and assert_scene_safe from manim_layout. Keep important objects at least 0.32 Manim units from the frame edge.
 - Build information panels as VGroups with explicit spacing. Use stack_in_panel or fit_inside with at least 0.30 units of padding. Call assert_inside and assert_scene_safe before animation.
 - Use a restrained palette, readable type, consistent spacing, and purposeful motion. Target 8-20 seconds for a first draft unless the user asks otherwise.
 - narration.json must be shaped as {"segments":[{"start":0.0,"text":"..."}]}. Passages must explain cause and effect, connect naturally, and use spoken mathematical pronunciation. Avoid fragments, filler, repeated "now", and fact lists.
 - The narration helper uses Speechify simba-3.2 with warm delivery, measured timing, fades, and loudness normalization. Fallback voices are forbidden.
-- Inspect metadata.json, poster.png, and contact-sheet.png. Check sampled frames for clipping, crowded layouts, spacing, contrast, overlaps, and continuity. Patch the smallest failing part and render again.
-- output.mp4 must exist before finishing. Never return base64 or paste full source into chat.
+- Run the project validator after authoring. Do not render, run FFmpeg, synthesize audio, inspect frames, or create output.mp4. Finish immediately after the editable source and any required Manim scene files validate.
+- Never return base64 or paste full source into chat.
 - Revisions must preserve unrelated shots, clips, assets, prompts, and renderer outputs.
-- Your final response is one or two short sentences describing what changed. Do not expose hidden reasoning or raw command logs.`;
+- Your final response is one short sentence saying the editable timeline is ready and the host render is starting. Do not expose hidden reasoning or raw command logs.`;
 
 function now() {
   return new Date().toISOString();
@@ -117,6 +117,7 @@ export class StudioService extends EventEmitter {
           project.status = "idle";
           project.stage = "ready";
         }
+        if (project.status === "complete") project.error = undefined;
         this.projects.set(project.id, project);
         const projectDir = path.join(this.projectRoot, project.id);
         try {
@@ -250,31 +251,6 @@ export class StudioService extends EventEmitter {
     if (!fs.existsSync(archived)) return true;
     const digest = (file: string) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
     return digest(current) !== digest(archived);
-  }
-
-  private narrationValidationError(projectDir: string) {
-    if (!fs.existsSync(path.join(projectDir, "narration.json"))) return undefined;
-    try {
-      const metadata = JSON.parse(fs.readFileSync(path.join(projectDir, "metadata.json"), "utf8")) as { narration?: RenderInfo["narration"] };
-      const narration = metadata.narration;
-      if (
-        narration?.status !== "ready"
-        || narration.enabled !== true
-        || narration.provider !== "speechify"
-        || narration.model !== "simba-3.2"
-      ) {
-        return "Narration was rejected because it was not generated by Speechify simba-3.2.";
-      }
-      const audioCodec = execFileSync("ffprobe", [
-        "-v", "error", "-select_streams", "a:0",
-        "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1",
-        path.join(projectDir, "output.mp4"),
-      ], { encoding: "utf8", timeout: 30_000 }).trim();
-      if (!audioCodec) return "Narration metadata exists, but the video has no playable audio track.";
-      return undefined;
-    } catch {
-      return "Narration verification failed. The render was not added to version history.";
-    }
   }
 
   async refreshAuth() {
@@ -423,28 +399,34 @@ export class StudioService extends EventEmitter {
       return;
     }
     const projectDir = path.join(this.projectRoot, projectId);
-    const timeline = this.getTimeline(projectId);
+    let timeline = this.getTimeline(projectId);
     project.status = "running";
     project.stage = "rendering";
+    project.error = undefined;
     const action: AgentAction = { id: randomUUID(), label: "Rendering editable timeline", status: "running", createdAt: now() };
     project.actions.push(action);
     this.updateProject(project);
     this.jobs.update(jobId, { status: "running", stage: "Rendering shots", startedAt: now(), progress: 0.02 });
     try {
+      const narrated = narrationRequested(projectDir);
+      if (narrated) {
+        this.jobs.update(jobId, { progress: 0.04, stage: "Preparing Speechify narration" });
+        timeline = await prepareSpeechifyNarration(this.root, projectDir, timeline);
+        project.timeline = timeline;
+      }
       const render = await renderIncrementally(this.root, projectDir, timeline, this.renderCache, (progress, stage, checkpoint) => {
         if (this.jobs.get(jobId)?.status === "cancelled") throw new Error("Render cancelled.");
-        this.jobs.update(jobId, { progress, stage, checkpoint });
+        this.jobs.update(jobId, { progress: 0.05 + progress * 0.78, stage, checkpoint });
       });
       for (const shot of timeline.shots) {
         shot.cacheKey = render.shotKeys[shot.id];
         shot.status = "complete";
       }
       writeProjectBundle(projectDir, timeline);
-      let narration: Record<string, unknown> = { status: "not_requested", enabled: false };
-      if (fs.existsSync(path.join(projectDir, "narration.json"))) {
-        const result = await execFileAsync("node", [path.join(this.root, "scripts", "generate_narration.mjs"), projectDir], { env: process.env });
-        narration = JSON.parse(result.stdout.trim().split("\n").at(-1) || "{}");
-      }
+      this.jobs.update(jobId, { progress: 0.85, stage: narrated ? "Mixing Speechify narration" : "Finalizing media" });
+      const narration = await muxSpeechifyNarration(this.root, projectDir);
+      timeline = this.getTimeline(projectId);
+      project.timeline = timeline;
       await createProxy(path.join(projectDir, "output.mp4"), path.join(projectDir, "proxy.mp4"));
       await execFileAsync("ffmpeg", ["-y", "-ss", "0", "-i", path.join(projectDir, "output.mp4"), "-frames:v", "1", path.join(projectDir, "poster.png")]);
       const interval = Math.max(timeline.format.duration / 6, 0.25);
@@ -471,6 +453,7 @@ export class StudioService extends EventEmitter {
       action.status = "done";
       project.status = "complete";
       project.stage = "complete";
+      project.error = undefined;
       const version = this.archiveVersion(project);
       if (version) {
         project.videoUrl = version.videoUrl;
@@ -509,7 +492,7 @@ export class StudioService extends EventEmitter {
     if (!this.runtimeState.manim) throw new Error("Manim is not installed. Run npm run setup:manim first.");
 
     const projectDir = path.join(this.projectRoot, project.id);
-    const isRevision = Boolean(project.threadId);
+    const isRevision = Boolean(project.versions.length || project.timeline?.shots.length);
     project.messages.push({ id: randomUUID(), role: "user", text, createdAt: now() });
     project.prompt ||= text;
     if (project.title === "Untitled video") project.title = safeTitle(text);
@@ -520,17 +503,14 @@ export class StudioService extends EventEmitter {
     this.updateProject(project);
 
     try {
-      if (!project.threadId) {
-        const response = await this.bridge.startThread(projectDir, AGENT_INSTRUCTIONS);
-        project.threadId = response.thread.id;
-        this.threadToProject.set(project.threadId, project.id);
-      } else {
-        await this.bridge.resumeThread(project.threadId, projectDir);
-      }
+      if (project.threadId) this.threadToProject.delete(project.threadId);
+      const threadResponse = await this.bridge.startThread(projectDir, AGENT_INSTRUCTIONS);
+      project.threadId = threadResponse.thread.id;
+      this.threadToProject.set(project.threadId, project.id);
 
       const request = productionRequest(text, isRevision);
-      const response = await this.bridge.startTurn(project.threadId, projectDir, request);
-      project.turnId = response.turn.id;
+      const turnResponse = await this.bridge.startTurn(project.threadId, projectDir, request);
+      project.turnId = turnResponse.turn.id;
       this.updateProject(project);
     } catch (error) {
       project.status = "error";
@@ -628,37 +608,27 @@ export class StudioService extends EventEmitter {
       }
       for (const action of project.actions) if (action.status === "running") action.status = "done";
 
-      const output = path.join(this.projectRoot, project.id, "output.mp4");
-      const poster = path.join(this.projectRoot, project.id, "poster.png");
-      const narrationError = this.narrationValidationError(path.join(this.projectRoot, project.id));
-      let qualityError: string | undefined;
-      if (message.params.turn.status === "completed" && fs.existsSync(output) && !narrationError) {
+      if (message.params.turn.status === "completed") {
         try {
-          const timeline = ensureProjectBundle(path.join(this.projectRoot, project.id), project.id, project.title, project.prompt);
-          project.quality = await createQualityReport(path.join(this.projectRoot, project.id), timeline);
-          if (!project.quality.passed) {
-            qualityError = project.quality.checks.filter((item) => item.severity === "error").slice(0, 3).map((item) => item.message).join(" ");
-          }
+          const timeline = readProjectBundle(path.join(this.projectRoot, project.id));
+          if (!timeline.shots.length) throw new Error("The agent finished without any editable shots.");
+          project.timeline = timeline;
+          project.status = "idle";
+          project.stage = "ready";
+          project.error = undefined;
+          project.turnId = undefined;
+          this.updateProject(project);
+          this.renderTimeline(project.id);
+          return;
         } catch (error) {
-          qualityError = error instanceof Error ? error.message : "Quality inspection failed.";
-        }
-      }
-      if (message.params.turn.status === "completed" && fs.existsSync(output) && !narrationError && !qualityError) {
-        const version = this.archiveVersion(project);
-        project.status = "complete";
-        project.stage = "complete";
-        if (version) {
-          project.videoUrl = version.videoUrl;
-          project.posterUrl = version.posterUrl;
-        } else {
-          const cacheKey = fs.statSync(output).mtimeMs.toFixed(0);
-          project.videoUrl = `/media/${project.id}/output.mp4?v=${cacheKey}`;
-          if (fs.existsSync(poster)) project.posterUrl = `/media/${project.id}/poster.png?v=${cacheKey}`;
+          project.status = "error";
+          project.stage = "ready";
+          project.error = error instanceof Error ? error.message : "The editable project is invalid.";
         }
       } else {
         project.status = "error";
         project.stage = "ready";
-        project.error = narrationError || qualityError || message.params.turn.error?.message || "The agent finished without a playable render.";
+        project.error = message.params.turn.error?.message || "The agent could not author the editable project.";
       }
       project.turnId = undefined;
       this.updateProject(project);

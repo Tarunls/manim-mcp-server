@@ -48,7 +48,7 @@ export function inspectProject(project: VideoProjectIR): QualityCheck[] {
         const right = project.format.width / 2 + x + width * scale / 2;
         const top = project.format.height / 2 + y - height * scale / 2;
         const bottom = project.format.height / 2 + y + height * scale / 2;
-        const requiresSafeArea = ["text", "caption", "diagram", "chart"].includes(clip.kind) && clip.metadata.allowBleed !== true;
+        const requiresSafeArea = ["text", "caption", "diagram", "chart"].includes(clip.kind) && clip.metadata?.allowBleed !== true;
         if (requiresSafeArea && (left < safe || right > project.format.width - safe || top < safe || bottom > project.format.height - safe)) {
           check(checks, { id: "safe-area", category: "layout", message: `${clip.name} crosses the ${safe}px safe area.`, targetId: clip.id });
         }
@@ -65,8 +65,8 @@ export function inspectProject(project: VideoProjectIR): QualityCheck[] {
 
   for (const asset of project.assets) {
     if (!asset.license?.name) check(checks, { id: "asset-license", category: "assets", message: `${asset.name} has no recorded license.`, targetId: asset.id });
-    if (!asset.license.commercialUse) check(checks, { id: "noncommercial", category: "assets", severity: "warning", message: `${asset.name} is not licensed for commercial use.`, targetId: asset.id });
-    if (asset.license.attributionRequired && !asset.license.attribution) check(checks, { id: "attribution", category: "provenance", message: `${asset.name} requires attribution but has no credit line.`, targetId: asset.id });
+    if (asset.license && !asset.license.commercialUse) check(checks, { id: "noncommercial", category: "assets", severity: "warning", message: `${asset.name} is not licensed for commercial use.`, targetId: asset.id });
+    if (asset.license?.attributionRequired && !asset.license.attribution) check(checks, { id: "attribution", category: "provenance", message: `${asset.name} requires attribution but has no credit line.`, targetId: asset.id });
     if (!asset.hash && asset.localPath) check(checks, { id: "asset-hash", category: "provenance", message: `${asset.name} has no content hash.`, targetId: asset.id });
   }
 

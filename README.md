@@ -88,16 +88,15 @@ npm run check:project -- studio/projects/PROJECT_ID
 
 ```text
 Prompt
-  → storyboard and asset queries
-  → narration synthesis and measured timing
-  → editable project.json timeline
+  → fast Codex authoring pass: storyboard, editable project.json, optional Manim source
+  → host-only Speechify synthesis and measured timing
   → shot routing: Remotion | Manim | Blender | generated footage
   → shot cache and FFmpeg assembly
   → proxy, poster, contact sheet, QA, provenance
   → immutable revision and delivery bundle
 ```
 
-`project.json` is always the source of truth. Renderer files and MP4s are derived artifacts. Targeted chat revisions patch the smallest affected project region, then produce a new immutable `versions/vNNN` snapshot.
+`project.json` is always the source of truth. Renderer files and MP4s are derived artifacts. Codex never calls Speechify or renders inside its sandbox; the host job worker owns provider credentials, rendering, inspection, and archival. Targeted chat revisions patch the smallest affected project region, then produce a new immutable `versions/vNNN` snapshot.
 
 Generated-video jobs are asynchronous and may take minutes. Their external job ID is saved under `.generations/`, so an interrupted worker resumes polling instead of submitting a duplicate paid request. Finished provider files are copied locally before their temporary URLs expire.
 

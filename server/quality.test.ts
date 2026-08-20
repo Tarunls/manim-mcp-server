@@ -98,3 +98,20 @@ test("full-bleed visual clips are exempt from title-safe checks", () => {
 
   assert.equal(inspectProject(project).some((item) => item.id === "safe-area"), false);
 });
+
+test("quality inspection tolerates optional AI-authored clip metadata", () => {
+  const project = createEmptyVideoIR("metadata", "Metadata");
+  project.storyboard.push({ id: "beat", title: "Title", purpose: "Open", narration: "", visual: "Title", renderer: "remotion", duration: 2, assetQueries: [] });
+  project.shots.push({
+    id: "shot", name: "Shot", intent: "Open", start: 0, duration: 2, renderer: "remotion", status: "ready",
+    tracks: [{
+      id: "track", name: "Type", kind: "overlay", muted: false, locked: false,
+      clips: [{
+        id: "title", name: "Title", kind: "text", renderer: "remotion", start: 0, duration: 2, text: "Readable",
+        transform: { x: 0, y: 0, width: 800, height: 160, rotation: 0, opacity: 1, scale: 1 },
+        animations: [], style: { fontSize: 72, color: "#1d1d1b" }, metadata: undefined as never,
+      }],
+    }],
+  });
+  assert.doesNotThrow(() => inspectProject(project));
+});

@@ -32,7 +32,9 @@ flowchart LR
 
 `StudioService` owns projects, Codex threads, authentication state, durable jobs, version history, exports, and browser events. The browser never receives raw Codex command output or provider credentials. Server-sent events carry normalized project/job/message updates.
 
-One long-lived `codex app-server` process is shared by the local Studio server. Each project receives its own Codex thread and working directory. Revision turns resume that thread so the agent can patch the existing project instead of regenerating from zero.
+One long-lived `codex app-server` process is shared by the local Studio server. Each request gets a fresh, low-reasoning authoring thread in the project directory, while `project.json` and immutable revisions carry the durable context. This prevents stale instructions and growing chat history from slowing later revisions.
+
+Codex is an authoring worker only: it writes the storyboard, timeline, narration specification, and specialized scene source. Provider keys are removed from its environment. The host job worker prepares Speechify timing, automatically extends visual slots when measured speech needs room, renders, normalizes media, runs QA, and archives the result.
 
 ## Data plane
 
@@ -55,7 +57,7 @@ One long-lived `codex app-server` process is shared by the local Studio server. 
 1. The router selects the narrowest capable renderer from shot intent.
 2. The cache key hashes stable shot content, format, design tokens, and referenced asset hashes.
 3. Cache misses render only the affected shot.
-4. Every non-Remotion result is normalized to the same dimensions, FPS, H.264 pixel format, AAC stream, duration, and fast-start contract.
+4. Every renderer result, including Remotion, is normalized to the same dimensions, FPS, H.264 time base/pixel format, AAC stream, duration, and fast-start contract.
 5. FFmpeg concatenates normalized shots and creates a smaller proxy.
 6. Narration is synthesized/muxed when requested.
 7. Poster, contact sheet, metadata, QA, and provenance are generated.

@@ -52,7 +52,7 @@ Run `npm run setup:manim`, then check `.venv/bin/manim --version`. On systems wi
 
 ### Narration rejected
 
-Confirm `SPEECHIFY_API_KEY`, account limits, `SPEECHIFY_VOICE_ID`, and network access. The app intentionally has no fallback voice. If speech exceeds its visual slot, shorten the passage or extend the shot, then run narration preparation again.
+Confirm `SPEECHIFY_API_KEY`, account limits, `SPEECHIFY_VOICE_ID`, and host-server network access. The app intentionally has no fallback voice. Codex does not receive the provider key or call Speechify from its sandbox; synthesis runs in the host render job. Measured speech automatically extends its visual slot when needed.
 
 ### Quality gate failed
 

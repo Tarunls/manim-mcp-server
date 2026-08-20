@@ -36,9 +36,19 @@ export class CodexBridge extends EventEmitter {
   }
 
   private async startInternal() {
+    const agentEnv = { ...process.env };
+    for (const name of [
+      "SPEECHIFY_API_KEY",
+      "OPENAI_API_KEY",
+      "RUNWAYML_API_SECRET",
+      "GOOGLE_API_KEY",
+      "PEXELS_API_KEY",
+      "PIXABAY_API_KEY",
+      "UNSPLASH_ACCESS_KEY",
+    ]) delete agentEnv[name];
     const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
+      env: agentEnv,
     });
     this.process = child;
 
@@ -172,6 +182,9 @@ export class CodexBridge extends EventEmitter {
       cwd,
       input: [{ type: "text", text, text_elements: [] }],
       approvalPolicy: "never",
+      model: "gpt-5.6-luna",
+      effort: "low",
+      summary: "concise",
     }, 120_000);
   }
 
