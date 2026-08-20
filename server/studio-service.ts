@@ -88,6 +88,21 @@ export class StudioService extends EventEmitter {
     try {
       const stored = JSON.parse(fs.readFileSync(this.storePath, "utf8")) as StudioProject[];
       for (const project of stored) {
+        const migrated = project as StudioProject & {
+          timeline?: unknown;
+          quality?: unknown;
+          proxyUrl?: unknown;
+        };
+        const cameFromTimelineStudio = Object.hasOwn(migrated, "timeline");
+        if (cameFromTimelineStudio) {
+          // Keep chat and rendered revisions, but start the next request in a
+          // fresh thread so it receives the restored Manim-only instructions.
+          project.threadId = undefined;
+          project.turnId = undefined;
+          delete migrated.timeline;
+          delete migrated.quality;
+          delete migrated.proxyUrl;
+        }
         project.versions ||= [];
         if (project.status === "running") {
           project.status = "idle";
