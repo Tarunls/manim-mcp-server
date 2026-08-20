@@ -28,6 +28,9 @@ export interface RenderInfo {
   provenance?: {
     renderedAt?: string;
     sourceHash?: string;
+    videoVirHash?: string | null;
+    videoVirFileHash?: string | null;
+    videoVirSchemaVersion?: string | null;
     narrationSpecHash?: string | null;
     manimVersion?: string;
     pythonVersion?: string;
@@ -42,6 +45,8 @@ export interface RenderInfo {
     dynamicTimingCalls?: number;
     narrationMinimumSeconds?: number | null;
     narrationWordCounts?: number[];
+    virBeatCount?: number | null;
+    virStaticWaitRatio?: number | null;
   };
   narration?: {
     status?: string;

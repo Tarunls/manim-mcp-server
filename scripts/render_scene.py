@@ -16,6 +16,7 @@ import tempfile
 import time
 
 from scene_contract import semantic_sample_times, validate_narration_spec, validate_scene_source
+from video_ir import VideoIRValidationError, compile_project
 
 
 QUALITY_ARGS = {
@@ -48,9 +49,21 @@ def main() -> None:
     if quality not in QUALITY_ARGS:
         fail(f"Unknown quality: {quality}")
 
+    vir_path = project_dir / "video.vir.json"
+    compiled_vir = None
+    vir_spec = None
+    vir_bytes = None
+    if vir_path.exists():
+        vir_bytes = vir_path.read_bytes()
+        try:
+            compiled_vir = compile_project(project_dir)
+            vir_spec = json.loads(vir_bytes)
+        except (ValueError, VideoIRValidationError) as error:
+            fail(str(error))
+
     source = project_dir / "scene.py"
     if not source.exists():
-        fail("scene.py does not exist.")
+        fail("Neither video.vir.json nor scene.py produced a renderable scene.")
     code = source.read_text(encoding="utf-8")
     contract = validate_scene_source(code)
     if not contract.valid:
@@ -75,15 +88,41 @@ def main() -> None:
     manim = root / ".venv" / "bin" / "manim"
     if not manim.exists():
         fail("Manim is not installed in .venv.")
+    requested_fonts = [font for font in contract.font_families if font != "<manim-default>"]
+    if requested_fonts:
+        font_probe = subprocess.run(
+            [
+                str(root / ".venv" / "bin" / "python"),
+                "-c",
+                "import json, manimpango; print(json.dumps(manimpango.list_fonts()))",
+            ],
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+        if font_probe.returncode != 0:
+            fail(font_probe.stderr[-2000:] or "Could not inspect renderer fonts.")
+        available_fonts = set(json.loads(font_probe.stdout))
+        missing_fonts = sorted(set(requested_fonts) - available_fonts)
+        if missing_fonts:
+            fail(
+                "Renderer font preflight failed; refusing silent metric-changing substitution for: "
+                + ", ".join(missing_fonts)
+                + ". Install the font or choose an available family."
+            )
 
     media_dir = project_dir / ".media"
     # Each render gets a clean Manim workspace so a stale concatenated movie can
     # never be mistaken for the output of the current source.
     if media_dir.exists():
         shutil.rmtree(media_dir)
+    quality_args = QUALITY_ARGS[quality]
+    if vir_spec is not None:
+        video_format = vir_spec["format"]
+        quality_args = ["-r", f"{video_format['width']},{video_format['height']}", "--fps", str(video_format["fps"])]
     command = [
         str(manim),
-        *QUALITY_ARGS[quality],
+        *quality_args,
         "--disable_caching",
         "--media_dir",
         str(media_dir),
@@ -175,6 +214,7 @@ def main() -> None:
 
     narration_starts = narration_contract.starts if narration_contract else []
     narration_spec_hash = hashlib.sha256(narration_bytes).hexdigest() if narration_bytes else None
+    vir_source_hash = hashlib.sha256(vir_bytes).hexdigest() if vir_bytes else None
 
     contact_sheet_times = semantic_sample_times(duration, narration_starts, count=6)
     contact_sheet = project_dir / "contact-sheet.png"
@@ -233,7 +273,8 @@ def main() -> None:
         "bitRate": int(probe_data["format"].get("bit_rate", 0)),
         "bytes": output.stat().st_size,
         "renderSeconds": round(time.time() - started, 2),
-        "source": "scene.py",
+        "source": "video.vir.json" if compiled_vir else "scene.py",
+        "generatedSource": "scene.py" if compiled_vir else None,
         "output": "output.mp4",
         "poster": "poster.png",
         "contactSheet": "contact-sheet.png",
@@ -242,6 +283,9 @@ def main() -> None:
         "provenance": {
             "renderedAt": datetime.now(timezone.utc).isoformat(),
             "sourceHash": contract.source_hash,
+            "videoVirHash": compiled_vir.vir_hash if compiled_vir else None,
+            "videoVirFileHash": vir_source_hash,
+            "videoVirSchemaVersion": compiled_vir.report.schema_version if compiled_vir else None,
             "narrationSpecHash": narration_spec_hash,
             "manimVersion": manim_version,
             "pythonVersion": platform.python_version(),
@@ -256,6 +300,8 @@ def main() -> None:
             "dynamicTimingCalls": contract.dynamic_timing_calls,
             "narrationMinimumSeconds": narration_contract.minimum_duration_seconds if narration_contract else None,
             "narrationWordCounts": narration_contract.word_counts if narration_contract else [],
+            "virBeatCount": compiled_vir.report.beat_count if compiled_vir else None,
+            "virStaticWaitRatio": compiled_vir.report.static_wait_ratio if compiled_vir else None,
         },
     }
     (project_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

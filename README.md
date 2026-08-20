@@ -2,7 +2,7 @@
 
 ## Manim Studio MVP
 
-This repository now includes a minimal local prompt-to-Manim website. It provides a collapsible project sidebar, streamed Codex agent activity, an editable `scene.py` per project, 1080p browser playback, revision history, optional timed AI narration, and MP4 download.
+This repository now includes a minimal local prompt-to-video website backed by Manim. It provides a collapsible project sidebar, streamed Codex agent activity, an optional declarative Video IR, 1080p browser playback, revision history, timed AI narration, and MP4 download.
 
 ### Run it
 
@@ -68,13 +68,19 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim
 
 1. The Node backend starts one long-lived `codex app-server` process over stdio.
 2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
-3. Codex writes or revises `scene.py` inside that folder.
-4. `scripts/render_scene.py` validates the Python scene contract with the AST, renders in a clean isolated Manim media directory at 1920×1080 and 30 fps, validates scene and panel bounds, optimizes MP4 seeking, extracts a poster and narration-aware six-frame contact sheet, and records reproducible render metadata.
+3. For text, panel, and basic-shape videos, Codex writes or revises `video.vir.json`. For advanced mathematical graphics it can still author `scene.py` directly.
+4. `scripts/render_scene.py` strictly validates Video IR when present, deterministically compiles `scene.py` and `narration.json`, validates the Python scene contract with the AST, and renders in a clean isolated Manim media directory. It then validates scene and panel bounds, optimizes MP4 seeking, extracts a poster and narration-aware six-frame contact sheet, and records reproducible render metadata.
 5. If `narration.json` and a server API key are present, timed speech segments are generated and muxed into the MP4.
 6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
 7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
 
-Render metadata includes a SHA-256 source fingerprint, narration-spec fingerprint, Manim and Python versions, referenced font families, semantic contact-sheet timestamps, and explicit static-wait metrics. The contract rejects missing layout guards, unguarded rounded panels, invalid shared-helper arguments, additional Scene subclasses, and unseeded randomness before invoking Manim.
+Render metadata includes canonical and file-level Video IR hashes, a generated-source fingerprint, narration-spec fingerprint, Manim and Python versions, referenced font families, semantic contact-sheet timestamps, and explicit static-wait metrics. The IR contract rejects unpositioned top-level nodes, invalid constraint ordering, group cycles, uncontained panels, impossible visibility transitions, overlapping cues, and unexplained static holds before invoking Manim. The Python contract remains active for both compiled and hand-authored scenes.
+
+### Video IR v0.1
+
+`studio/video-ir.schema.json` defines the renderer-independent authoring contract and `studio/video-ir.example.json` is a complete working example. It includes design tokens, 3-5 narrative beats, basic visual nodes, ordered relational constraints, and explicit animation cues.
+
+Compile without rendering with `python3 scripts/compile_vir.py studio/projects/PROJECT_ID`. If `video.vir.json` is present, `scripts/render_scene.py` always recompiles generated artifacts before rendering, preventing drift between the declarative source and the final video. Hand-authored Manim remains the escape hatch for unsupported graphics.
 
 The server binds to `127.0.0.1` for local MVP use. Do not expose it directly to the internet. A hosted version should move rendering into isolated workers and add application authentication, rate limits, object storage, and per-user project authorization.
 
@@ -91,6 +97,7 @@ Every successful generation remains editable:
 
 ```text
 studio/projects/<project-id>/
+  video.vir.json       # optional authoritative source; archived when present
   scene.py
   narration.json
   output.mp4

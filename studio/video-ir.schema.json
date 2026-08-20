@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://manim-studio.local/schemas/video-ir-0.1.json",
+  "title": "Manim Studio Video Intermediate Representation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "format", "theme", "beats"],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "format": { "$ref": "#/$defs/format" },
+    "theme": { "$ref": "#/$defs/theme" },
+    "beats": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/beat" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "fps", "background", "safeArea"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 320, "maximum": 7680 },
+        "height": { "type": "integer", "minimum": 320, "maximum": 4320 },
+        "fps": { "type": "integer", "enum": [24, 25, 30, 50, 60] },
+        "background": { "type": "string" },
+        "safeArea": { "type": "number", "minimum": 0.1, "maximum": 1.5 }
+      }
+    },
+    "textStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontSize", "color", "weight"],
+      "properties": {
+        "fontSize": { "type": "number", "minimum": 12, "maximum": 160 },
+        "color": { "type": "string" },
+        "weight": { "type": "string", "enum": ["NORMAL", "MEDIUM", "SEMIBOLD", "BOLD"] }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontFamily", "palette", "spacing", "textStyles"],
+      "properties": {
+        "fontFamily": { "type": "string", "minLength": 1 },
+        "palette": {
+          "type": "object",
+          "minProperties": 5,
+          "additionalProperties": { "type": "string" },
+          "required": ["background", "surface", "text", "muted", "accent"]
+        },
+        "spacing": {
+          "type": "object",
+          "minProperties": 3,
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 3 }
+        },
+        "textStyles": {
+          "type": "object",
+          "minProperties": 3,
+          "additionalProperties": { "$ref": "#/$defs/textStyle" }
+        }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fill": { "type": "string" },
+        "stroke": { "type": "string" },
+        "strokeWidth": { "type": "number", "minimum": 0, "maximum": 20 },
+        "fillOpacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "textNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "text", "role"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "text" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "role": { "type": "string" },
+        "color": { "type": "string" }
+      }
+    },
+    "panelNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "width", "height"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "panel" },
+        "width": { "$ref": "#/$defs/positiveNumber" },
+        "height": { "$ref": "#/$defs/positiveNumber" },
+        "cornerRadius": { "type": "number", "minimum": 0, "maximum": 1 },
+        "style": { "$ref": "#/$defs/style" }
+      }
+    },
+    "rectangleNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "width", "height"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "rectangle" },
+        "width": { "$ref": "#/$defs/positiveNumber" },
+        "height": { "$ref": "#/$defs/positiveNumber" },
+        "style": { "$ref": "#/$defs/style" }
+      }
+    },
+    "circleNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "radius"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "circle" },
+        "radius": { "$ref": "#/$defs/positiveNumber" },
+        "style": { "$ref": "#/$defs/style" }
+      }
+    },
+    "squareNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "sideLength"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "square" },
+        "sideLength": { "$ref": "#/$defs/positiveNumber" },
+        "style": { "$ref": "#/$defs/style" }
+      }
+    },
+    "groupNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "children", "layout", "gap", "align"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "group" },
+        "children": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "layout": { "type": "string", "enum": ["row", "column"] },
+        "gap": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] },
+        "align": { "type": "string", "enum": ["start", "center", "end"] }
+      }
+    },
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/textNode" },
+        { "$ref": "#/$defs/panelNode" },
+        { "$ref": "#/$defs/rectangleNode" },
+        { "$ref": "#/$defs/circleNode" },
+        { "$ref": "#/$defs/squareNode" },
+        { "$ref": "#/$defs/groupNode" }
+      ]
+    },
+    "anchorConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target", "anchor"],
+      "properties": {
+        "type": { "const": "anchor" },
+        "target": { "$ref": "#/$defs/id" },
+        "anchor": {
+          "type": "string",
+          "enum": ["center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"]
+        },
+        "inset": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] }
+      }
+    },
+    "nextToConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target", "reference", "direction"],
+      "properties": {
+        "type": { "const": "nextTo" },
+        "target": { "$ref": "#/$defs/id" },
+        "reference": { "$ref": "#/$defs/id" },
+        "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+        "gap": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] },
+        "align": { "type": "string", "enum": ["start", "center", "end"] }
+      }
+    },
+    "alignConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target", "reference", "edge"],
+      "properties": {
+        "type": { "const": "align" },
+        "target": { "$ref": "#/$defs/id" },
+        "reference": { "$ref": "#/$defs/id" },
+        "edge": { "type": "string", "enum": ["top", "bottom", "left", "right"] }
+      }
+    },
+    "insideConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target", "container"],
+      "properties": {
+        "type": { "const": "inside" },
+        "target": { "$ref": "#/$defs/id" },
+        "container": { "$ref": "#/$defs/id" },
+        "padding": { "oneOf": [{ "type": "string" }, { "type": "number", "minimum": 0 }] }
+      }
+    },
+    "shiftConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target", "direction", "amount"],
+      "properties": {
+        "type": { "const": "shift" },
+        "target": { "$ref": "#/$defs/id" },
+        "direction": { "type": "string", "enum": ["up", "down", "left", "right"] },
+        "amount": { "type": "number", "minimum": 0, "maximum": 8 }
+      }
+    },
+    "constraint": {
+      "oneOf": [
+        { "$ref": "#/$defs/anchorConstraint" },
+        { "$ref": "#/$defs/nextToConstraint" },
+        { "$ref": "#/$defs/alignConstraint" },
+        { "$ref": "#/$defs/insideConstraint" },
+        { "$ref": "#/$defs/shiftConstraint" }
+      ]
+    },
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "duration", "action", "targets"],
+      "properties": {
+        "start": { "type": "number", "minimum": 0 },
+        "duration": { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
+        "action": { "type": "string", "enum": ["fadeIn", "create", "write", "grow", "indicate", "fadeOut"] },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        }
+      }
+    },
+    "beat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "intent", "focus", "duration", "narration", "nodes", "constraints", "cues"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "intent": { "type": "string", "minLength": 8, "maxLength": 300 },
+        "focus": { "$ref": "#/$defs/id" },
+        "duration": { "type": "number", "minimum": 3, "maximum": 30 },
+        "narration": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "transitionDuration": { "type": "number", "minimum": 0.2, "maximum": 2 },
+        "allowLongHold": { "type": "boolean" },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "constraints": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 80,
+          "items": { "$ref": "#/$defs/constraint" }
+        },
+        "cues": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "items": { "$ref": "#/$defs/cue" }
+        }
+      }
+    }
+  }
+}

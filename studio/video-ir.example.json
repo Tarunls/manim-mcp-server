@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "0.1",
+  "format": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "background": "background",
+    "safeArea": 0.32
+  },
+  "theme": {
+    "fontFamily": "DejaVu Sans",
+    "palette": {
+      "background": "#F6F5F2",
+      "surface": "#FFFFFF",
+      "text": "#17202A",
+      "muted": "#AAB2BD",
+      "accent": "#4C6FFF"
+    },
+    "spacing": { "sm": 0.18, "md": 0.32, "lg": 0.5 },
+    "textStyles": {
+      "headline": { "fontSize": 52, "color": "text", "weight": "BOLD" },
+      "body": { "fontSize": 31, "color": "text", "weight": "NORMAL" },
+      "caption": { "fontSize": 22, "color": "muted", "weight": "MEDIUM" }
+    }
+  },
+  "beats": [
+    {
+      "id": "introduce-system",
+      "intent": "Introduce the central idea with one strong visual hierarchy",
+      "focus": "message",
+      "duration": 9,
+      "narration": "A strong video begins with an explicit hierarchy, so the viewer immediately knows where to look and why the relationship matters.",
+      "nodes": [
+        {
+          "id": "panel",
+          "type": "panel",
+          "width": 9.5,
+          "height": 4.8,
+          "cornerRadius": 0.2,
+          "style": { "fill": "surface", "stroke": "muted", "fillOpacity": 1 }
+        },
+        { "id": "headline", "type": "text", "text": "Hierarchy first", "role": "headline" },
+        { "id": "message", "type": "text", "text": "One focal relationship", "role": "body", "color": "accent" },
+        {
+          "id": "content",
+          "type": "group",
+          "children": ["headline", "message"],
+          "layout": "column",
+          "gap": "md",
+          "align": "center"
+        }
+      ],
+      "constraints": [
+        { "type": "anchor", "target": "panel", "anchor": "center" },
+        { "type": "inside", "target": "content", "container": "panel", "padding": "lg" }
+      ],
+      "cues": [
+        { "start": 0, "duration": 1, "action": "fadeIn", "targets": ["panel"] },
+        { "start": 1, "duration": 1, "action": "write", "targets": ["content"] },
+        { "start": 2.5, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 4, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 5.5, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 7, "duration": 1, "action": "indicate", "targets": ["message"] }
+      ]
+    },
+    {
+      "id": "enforce-layout",
+      "intent": "Show that relationships are constraints rather than guessed coordinates",
+      "focus": "message",
+      "duration": 9,
+      "narration": "Relational constraints replace guessed coordinates, letting the compiler prove containment, spacing, and safe margins before expensive rendering ever begins.",
+      "nodes": [
+        {
+          "id": "panel",
+          "type": "panel",
+          "width": 9.5,
+          "height": 4.8,
+          "style": { "fill": "surface", "stroke": "accent", "fillOpacity": 1 }
+        },
+        { "id": "headline", "type": "text", "text": "Constraints, not coordinates", "role": "headline" },
+        { "id": "message", "type": "text", "text": "anchor → contain → verify", "role": "body", "color": "accent" },
+        {
+          "id": "content",
+          "type": "group",
+          "children": ["headline", "message"],
+          "layout": "column",
+          "gap": "md",
+          "align": "center"
+        }
+      ],
+      "constraints": [
+        { "type": "anchor", "target": "panel", "anchor": "center" },
+        { "type": "inside", "target": "content", "container": "panel", "padding": "lg" }
+      ],
+      "cues": [
+        { "start": 0, "duration": 1, "action": "fadeIn", "targets": ["panel"] },
+        { "start": 1, "duration": 1, "action": "write", "targets": ["content"] },
+        { "start": 2.5, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 4, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 5.5, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 7, "duration": 1, "action": "indicate", "targets": ["message"] }
+      ]
+    },
+    {
+      "id": "direct-attention",
+      "intent": "Connect reliable geometry to deliberate motion and pacing",
+      "focus": "message",
+      "duration": 9,
+      "narration": "Once geometry is reliable, motion can direct attention instead of hiding layout mistakes, producing videos that feel deliberate rather than merely decorated.",
+      "nodes": [
+        {
+          "id": "panel",
+          "type": "panel",
+          "width": 9.5,
+          "height": 4.8,
+          "style": { "fill": "surface", "stroke": "muted", "fillOpacity": 1 }
+        },
+        { "id": "headline", "type": "text", "text": "Motion directs attention", "role": "headline" },
+        { "id": "message", "type": "text", "text": "Precision becomes a creative primitive", "role": "body", "color": "accent" },
+        {
+          "id": "content",
+          "type": "group",
+          "children": ["headline", "message"],
+          "layout": "column",
+          "gap": "md",
+          "align": "center"
+        }
+      ],
+      "constraints": [
+        { "type": "anchor", "target": "panel", "anchor": "center" },
+        { "type": "inside", "target": "content", "container": "panel", "padding": "lg" }
+      ],
+      "cues": [
+        { "start": 0, "duration": 1, "action": "fadeIn", "targets": ["panel"] },
+        { "start": 1, "duration": 1, "action": "write", "targets": ["content"] },
+        { "start": 2.5, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 4, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 5.5, "duration": 1, "action": "indicate", "targets": ["message"] },
+        { "start": 7, "duration": 1, "action": "indicate", "targets": ["message"] }
+      ]
+    }
+  ]
+}
