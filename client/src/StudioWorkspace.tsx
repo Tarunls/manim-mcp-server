@@ -24,13 +24,8 @@ import type { AssetCandidate, AssetSearchResponse } from "../../shared/assets";
 import type { VideoClip, VideoProjectIR, VideoShot } from "../../shared/video-ir";
 import { VideoComposition } from "../../remotion/VideoComposition";
 import type { ProjectVersion, RuntimeState, StudioProject } from "./types";
-
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || "Request failed.");
-  return body as T;
-}
+import { apiRequest } from "./api";
+import { isLegacyProject } from "./project-state";
 
 function versionLabel(version: ProjectVersion) {
   return `v${version.number}`;
@@ -43,6 +38,7 @@ function findClip(project: VideoProjectIR | undefined, shotId: string | undefine
 }
 
 function QualityBadge({ project }: { project: StudioProject }) {
+  if (isLegacyProject(project)) return <span className="quality-pill quality-legacy"><ClockCounterClockwise size={16} /> Legacy</span>;
   const quality = project.quality || project.versions.at(-1)?.quality;
   if (!quality) return <span className="quality-pill quality-pending"><WarningCircle size={16} /> Not checked</span>;
   return quality.passed
@@ -163,7 +159,7 @@ function AssetDrawer({ project, onClose, onImported }: { project: StudioProject;
     setStatus("searching");
     setError("");
     try {
-      const response = await api<AssetSearchResponse>(`/api/assets/search?query=${encodeURIComponent(query)}&limit=18`);
+      const response = await apiRequest<AssetSearchResponse>(`/api/assets/search?query=${encodeURIComponent(query)}&limit=18`);
       setResults(response.results);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Search failed.");
@@ -176,8 +172,8 @@ function AssetDrawer({ project, onClose, onImported }: { project: StudioProject;
     setStatus("importing");
     setError("");
     try {
-      await api(`/api/projects/${project.id}/assets/import`, { method: "POST", body: JSON.stringify(candidate) });
-      const timeline = await api<VideoProjectIR>(`/api/projects/${project.id}/timeline`);
+      await apiRequest(`/api/projects/${project.id}/assets/import`, { method: "POST", body: JSON.stringify(candidate) });
+      const timeline = await apiRequest<VideoProjectIR>(`/api/projects/${project.id}/timeline`);
       onImported({ ...project, timeline });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Import failed.");
@@ -295,7 +291,7 @@ export function StudioWorkspace({
     setBusy("Saving");
     setError("");
     try {
-      const saved = await api<VideoProjectIR>(`/api/projects/${project.id}/timeline`, { method: "PUT", body: JSON.stringify(draft) });
+      const saved = await apiRequest<VideoProjectIR>(`/api/projects/${project.id}/timeline`, { method: "PUT", body: JSON.stringify(draft) });
       onProject({ ...project, timeline: saved });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not save.");
@@ -309,7 +305,7 @@ export function StudioWorkspace({
     setBusy("Rendering");
     setError("");
     try {
-      await api(`/api/projects/${project.id}/render`, { method: "POST" });
+      await apiRequest(`/api/projects/${project.id}/render`, { method: "POST" });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not render.");
     } finally {
@@ -322,7 +318,7 @@ export function StudioWorkspace({
     setBusy("Branching");
     setError("");
     try {
-      onBranch(await api<StudioProject>(`/api/projects/${project.id}/versions/${version.id}/branch`, { method: "POST" }));
+      onBranch(await apiRequest<StudioProject>(`/api/projects/${project.id}/versions/${version.id}/branch`, { method: "POST" }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not branch revision.");
     } finally {
@@ -335,7 +331,7 @@ export function StudioWorkspace({
     setBusy("Packaging");
     setError("");
     try {
-      const result = await api<{ url: string }>(`/api/projects/${project.id}/exports`, { method: "POST", body: JSON.stringify({ format: "bundle" }) });
+      const result = await apiRequest<{ url: string }>(`/api/projects/${project.id}/exports`, { method: "POST", body: JSON.stringify({ format: "bundle" }) });
       window.location.assign(result.url);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not package the project.");
@@ -350,6 +346,7 @@ export function StudioWorkspace({
 
   const showLive = selectedRevision === "live" && Boolean(timeline?.shots.length);
   const videoUrl = selectedVersion?.proxyUrl || selectedVersion?.videoUrl || project.proxyUrl || project.videoUrl;
+  const legacy = isLegacyProject(project);
 
   return (
     <section className="workspace studio-workspace" aria-label="Video editor">
@@ -358,12 +355,13 @@ export function StudioWorkspace({
         <div className="editor-actions">
           {busy && <span className="save-state"><SpinnerGap className="spin" size={16} />{busy}</span>}
           <QualityBadge project={project} />
-          <button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((value) => !value)}><Images size={18} /><span>Assets</span></button>
-          <button className={inspectorOpen ? "active" : ""} onClick={() => setInspectorOpen((value) => !value)}><SlidersHorizontal size={18} /><span>Inspect</span></button>
-          <button className="render-button" onClick={() => void render()} disabled={!timeline?.shots.length || project.status === "running"}><Play size={16} weight="fill" /> Render</button>
+          <button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((value) => !value)} disabled={legacy} title={legacy ? "Convert this older video in chat to unlock assets" : "Search licensed assets"}><Images size={18} /><span>Assets</span></button>
+          <button className={inspectorOpen ? "active" : ""} onClick={() => setInspectorOpen((value) => !value)} disabled={legacy} title={legacy ? "Convert this older video in chat to unlock editing" : "Inspect the selected layer"}><SlidersHorizontal size={18} /><span>Inspect</span></button>
+          <button className="render-button" onClick={() => void render()} disabled={!timeline?.shots.length || project.status === "running"} title={legacy ? "Ask chat to rebuild this revision as an editable timeline" : "Render this timeline"}><Play size={16} weight="fill" /> Render</button>
         </div>
       </div>
       {error && <div className="editor-error"><WarningCircle size={17} />{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={15} /></button></div>}
+      {legacy && <div className="legacy-notice"><ClockCounterClockwise size={17} /><span>Older render</span><small>Ask chat to rebuild it to unlock timeline editing.</small></div>}
       <div className={`editor-canvas-row ${inspectorOpen ? "with-inspector" : ""}`}>
         <div className="stage-wrap">
           <div className="player-shell editor-player" ref={playerShell}>
@@ -399,7 +397,7 @@ export function StudioWorkspace({
         {inspectorOpen && timeline && <ClipInspector project={timeline} shot={selected.shot} clip={selected.clip} onClose={() => setInspectorOpen(false)} onUpdate={updateTimeline} />}
         {assetsOpen && <AssetDrawer project={project} onClose={() => setAssetsOpen(false)} onImported={onProject} />}
       </div>
-      {timeline && <Timeline project={timeline} selectedShotId={selectedShotId} selectedClipId={selectedClipId} collapsed={timelineCollapsed} onToggle={() => setTimelineCollapsed((value) => !value)} onSelectShot={(id) => { setSelectedShotId(id); setSelectedClipId(undefined); setInspectorOpen(true); }} onSelectClip={(shotId, clipId) => { setSelectedShotId(shotId); setSelectedClipId(clipId); setInspectorOpen(true); }} />}
+      {timeline && !legacy && <Timeline project={timeline} selectedShotId={selectedShotId} selectedClipId={selectedClipId} collapsed={timelineCollapsed} onToggle={() => setTimelineCollapsed((value) => !value)} onSelectShot={(id) => { setSelectedShotId(id); setSelectedClipId(undefined); setInspectorOpen(true); }} onSelectClip={(shotId, clipId) => { setSelectedShotId(shotId); setSelectedClipId(clipId); setInspectorOpen(true); }} />}
     </section>
   );
 }

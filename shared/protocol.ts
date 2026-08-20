@@ -1,0 +1,1 @@
+export const STUDIO_PROTOCOL_VERSION = 2;

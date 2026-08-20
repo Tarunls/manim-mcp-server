@@ -20,6 +20,7 @@ import type { QualityReport } from "../shared/quality.js";
 import { GeneratedVideoRegistry } from "./generation/video-providers.js";
 import { createDeliveryBundle, writeInterchange } from "./exports/interchange.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
+import { STUDIO_PROTOCOL_VERSION } from "../shared/protocol.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -168,6 +169,7 @@ export class StudioService extends EventEmitter {
   getSnapshot(): Extract<StudioEvent, { type: "snapshot" }> {
     return {
       type: "snapshot",
+      protocol: STUDIO_PROTOCOL_VERSION,
       projects: this.listProjects(),
       auth: this.authState,
       runtime: this.runtimeState,

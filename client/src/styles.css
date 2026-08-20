@@ -162,6 +162,13 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .runtime-status > span { width: 7px; height: 7px; border-radius: 50%; }
 .runtime-good { background: #5d8557; }
 .runtime-warn { background: var(--accent); }
+.runtime-offline { background: #b73f32; box-shadow: 0 0 0 3px rgba(183,63,50,.12); }
+
+.connection-error { min-height: 100dvh; padding: 24px; display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center; background: var(--page); }
+.connection-error h1 { margin: 10px 0 0; font-size: 26px; letter-spacing: -.035em; }
+.connection-error p { max-width: 480px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.connection-error button { height: 42px; padding: 0 18px; border: 0; border-radius: 10px; color: #fff; background: #292927; font-weight: 700; cursor: pointer; }
+.connection-error code { padding: 7px 10px; border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 12px; }
 
 .studio-grid { min-height: 0; display: grid; grid-template-columns: minmax(380px, 430px) minmax(0, 1fr); }
 .studio-grid.chat-is-collapsed { grid-template-columns: 1fr; }
@@ -339,6 +346,12 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .quality-good { color: #41663e; background: #e5eee3; }
 .quality-bad { color: #a03f25; background: var(--accent-soft); }
 .quality-pending { color: #73736b; background: var(--surface); }
+.quality-legacy { color: #665b3f; background: #eee8d7; }
+.editor-actions > button:disabled:not(.render-button) { opacity: .42; cursor: not-allowed; }
+
+.legacy-notice { position: absolute; z-index: 8; top: 70px; left: 50%; max-width: calc(100% - 36px); min-height: 38px; padding: 0 12px; border: 1px solid #ded6bf; border-radius: 10px; display: flex; align-items: center; gap: 7px; color: #665b3f; background: rgba(252,249,239,.96); box-shadow: 0 7px 24px rgba(67,58,33,.08); transform: translateX(-50%); font-size: 12px; }
+.legacy-notice span { font-weight: 800; white-space: nowrap; }
+.legacy-notice small { color: #82775b; font-size: 12px; white-space: nowrap; }
 
 .editor-error { position: absolute; z-index: 12; top: 66px; left: 50%; max-width: min(640px, calc(100% - 32px)); padding: 10px 12px; border: 1px solid #edc9bc; border-radius: 10px; display: flex; align-items: center; gap: 8px; color: #913b23; background: #fff7f4; box-shadow: 0 8px 30px rgba(50,35,29,.12); transform: translateX(-50%); font-size: 13px; }
 .editor-error button { margin-left: auto; padding: 0; border: 0; display: grid; place-items: center; color: inherit; background: transparent; cursor: pointer; }

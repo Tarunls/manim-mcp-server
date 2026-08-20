@@ -90,7 +90,7 @@ export interface RuntimeState {
 }
 
 export type StudioEvent =
-  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState; jobs: StudioJob[] }
+  | { type: "snapshot"; protocol: number; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState; jobs: StudioJob[] }
   | { type: "project"; project: StudioProject }
   | { type: "assistant_delta"; projectId: string; messageId: string; delta: string }
   | { type: "auth"; auth: AuthState }
