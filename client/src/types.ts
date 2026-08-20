@@ -46,6 +46,7 @@ export interface ProjectVersion {
   videoUrl: string;
   posterUrl?: string;
   render?: RenderInfo;
+  projectUrl?: string;
 }
 
 export interface StudioProject {
@@ -64,6 +65,7 @@ export interface StudioProject {
   error?: string;
   messages: ChatMessage[];
   actions: AgentAction[];
+  timeline?: VideoProjectIR;
 }
 
 export interface AuthState {
@@ -85,3 +87,4 @@ export type StudioEvent =
   | { type: "assistant_delta"; projectId: string; messageId: string; delta: string }
   | { type: "auth"; auth: AuthState }
   | { type: "runtime"; runtime: RuntimeState };
+import type { VideoProjectIR } from "../../shared/video-ir";

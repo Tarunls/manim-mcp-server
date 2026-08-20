@@ -5,6 +5,8 @@ import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { CodexBridge } from "./codex-bridge.js";
+import { ensureProjectBundle, readProjectBundle, snapshotProjectBundle, writeProjectBundle } from "./project-bundle.js";
+import { validateVideoIR, type VideoProjectIR } from "../shared/video-ir.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -94,6 +96,12 @@ export class StudioService extends EventEmitter {
           project.stage = "ready";
         }
         this.projects.set(project.id, project);
+        const projectDir = path.join(this.projectRoot, project.id);
+        try {
+          project.timeline = ensureProjectBundle(projectDir, project.id, project.title, project.prompt);
+        } catch {
+          project.timeline = undefined;
+        }
         if (project.threadId) this.threadToProject.set(project.threadId, project.id);
         if (project.status === "complete" && this.currentRenderNeedsArchive(project)) {
           const archived = this.archiveVersion(project);
@@ -165,7 +173,7 @@ export class StudioService extends EventEmitter {
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["scene.py", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
+    const assets = ["project.json", "scene.py", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
@@ -191,6 +199,8 @@ export class StudioService extends EventEmitter {
       render,
     };
     project.versions.push(version);
+    version.projectUrl = `/media/${project.id}/versions/${id}/project.json`;
+    snapshotProjectBundle(projectDir, versionDir);
     return version;
   }
 
@@ -270,9 +280,32 @@ export class StudioService extends EventEmitter {
       versions: [],
     };
     fs.mkdirSync(path.join(this.projectRoot, id), { recursive: true });
+    project.timeline = ensureProjectBundle(path.join(this.projectRoot, id), id, project.title, prompt);
     this.updateProject(project);
     if (prompt) void this.sendMessage(id, prompt).catch(() => undefined);
     return project;
+  }
+
+  getTimeline(projectId: string) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    const timeline = readProjectBundle(path.join(this.projectRoot, projectId));
+    project.timeline = timeline;
+    return timeline;
+  }
+
+  updateTimeline(projectId: string, value: unknown) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    const validation = validateVideoIR(value);
+    if (!validation.valid) throw new Error(validation.errors.join(" "));
+    const timeline = structuredClone(value as VideoProjectIR);
+    if (timeline.id !== projectId) throw new Error("Timeline id must match the project id.");
+    writeProjectBundle(path.join(this.projectRoot, projectId), timeline);
+    project.timeline = timeline;
+    project.title = timeline.title;
+    this.updateProject(project);
+    return timeline;
   }
 
   async sendMessage(projectId: string, text: string) {

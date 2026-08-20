@@ -74,6 +74,22 @@ app.post("/api/projects/:id/cancel", async (request, response) => {
   }
 });
 
+app.get("/api/projects/:id/timeline", (request, response) => {
+  try {
+    response.json(studio.getTimeline(request.params.id));
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : "Project not found." });
+  }
+});
+
+app.put("/api/projects/:id/timeline", (request, response) => {
+  try {
+    response.json(studio.updateTimeline(request.params.id, request.body));
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : "Invalid timeline." });
+  }
+});
+
 app.use("/media", express.static(path.join(root, "studio", "projects"), {
   fallthrough: false,
   immutable: false,

@@ -46,6 +46,7 @@ export interface ProjectVersion {
   videoUrl: string;
   posterUrl?: string;
   render?: RenderInfo;
+  projectUrl?: string;
 }
 
 export interface StudioProject {
@@ -64,6 +65,7 @@ export interface StudioProject {
   error?: string;
   messages: ChatMessage[];
   actions: AgentAction[];
+  timeline?: VideoProjectIR;
 }
 
 export type StudioEvent =
@@ -85,3 +87,4 @@ export interface RuntimeState {
   manim: boolean;
   ffmpeg: boolean;
 }
+import type { VideoProjectIR } from "../shared/video-ir.js";
