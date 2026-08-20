@@ -12,32 +12,32 @@ import { rendererCapabilities } from "./renderers/registry.js";
 import { renderRemotionProject } from "./renderers/remotion-renderer.js";
 import { AssetService } from "./assets/service.js";
 import type { AssetCandidate } from "../shared/assets.js";
+import { productionRequest } from "./planning.js";
 import type { AgentAction, AuthState, ProjectVersion, RenderInfo, RuntimeState, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
-const AGENT_INSTRUCTIONS = `You are the rendering agent for Manim Studio, a local prompt-to-video MVP.
+const AGENT_INSTRUCTIONS = `You are the production agent for an editable AI video studio.
 
-Your only job is to create or revise the editable Manim Community Edition project in the current working directory.
+Your job is to create or revise the structured project in the current working directory, then render and inspect it.
 
 Requirements:
-- Keep the source of truth in scene.py and define exactly one renderable Scene subclass named GeneratedScene.
+- Keep the source of truth in project.json. It contains the brief, storyboard, shots, tracks, clips, assets, design tokens, narration, and renderer routing.
+- Plan before authoring. Every storyboard beat must state its purpose, narration, visual, duration, asset queries, and renderer. Run the project validator after planning and after timing changes.
+- Route typography, footage, UI, captions, shapes, charts, and compositing to Remotion. Route only equations, graphs, and technical vector explanations to Manim. Use generated footage and Blender only when their configured capability is available.
+- Search online assets with: node --import tsx ../../../scripts/search_assets.ts "QUERY" [KIND] [PROVIDER]. Import only storyboard-selected results with the provided import script. Never use a raw web URL without license and provenance metadata in project.json.
+- Write narration.json before animation. Run: node ../../../scripts/generate_narration.mjs . --prepare. Read narration-timing.json and make the shot timing fit the actual voice instead of an estimated word count.
+- For a timeline render, run: node --import tsx ../../../scripts/render_project.ts .
+- If the project contains a specialized Manim scene, keep scene.py and define exactly one renderable Scene subclass named GeneratedScene. A pure Manim project may render with: python3 ../../../scripts/render_scene.py . balanced
 - Use only Manim CE APIs available in the local environment. Prefer shapes, Text, MarkupText, NumberPlane, Axes, graphs, and deterministic animations. Avoid MathTex unless you first verify LaTeX is installed.
-- Import fit_inside, stack_in_panel, assert_inside, and assert_scene_safe from manim_layout.
-- Compose for a 16:9 frame. Keep all important objects at least 0.32 Manim units from the frame edge.
-- Build every information panel as one VGroup arranged with explicit spacing. Use stack_in_panel or fit_inside with at least 0.30 units of inner padding. Never position panel text independently with fixed coordinates.
-- Call assert_inside(panel, *panel_contents, padding=0.16) before animating each panel. Call assert_scene_safe on every major group before its first animation. Rendering intentionally fails when these checks detect overflow.
-- Use no more than two type sizes inside a panel. Keep labels at least 0.18 units apart and align related captions to the equation terms above them.
-- Use a restrained palette, readable type, consistent spacing, and purposeful motion.
-- Target 8-15 seconds for a first draft unless the user asks otherwise.
-- Render by running: python3 ../../../scripts/render_scene.py . balanced
-- Write narration.json before rendering. It must be JSON shaped as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages timed to the visual beats. Each passage should be 18-45 words, explain cause and effect instead of merely naming objects, and lead naturally into the next idea.
-- Write mathematical pronunciation as natural speech (for example, "a squared plus b squared equals c squared"). Avoid fragments, repeated "now", filler, and isolated fact lists. Budget each visual slot at roughly 145 spoken words per minute plus 0.8 seconds of breathing room.
-- The render helper uses Speechify simba-3.2 with warm SSML delivery, maximum-fidelity MP3, timing guards, fades, and loudness normalization. It refuses fallback voices and fails if a spoken passage does not fit its visual slot.
-- After rendering, inspect metadata.json and verify narration.provider is speechify, narration.model is simba-3.2, and narration.status is ready. Never create, download, or substitute narration through another provider.
-- Inspect both poster.png and contact-sheet.png. Check all six sampled frames for clipping, crowded panels, uneven spacing, poor contrast, and unintended overlaps. If any issue exists, patch scene.py and render once more.
-- output.mp4 must exist before you finish. Never return base64 or paste the full source into chat.
-- Revisions must preserve unrelated parts of scene.py.
+- Import fit_inside, stack_in_panel, assert_inside, and assert_scene_safe from manim_layout. Keep important objects at least 0.32 Manim units from the frame edge.
+- Build information panels as VGroups with explicit spacing. Use stack_in_panel or fit_inside with at least 0.30 units of padding. Call assert_inside and assert_scene_safe before animation.
+- Use a restrained palette, readable type, consistent spacing, and purposeful motion. Target 8-20 seconds for a first draft unless the user asks otherwise.
+- narration.json must be shaped as {"segments":[{"start":0.0,"text":"..."}]}. Passages must explain cause and effect, connect naturally, and use spoken mathematical pronunciation. Avoid fragments, filler, repeated "now", and fact lists.
+- The narration helper uses Speechify simba-3.2 with warm delivery, measured timing, fades, and loudness normalization. Fallback voices are forbidden.
+- Inspect metadata.json, poster.png, and contact-sheet.png. Check sampled frames for clipping, crowded layouts, spacing, contrast, overlaps, and continuity. Patch the smallest failing part and render again.
+- output.mp4 must exist before finishing. Never return base64 or paste full source into chat.
+- Revisions must preserve unrelated shots, clips, assets, prompts, and renderer outputs.
 - Your final response is one or two short sentences describing what changed. Do not expose hidden reasoning or raw command logs.`;
 
 function now() {
@@ -336,6 +336,11 @@ export class StudioService extends EventEmitter {
     this.updateProject(project);
     try {
       await renderRemotionProject(this.root, projectDir, timeline, path.join(projectDir, "output.mp4"));
+      let narration: Record<string, unknown> = { status: "not_requested", enabled: false };
+      if (fs.existsSync(path.join(projectDir, "narration.json"))) {
+        const result = await execFileAsync("node", [path.join(this.root, "scripts", "generate_narration.mjs"), projectDir], { env: process.env });
+        narration = JSON.parse(result.stdout.trim().split("\n").at(-1) || "{}");
+      }
       await execFileAsync("ffmpeg", ["-y", "-ss", "0", "-i", path.join(projectDir, "output.mp4"), "-frames:v", "1", path.join(projectDir, "poster.png")]);
       const metadata = {
         quality: "timeline",
@@ -345,6 +350,7 @@ export class StudioService extends EventEmitter {
         fps: timeline.format.fps,
         renderer: "remotion",
         renderedAt: now(),
+        narration,
       };
       fs.writeFileSync(path.join(projectDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
       action.status = "done";
@@ -405,9 +411,7 @@ export class StudioService extends EventEmitter {
         await this.bridge.resumeThread(project.threadId, projectDir);
       }
 
-      const request = isRevision
-        ? `Revise the existing animation with this request: ${text}`
-        : `Create the first editable Manim video for this prompt: ${text}`;
+      const request = productionRequest(text, isRevision);
       const response = await this.bridge.startTurn(project.threadId, projectDir, request);
       project.turnId = response.turn.id;
       this.updateProject(project);

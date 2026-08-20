@@ -218,10 +218,16 @@ export function validateVideoIR(value: unknown): VideoIRValidation {
   if (!project.format || !finitePositive(project.format.width) || !finitePositive(project.format.height)) errors.push("format width and height must be positive.");
   if (!project.format || !finitePositive(project.format.fps) || !finitePositive(project.format.duration)) errors.push("format fps and duration must be positive.");
   if (!Array.isArray(project.shots)) errors.push("shots must be an array.");
+  if (!Array.isArray(project.storyboard)) errors.push("storyboard must be an array.");
   if (!Array.isArray(project.assets)) errors.push("assets must be an array.");
   if (!Array.isArray(project.narration)) errors.push("narration must be an array.");
 
   const ids = new Set<string>();
+  for (const beat of project.storyboard || []) {
+    if (!beat.id || !beat.title || !beat.purpose || !beat.visual) errors.push("Every storyboard beat requires an id, title, purpose, and visual.");
+    if (!finitePositive(beat.duration)) errors.push(`Storyboard beat ${beat.id || "unknown"} has invalid timing.`);
+    if (!Array.isArray(beat.assetQueries)) errors.push(`Storyboard beat ${beat.id || "unknown"} requires assetQueries.`);
+  }
   for (const shot of project.shots || []) {
     if (!shot.id) errors.push("Every shot requires an id.");
     if (ids.has(shot.id)) errors.push(`Duplicate id: ${shot.id}.`);
@@ -245,6 +251,11 @@ export function validateVideoIR(value: unknown): VideoIRValidation {
     if (ordered[index].start < ordered[index - 1].start + ordered[index - 1].duration - 0.001) {
       errors.push(`Shots ${ordered[index - 1].id} and ${ordered[index].id} overlap.`);
     }
+  }
+  for (const segment of project.narration || []) {
+    if (!segment.id || !segment.text || segment.start < 0) errors.push("Every narration segment requires an id, text, and valid start.");
+    if (segment.end !== undefined && segment.end <= segment.start) errors.push(`Narration segment ${segment.id} has invalid timing.`);
+    if (segment.end !== undefined && project.format && segment.end > project.format.duration + 0.001) errors.push(`Narration segment ${segment.id} extends beyond the project.`);
   }
   return { valid: errors.length === 0, errors };
 }

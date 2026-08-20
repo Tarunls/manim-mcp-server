@@ -10,6 +10,8 @@
     "check": "tsc --noEmit",
     "test": "node --import tsx --test server/*.test.ts",
     "smoke:remotion": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/smoke_remotion.ts",
+    "validate:project": "node --import tsx scripts/validate_project.ts",
+    "render:project": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --import tsx scripts/render_project.ts",
     "setup:manim": "bash scripts/setup_manim.sh"
   },
   "dependencies": {
