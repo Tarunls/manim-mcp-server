@@ -3,14 +3,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
-import re
+import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+
+from scene_contract import semantic_sample_times, validate_narration_spec, validate_scene_source
 
 
 QUALITY_ARGS = {
@@ -47,20 +52,35 @@ def main() -> None:
     if not source.exists():
         fail("scene.py does not exist.")
     code = source.read_text(encoding="utf-8")
-    if not re.search(r"class\s+GeneratedScene\s*\([^)]*Scene\s*\)", code):
-        fail("scene.py must define GeneratedScene as a Scene subclass.")
-    if "from manim_layout import" not in code:
-        fail("scene.py must import the shared manim_layout guards.")
-    if "assert_scene_safe(" not in code:
-        fail("scene.py must call assert_scene_safe for its important visual groups.")
-    if "RoundedRectangle(" in code and "assert_inside(" not in code:
-        fail("Panel-based scenes must call assert_inside for every panel's content.")
+    contract = validate_scene_source(code)
+    if not contract.valid:
+        details = "\n".join(f"line {issue.line}: {issue.message}" for issue in contract.issues)
+        fail(f"Scene contract validation failed:\n{details}")
+
+    narration_file = project_dir / "narration.json"
+    narration_contract = None
+    narration_bytes = None
+    if narration_file.exists():
+        narration_bytes = narration_file.read_bytes()
+        try:
+            narration_spec = json.loads(narration_bytes)
+        except json.JSONDecodeError as error:
+            fail(f"Invalid narration.json: {error}")
+        estimated_duration = contract.estimated_duration_seconds if contract.dynamic_timing_calls == 0 else None
+        narration_contract = validate_narration_spec(narration_spec, estimated_duration)
+        if not narration_contract.valid:
+            details = "\n".join(f"segment {issue.line}: {issue.message}" for issue in narration_contract.issues)
+            fail(f"Narration contract validation failed:\n{details}")
 
     manim = root / ".venv" / "bin" / "manim"
     if not manim.exists():
         fail("Manim is not installed in .venv.")
 
     media_dir = project_dir / ".media"
+    # Each render gets a clean Manim workspace so a stale concatenated movie can
+    # never be mistaken for the output of the current source.
+    if media_dir.exists():
+        shutil.rmtree(media_dir)
     command = [
         str(manim),
         *QUALITY_ARGS[quality],
@@ -102,7 +122,6 @@ def main() -> None:
     optimized.replace(output)
 
     narration_result = {"status": "not_requested", "enabled": False}
-    narration_file = project_dir / "narration.json"
     if narration_file.exists():
         narration = subprocess.run(
             ["node", str(root / "scripts" / "generate_narration.mjs"), str(project_dir)],
@@ -154,23 +173,58 @@ def main() -> None:
     if frame.returncode != 0:
         fail(frame.stderr[-2000:] or "Could not extract the poster frame.")
 
+    narration_starts = narration_contract.starts if narration_contract else []
+    narration_spec_hash = hashlib.sha256(narration_bytes).hexdigest() if narration_bytes else None
+
+    contact_sheet_times = semantic_sample_times(duration, narration_starts, count=6)
     contact_sheet = project_dir / "contact-sheet.png"
-    interval = max(duration / 6.0, 0.25)
-    sheet = subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", str(output),
-            "-vf", f"fps=1/{interval:.4f},scale=480:-2,tile=3x2:padding=8:margin=8:color=white",
-            "-frames:v", "1", str(contact_sheet),
-        ],
-        text=True,
-        capture_output=True,
-        timeout=90,
+    with tempfile.TemporaryDirectory(prefix="manim-contact-") as temporary:
+        temporary_dir = Path(temporary)
+        stills: list[Path] = []
+        for index, timestamp in enumerate(contact_sheet_times):
+            still = temporary_dir / f"frame-{index:02d}.png"
+            extracted = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-ss", f"{timestamp:.3f}", "-i", str(output),
+                    "-frames:v", "1", str(still),
+                ],
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+            if extracted.returncode != 0:
+                fail(extracted.stderr[-2000:] or f"Could not extract contact-sheet frame at {timestamp:.3f}s.")
+            stills.append(still)
+
+        filters = [
+            f"[{index}:v]scale=480:270:force_original_aspect_ratio=decrease,"
+            f"pad=480:270:(ow-iw)/2:(oh-ih)/2:color=white[v{index}]"
+            for index in range(len(stills))
+        ]
+        layout = "|".join(f"{(index % 3) * 480}_{(index // 3) * 270}" for index in range(len(stills)))
+        filters.append(
+            "".join(f"[v{index}]" for index in range(len(stills)))
+            + f"xstack=inputs={len(stills)}:layout={layout}:fill=white[out]"
+        )
+        sheet_command = ["ffmpeg", "-y"]
+        for still in stills:
+            sheet_command.extend(["-i", str(still)])
+        sheet_command.extend(
+            ["-filter_complex", ";".join(filters), "-map", "[out]", "-frames:v", "1", str(contact_sheet)]
+        )
+        sheet = subprocess.run(sheet_command, text=True, capture_output=True, timeout=90)
+        if sheet.returncode != 0:
+            fail(sheet.stderr[-2000:] or "Could not create the contact sheet.")
+
+    version_probe = subprocess.run(
+        [str(manim), "--version"], text=True, capture_output=True, timeout=30
     )
-    if sheet.returncode != 0:
-        fail(sheet.stderr[-2000:] or "Could not create the contact sheet.")
+    version_lines = (version_probe.stdout or version_probe.stderr).strip().splitlines()
+    manim_version = version_lines[-1] if version_lines else "unknown"
 
     metadata = {
         "scene": "GeneratedScene",
+        "renderer": "manim",
         "quality": quality,
         "duration": duration,
         "width": int(stream["width"]),
@@ -183,7 +237,26 @@ def main() -> None:
         "output": "output.mp4",
         "poster": "poster.png",
         "contactSheet": "contact-sheet.png",
+        "contactSheetTimes": contact_sheet_times,
         "narration": narration_result,
+        "provenance": {
+            "renderedAt": datetime.now(timezone.utc).isoformat(),
+            "sourceHash": contract.source_hash,
+            "narrationSpecHash": narration_spec_hash,
+            "manimVersion": manim_version,
+            "pythonVersion": platform.python_version(),
+            "fontFamilies": contract.font_families,
+        },
+        "contract": {
+            "panelCount": len(contract.panel_variables),
+            "guardedPanelCount": len(contract.guarded_panels),
+            "explicitWaitSeconds": contract.explicit_wait_seconds,
+            "explicitWaitRatio": round(contract.explicit_wait_seconds / max(duration, 0.001), 4),
+            "estimatedDurationSeconds": contract.estimated_duration_seconds,
+            "dynamicTimingCalls": contract.dynamic_timing_calls,
+            "narrationMinimumSeconds": narration_contract.minimum_duration_seconds if narration_contract else None,
+            "narrationWordCounts": narration_contract.word_counts if narration_contract else [],
+        },
     }
     (project_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(json.dumps(metadata))

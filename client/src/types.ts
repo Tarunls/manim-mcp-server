@@ -17,12 +17,32 @@ export interface AgentAction {
 }
 
 export interface RenderInfo {
+  renderer?: string;
   quality?: string;
   duration?: number;
   width?: number;
   height?: number;
   fps?: number;
   bitRate?: number;
+  contactSheetTimes?: number[];
+  provenance?: {
+    renderedAt?: string;
+    sourceHash?: string;
+    narrationSpecHash?: string | null;
+    manimVersion?: string;
+    pythonVersion?: string;
+    fontFamilies?: string[];
+  };
+  contract?: {
+    panelCount?: number;
+    guardedPanelCount?: number;
+    explicitWaitSeconds?: number;
+    explicitWaitRatio?: number;
+    estimatedDurationSeconds?: number;
+    dynamicTimingCalls?: number;
+    narrationMinimumSeconds?: number | null;
+    narrationWordCounts?: number[];
+  };
   narration?: {
     status?: string;
     enabled?: boolean;

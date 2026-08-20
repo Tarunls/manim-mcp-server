@@ -22,13 +22,14 @@ Requirements:
 - Call assert_inside(panel, *panel_contents, padding=0.16) before animating each panel. Call assert_scene_safe on every major group before its first animation. Rendering intentionally fails when these checks detect overflow.
 - Use no more than two type sizes inside a panel. Keep labels at least 0.18 units apart and align related captions to the equation terms above them.
 - Use a restrained palette, readable type, consistent spacing, and purposeful motion.
-- Target 8-15 seconds for a first draft unless the user asks otherwise.
+- Derive the runtime from the narration plan before animating. Three 18-word passages already require about 25 seconds at the required speaking rate and breathing allowance; never stretch an 8-15 second visual plan with long frozen holds. Keep explicit self.wait() time below 35% of the video unless the subject genuinely requires a sustained reading hold.
+- Seed every use of random or numpy.random explicitly. The render contract rejects unseeded randomness.
 - Render by running: python3 ../../../scripts/render_scene.py . balanced
 - Write narration.json before rendering. It must be JSON shaped as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages timed to the visual beats. Each passage should be 18-45 words, explain cause and effect instead of merely naming objects, and lead naturally into the next idea.
 - Write mathematical pronunciation as natural speech (for example, "a squared plus b squared equals c squared"). Avoid fragments, repeated "now", filler, and isolated fact lists. Budget each visual slot at roughly 145 spoken words per minute plus 0.8 seconds of breathing room.
 - The render helper uses Speechify simba-3.2 with warm SSML delivery, maximum-fidelity MP3, timing guards, fades, and loudness normalization. It refuses fallback voices and fails if a spoken passage does not fit its visual slot.
 - After rendering, inspect metadata.json and verify narration.provider is speechify, narration.model is simba-3.2, and narration.status is ready. Never create, download, or substitute narration through another provider.
-- Inspect both poster.png and contact-sheet.png. Check all six sampled frames for clipping, crowded panels, uneven spacing, poor contrast, and unintended overlaps. If any issue exists, patch scene.py and render once more.
+- Inspect both poster.png and contact-sheet.png. The contact sheet samples narration beats and their midpoints rather than arbitrary intervals. Check all six frames for clipping, crowded panels, uneven spacing, poor contrast, and unintended overlaps. Inspect metadata.json and reduce contract.explicitWaitRatio when it exceeds 0.35 without a clear reason. If any issue exists, patch scene.py and render once more.
 - output.mp4 must exist before you finish. Never return base64 or paste the full source into chat.
 - Revisions must preserve unrelated parts of scene.py.
 - Your final response is one or two short sentences describing what changed. Do not expose hidden reasoning or raw command logs.`;

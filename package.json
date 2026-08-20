@@ -8,6 +8,7 @@
     "build": "vite build && tsc --noEmit",
     "start": "NODE_ENV=production TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
     "check": "tsc --noEmit",
+    "test": "python3 -m unittest scripts.test_scene_contract",
     "setup:manim": "bash scripts/setup_manim.sh"
   },
   "dependencies": {

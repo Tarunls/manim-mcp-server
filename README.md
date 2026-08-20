@@ -69,10 +69,12 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim
 1. The Node backend starts one long-lived `codex app-server` process over stdio.
 2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
 3. Codex writes or revises `scene.py` inside that folder.
-4. `scripts/render_scene.py` renders the browser default at 1920×1080 and 30 fps, validates scene and panel bounds, optimizes MP4 seeking, extracts a poster and six-frame contact sheet, and records render metadata.
+4. `scripts/render_scene.py` validates the Python scene contract with the AST, renders in a clean isolated Manim media directory at 1920×1080 and 30 fps, validates scene and panel bounds, optimizes MP4 seeking, extracts a poster and narration-aware six-frame contact sheet, and records reproducible render metadata.
 5. If `narration.json` and a server API key are present, timed speech segments are generated and muxed into the MP4.
 6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
 7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
+
+Render metadata includes a SHA-256 source fingerprint, narration-spec fingerprint, Manim and Python versions, referenced font families, semantic contact-sheet timestamps, and explicit static-wait metrics. The contract rejects missing layout guards, unguarded rounded panels, invalid shared-helper arguments, additional Scene subclasses, and unseeded randomness before invoking Manim.
 
 The server binds to `127.0.0.1` for local MVP use. Do not expose it directly to the internet. A hosted version should move rendering into isolated workers and add application authentication, rate limits, object storage, and per-user project authorization.
 
