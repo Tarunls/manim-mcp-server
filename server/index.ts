@@ -2,12 +2,16 @@ import express from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createServer as createViteServer } from "vite";
 import { randomUUID } from "node:crypto";
+import { ConvexHttpClient } from "convex/browser";
+import { anyApi } from "convex/server";
 import { isWindows, manimPath } from "./platform.js";
 import { StudioService } from "./studio-service.js";
 import { BillingService } from "./billing-service.js";
-import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
+import { e2bConfigured, SandboxManager } from "./e2b-sandbox-manager.js";
+import { E2BCodexBridge } from "./e2b-codex-bridge.js";
+import { assertConcurrencyAllowed, assertPlanAllowsGeneration, quotaConfig } from "./quota-service.js";
+import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, LimitError, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
 // is bash syntax and fails on Windows, where /tmp does not exist either. Doing
@@ -25,6 +29,56 @@ const studio = new StudioService(root);
 const billing = new BillingService(root);
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+
+// ---------------------------------------------------------------------------
+// Identity: Convex-auth session tokens arrive as `Authorization: Bearer`.
+// Profiles are cached briefly so hot routes don't round-trip Convex.
+// ---------------------------------------------------------------------------
+const convexUrl = process.env.VITE_CONVEX_URL || process.env.CONVEX_URL || "";
+const convex = convexUrl ? new ConvexHttpClient(convexUrl) : undefined;
+const authRequired = process.env.AUTH_REQUIRED === "true";
+const profileCache = new Map<string, { at: number; profile: Record<string, unknown> | null }>();
+const PROFILE_CACHE_MS = 60_000;
+
+async function profileFor(request: express.Request): Promise<Record<string, unknown> | null> {
+  const authorization = request.header("authorization");
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (!token || !convex) return null;
+  const cached = profileCache.get(token);
+  if (cached && Date.now() - cached.at < PROFILE_CACHE_MS) return cached.profile;
+  try {
+    const client = new ConvexHttpClient(convexUrl, { auth: token });
+    const profile = await client.query(anyApi.users.viewer, {});
+    profileCache.set(token, { at: Date.now(), profile: (profile as Record<string, unknown>) ?? null });
+    if (profileCache.size > 5_000) profileCache.clear();
+    return (profile as Record<string, unknown>) ?? null;
+  } catch {
+    profileCache.set(token, { at: Date.now(), profile: null });
+    return null;
+  }
+}
+
+function convexUserId(profile: Record<string, unknown> | null) {
+  return typeof profile?.id === "string" ? (profile.id as string) : "";
+}
+
+// Per-session E2B execution. Falls back to the shared local bridge when E2B
+// is not configured (local development without sandboxing).
+let sandboxManager: SandboxManager | undefined;
+if (e2bConfigured()) {
+  sandboxManager = new SandboxManager(async () => {});
+  const sandboxIdsByProject = new Map<string, string>();
+  studio.setBridgeFactory(async (projectId) => {
+    const entry = await sandboxManager!.acquire(projectId, sandboxIdsByProject.get(projectId));
+    sandboxIdsByProject.set(projectId, entry.sandboxId);
+    return new E2BCodexBridge(
+      sandboxManager!,
+      entry,
+      path.join(root, "studio", "projects", projectId),
+    );
+  });
+}
+
 
 function cookieValue(header: string | undefined, name: string) {
   return header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
@@ -85,14 +139,26 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), (requ
 });
 
 app.use(express.json({ limit: "16mb" }));
-app.use(["/api", "/media"], (request, response, next) => {
-  let id = cookieValue(request.header("cookie"), "lesson_studio_user");
-  if (!id || !/^[a-zA-Z0-9-]{12,64}$/.test(id)) {
-    id = randomUUID();
-    response.cookie("lesson_studio_user", id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 365 * 24 * 60 * 60 * 1_000 });
+app.use(["/api", "/media"], async (request, response, next) => {
+  // Authenticated users carry a Convex session token; anonymous visitors keep
+  // the legacy cookie identity so local development still works end to end.
+  
+  const profile = await profileFor(request);
+  response.locals.authProfile = profile;
+  if (profile) {
+    response.locals.studioUserId = convexUserId(profile);
+  } else {
+    if (authRequired && request.originalUrl.startsWith("/api") && !request.originalUrl.startsWith("/api/pricing") && !request.originalUrl.startsWith("/api/auth")) {
+      return response.status(401).json({ error: "Sign in to continue.", code: "auth-required" });
+    }
+    let id = cookieValue(request.header("cookie"), "lesson_studio_user");
+    if (!id || !/^[a-zA-Z0-9-]{12,64}$/.test(id)) {
+      id = randomUUID();
+      response.cookie("lesson_studio_user", id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 365 * 24 * 60 * 60 * 1_000 });
+    }
+    response.locals.studioUserId = id;
   }
-  response.locals.studioUserId = id;
-  studio.claimLegacyProjects(id);
+  studio.claimLegacyProjects(String(response.locals.studioUserId));
   next();
 });
 
@@ -159,10 +225,21 @@ app.post("/api/projects/:id/messages", async (request, response) => {
   const text = typeof request.body?.text === "string" ? request.body.text.trim() : "";
   if (!text) return response.status(400).json({ error: "Write a prompt first." });
   try {
+    const profile = (request.res?.locals.authProfile ?? null) as Record<string, unknown> | null;
+    assertPlanAllowsGeneration(profile as never);
     const project = ownedProject(request);
     const effort = request.body?.effort === undefined ? undefined : generationEffortFrom(request.body.effort);
     const intent = request.body?.intent === undefined ? "auto" : generationIntentFrom(request.body.intent);
     if (!intent || (request.body?.effort !== undefined && !effort)) return response.status(400).json({ error: "Choose a valid generation mode and thinking setting." });
+    if (profile && convex) {
+      try {
+        const active = await new ConvexHttpClient(convexUrl!, { auth: request.header("authorization")!.slice(7) })
+          .query(anyApi.sessions.countActiveForUser, {});
+        assertConcurrencyAllowed(profile as never, Number(active ?? 0));
+      } catch (error) {
+        if ((error as LimitError)?.code) throw error;
+      }
+    }
     const selectedEffort = effort || project.generationPreferences.effort;
     if (project.narrationPreferences.enabled) billing.assertNarration(userId(request));
     const credits = billing.reserveGeneration(userId(request), selectedEffort);
@@ -173,7 +250,9 @@ app.post("/api/projects/:id/messages", async (request, response) => {
       throw error;
     }
   } catch (error) {
-    response.status(409).json({ error: error instanceof Error ? error.message : "Could not start generation." });
+    const limit = error as LimitError;
+    const status = limit?.code ? 429 : 409;
+    response.status(status).json({ error: error instanceof Error ? error.message : "Could not start generation.", code: limit?.code });
   }
 });
 
@@ -290,7 +369,7 @@ app.use("/media/:projectId", (request, response, next) => {
   next();
 });
 
-app.use("/media", express.static(path.join(root, "studio", "projects"), {
+app.use("/media", express.static(path.join(process.env.STUDIO_DATA_ROOT?.trim() || root, "studio", "projects"), {
   fallthrough: false,
   immutable: false,
   setHeaders(response) {
@@ -298,11 +377,14 @@ app.use("/media", express.static(path.join(root, "studio", "projects"), {
   },
 }));
 
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const clientDir = path.join(root, "dist", "client");
   app.use(express.static(clientDir));
   app.get("/{*path}", (_request, response) => response.sendFile(path.join(clientDir, "index.html")));
-} else {
+} else if (process.env.NODE_ENV !== "production") {
+  // Lazy import: vite is a devDependency and must never enter the serverless
+  // bundle in production.
+  const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     root: path.join(root, "client"),
     server: { middlewareMode: true },
@@ -311,20 +393,27 @@ if (process.env.NODE_ENV === "production") {
   app.use(vite.middlewares);
 }
 
-const server = app.listen(port, host, () => {
-  console.log(`Lesson Studio is running at http://${host}:${port}`);
-});
+export const studioApp = app;
+export const initializeStudio = () => studio.initialize();
 
-void studio.initialize();
+function runStandalone() {
+  const server = app.listen(port, host, () => {
+    console.log(`Lesson Studio is running at http://${host}:${port}`);
+  });
+  void studio.initialize();
 
-function shutdown() {
-  studio.bridge.stop();
-  server.close(() => process.exit(0));
+  function shutdown() {
+    studio.bridge.stop();
+    void sandboxManager?.stopAll().finally(() => server.close(() => process.exit(0)));
+    if (!sandboxManager) server.close(() => process.exit(0));
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+if (!process.env.VERCEL) runStandalone();
 
-if (!fs.existsSync(manimPath(root))) {
+if (!fs.existsSync(manimPath(root)) && !e2bConfigured()) {
   console.warn("Manim is not installed yet. Run: npm run setup:manim");
 }

@@ -8,6 +8,19 @@ import { CodexBridge } from "./codex-bridge.js";
 import { manimPath } from "./platform.js";
 import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
 
+// A bridge factory lets the host choose per-session execution: the shared
+// local codex process in dev, or an isolated E2B sandbox per project in prod.
+export interface BridgeLike {
+  startThread(cwd: string, developerInstructions: string, model?: AgentModel): Promise<{ thread: { id: string } }>;
+  resumeThread(threadId: string, cwd: string): Promise<{ thread: { id: string } }>;
+  startTurn(threadId: string, cwd: string, text: string, localImagePaths?: string[], model?: AgentModel, reasoningEffort?: AgentReasoningEffort): Promise<{ turn: { id: string } }>;
+  interrupt(threadId: string, turnId: string): Promise<unknown>;
+  on(event: "notification", listener: (message: unknown) => void): unknown;
+  stop(): void | Promise<void>;
+}
+
+export type BridgeFactory = (projectId: string) => Promise<BridgeLike>;
+
 const execFileAsync = promisify(execFile);
 const DEFAULT_RENDERER: RendererKind = "composite";
 const DEFAULT_MODEL: AgentModel = "gpt-5.6-sol";
@@ -195,14 +208,27 @@ export class StudioService extends EventEmitter {
   private agentMessagePhaseByItem = new Map<string, string | null>();
   private authState: AuthState = { connected: false };
   private runtimeState: RuntimeState = { codex: false, manim: false, remotion: false, ffmpeg: false };
+  private bridgeFactory?: BridgeFactory;
+  private sessionBridges = new Map<string, BridgeLike>();
+
+  setBridgeFactory(factory: BridgeFactory) {
+    this.bridgeFactory = factory;
+  }
 
   constructor(root: string) {
     super();
     this.root = root;
-    this.projectRoot = path.join(root, "studio", "projects");
+    // Serverless filesystems are read-only except /tmp; allow the host to
+    // redirect mutable project storage.
+    const dataRoot = process.env.STUDIO_DATA_ROOT?.trim() || root;
+    this.projectRoot = path.join(dataRoot, "studio", "projects");
     this.bridge = new CodexBridge(root);
     fs.mkdirSync(this.projectRoot, { recursive: true });
-    this.loadProjects();
+    try {
+      this.loadProjects();
+    } catch (error) {
+      console.error("Could not load stored projects:", error);
+    }
     this.bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
     this.bridge.on("ready", () => {
       this.runtimeState.codex = true;
@@ -218,7 +244,8 @@ export class StudioService extends EventEmitter {
   }
 
   private get storePath() {
-    return path.join(this.root, "studio", "projects.json");
+    const dataRoot = process.env.STUDIO_DATA_ROOT?.trim() || this.root;
+    return path.join(dataRoot, "studio", "projects.json");
   }
 
   private loadProjects() {
@@ -823,17 +850,24 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     this.updateProject(project);
 
     try {
+      const bridge: BridgeLike = this.bridgeFactory
+        ? await this.bridgeFactory(project.id)
+        : this.bridge;
+      if (this.bridgeFactory) {
+        this.sessionBridges.set(project.id, bridge);
+        bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
+      }
       if (!project.threadId) {
         const instructions = project.renderer === "remotion"
           ? REMOTION_AGENT_INSTRUCTIONS
           : project.renderer === "composite"
             ? COMPOSITE_AGENT_INSTRUCTIONS
             : MANIM_AGENT_INSTRUCTIONS;
-        const response = await this.bridge.startThread(projectDir, instructions, project.generationPreferences.model);
+        const response = await bridge.startThread(projectDir, instructions, project.generationPreferences.model);
         project.threadId = response.thread.id;
         this.threadToProject.set(project.threadId, project.id);
       } else {
-        await this.bridge.resumeThread(project.threadId, projectDir);
+        await bridge.resumeThread(project.threadId, projectDir);
       }
 
       const referenceFrameDirs = [
@@ -865,7 +899,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
 - Begin the final response with "${project.versions.length ? `Revision ${targetVersion} ready:` : "First draft ready:"}" so the user always knows which generation completed.
 
 ${requestBody}`;
-      const response = await this.bridge.startTurn(
+      const response = await bridge.startTurn(
         project.threadId,
         projectDir,
         request,
@@ -890,7 +924,8 @@ ${requestBody}`;
   async cancel(projectId: string) {
     const project = this.projects.get(projectId);
     if (!project?.threadId || !project.turnId) return;
-    await this.bridge.interrupt(project.threadId, project.turnId);
+    const bridge = this.sessionBridges.get(projectId) ?? this.bridge;
+    await bridge.interrupt(project.threadId, project.turnId);
     project.status = "cancelled";
     project.stage = "ready";
     for (const action of project.actions) if (action.status === "running") action.status = "failed";

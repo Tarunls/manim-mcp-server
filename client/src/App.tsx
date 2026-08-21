@@ -38,6 +38,12 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as CanvasPointerEvent } from "react";
 import type { AuthState, BillingPlanId, BillingState, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, PricingPlan, ProjectVersion, RendererKind, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types";
+import { authToken } from "./auth";
+
+function tokenHeader(): Record<string, string> {
+  const token = authToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 const EMPTY_AUTH: AuthState = { connected: false };
 const EMPTY_RUNTIME: RuntimeState = { codex: false, manim: false, remotion: false, ffmpeg: false };
@@ -53,7 +59,7 @@ type FloatingPosition = { x: number; y: number };
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { "Content-Type": "application/json", ...tokenHeader(), ...init?.headers },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -1232,9 +1238,10 @@ export function App() {
       }
     };
 
-    void fetch("/api/state").then((response) => response.json()).then((event: StudioEvent) => applyEvent(event));
+    void fetch("/api/state", { headers: tokenHeader() }).then((response) => response.json()).then((event: StudioEvent) => applyEvent(event));
     void request<{ plans: PricingPlan[] }>("/api/pricing").then((result) => setPricingPlans(result.plans));
-    const events = new EventSource("/api/events");
+    const token = authToken();
+    const events = new EventSource(token ? `/api/events?auth=${encodeURIComponent(token)}` : "/api/events");
     events.onmessage = (message) => {
       const event = JSON.parse(message.data) as StudioEvent;
       applyEvent(event);

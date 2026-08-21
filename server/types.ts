@@ -1,9 +1,17 @@
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
 export type RendererKind = "manim" | "remotion" | "composite";
-export type AgentModel = "gpt-5.6-sol" | "gpt-5.6-terra";
+export type AgentModel = "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna";
 export type GenerationEffort = "quick" | "balanced" | "thorough";
-export type AgentReasoningEffort = "medium" | "high" | "xhigh";
+export type AgentReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
+
+export class LimitError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 export type GenerationIntent = "auto" | "new" | "revise";
 export type BillingPlanId = "free" | "creator" | "pro";
 export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
