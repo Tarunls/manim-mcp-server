@@ -6,12 +6,31 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { CodexBridge } from "./codex-bridge.js";
 import { manimPath } from "./platform.js";
-import type { AgentAction, AuthState, ColorPalette, FontCategory, FrameReview, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, StudioEvent, StudioProject } from "./types.js";
+import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_RENDERER: RendererKind = "composite";
+const DEFAULT_MODEL: AgentModel = "gpt-5.6-sol";
+const DEFAULT_GENERATION_EFFORT: GenerationEffort = "balanced";
+const GENERATION_EFFORTS: Record<GenerationEffort, { model: AgentModel; reasoningEffort: AgentReasoningEffort }> = {
+  quick: { model: "gpt-5.6-terra", reasoningEffort: "medium" },
+  balanced: { model: DEFAULT_MODEL, reasoningEffort: "high" },
+  thorough: { model: DEFAULT_MODEL, reasoningEffort: "xhigh" },
+};
+
+function generationPreferencesFor(effort: GenerationEffort): StudioProject["generationPreferences"] {
+  return { effort, ...GENERATION_EFFORTS[effort] };
+}
+
+function normalizeGenerationPreferences(preferences?: Partial<StudioProject["generationPreferences"]>) {
+  const effort = preferences?.effort === "quick" || preferences?.effort === "balanced" || preferences?.effort === "thorough"
+    ? preferences.effort
+    : preferences?.model === "gpt-5.6-terra" ? "quick" : DEFAULT_GENERATION_EFFORT;
+  return generationPreferencesFor(effort);
+}
 
 const FONT_PRESETS = {
-  modern: { manim: "Segoe UI", css: '"Manrope", "Segoe UI", sans-serif', character: "clean geometric sans" },
+  modern: { manim: "Segoe UI", css: '"Inter", "Manrope", "Segoe UI", sans-serif', character: "clean geometric sans" },
   editorial: { manim: "Georgia", css: 'Georgia, "Times New Roman", serif', character: "editorial serif" },
   technical: { manim: "Cascadia Mono", css: '"Cascadia Mono", Consolas, monospace', character: "precise monospaced" },
   friendly: { manim: "Trebuchet MS", css: '"Trebuchet MS", "Segoe UI", sans-serif', character: "rounded humanist sans" },
@@ -19,6 +38,7 @@ const FONT_PRESETS = {
 } as const;
 
 const COLOR_PRESETS = {
+  cinematic: { background: "#07111F", surface: "#0C1D2E", text: "#F7F4ED", primary: "#67E8F9", secondary: "#FB7185", accent: "#FBBF24" },
   studio: { background: "#F6F3EE", surface: "#FFFFFF", text: "#1C1C1A", primary: "#D95C32", secondary: "#406E8E", accent: "#E8B44F" },
   ocean: { background: "#071D2B", surface: "#0E3042", text: "#F1FAFF", primary: "#45C4D9", secondary: "#4E7AC7", accent: "#F4C95D" },
   forest: { background: "#0C2018", surface: "#17382A", text: "#F2F6EC", primary: "#78C091", secondary: "#B7D38D", accent: "#E7B65A" },
@@ -33,16 +53,17 @@ Turn the user's teaching goal into one coherent editable video using the rendere
 
 Requirements:
 - Start by writing a short beat plan for yourself: one teaching purpose, one dominant visual, and one narration passage per beat. Avoid adding a second panel when changing or replacing the current visual would teach the point more clearly.
+- Use the studio's reference production standard unless the user asks for a different format: about four chapter-like beats and 35-45 seconds, one concise editorial thesis plus one large focused visual stage, generous negative space, restrained supporting copy, and a clear visual transformation from one beat to the next. This is a quality floor, not a template to copy literally.
+- For Composite work, follow the proven division of labor: Manim owns the hard mathematical object or geometric transformation; Remotion owns the final canvas, typography, cards, pacing, transitions, and polish. Keep Manim inserts visually dominant and use React framing to clarify them, not compete with them.
+- Favor cinematic restraint over dashboard density. Do not fill the frame with interchangeable cards, decorative widgets, or simultaneous mini-explanations. Each beat should have one memorable visual claim that can be understood from a paused frame.
 - Compose for a 16:9 frame with a restrained palette, readable type, consistent spacing, and purposeful motion.
 - Treat layout as a constraint problem, not a visual guess. Identify independent peer objects for every beat, give each a reserved region, and keep at least 3% of the frame width between unrelated objects.
 - A bounding box intersecting another bounding box counts as a collision unless the overlap is intentional (for example, a label inside its own card). Group intentional composites and audit the composites against their peers.
 - Check layout at the beginning, midpoint, and end of every transition—not only on the final frame. Text reflow, transforms, and entering/exiting objects can collide between key poses.
 - Prefer replacing, transforming, or fading a visual before introducing more simultaneous objects. Keep no more than 5 independent visual groups on screen unless the lesson truly requires it.
-- Write narration.json before rendering. It must be JSON shaped as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages aligned to the visual beats. Each passage should be 18-45 words, explain cause and effect, and lead naturally into the next idea.
-- Write mathematical pronunciation as natural speech (for example, "a squared plus b squared equals c squared"). Avoid fragments, repeated "now", filler, and isolated fact lists. Budget each visual slot at roughly 145 spoken words per minute plus 0.8 seconds of breathing room.
-- Target 24-45 seconds for a narrated first draft unless the user asks for a different duration.
-- The render helper uses Speechify simba-3.2 with warm SSML delivery, maximum-fidelity MP3, timing guards, fades, and loudness normalization. It refuses fallback voices and fails if a spoken passage does not fit its visual slot.
-- After rendering, inspect metadata.json and verify narration.provider is speechify, narration.model is simba-3.2, and narration.status is ready. Never create, download, or substitute narration through another provider.
+- Read narration-config.json before planning. When enabled is false, make a silent video, do not depend on narration.json, and verify metadata.json reports narration.enabled false. When enabled is true, write narration.json before rendering as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages aligned to the visual beats.
+- For enabled narration, each passage should be 18-45 words, explain cause and effect, and lead naturally into the next idea. Write mathematical pronunciation as natural speech, budget roughly 145 spoken words per minute plus breathing room, and target 24-45 seconds unless the user asks for a different duration.
+- Enabled narration uses Speechify simba-3.2 with warm SSML delivery, timing guards, fades, and loudness normalization. Never create or substitute a fallback voice. After rendering, verify metadata.json reports provider speechify, model simba-3.2, and status ready.
 - Inspect both poster.png and contact-sheet.png. The contact sheet samples twelve moments; check every one for clipping, crowded panels, uneven spacing, poor contrast, accidental occlusion, and objects crossing during transitions. If any issue exists, fix the source and render again.
 - If review-config.json exists, read ../../skills/educational-video-reviewer/SKILL.md and follow it after rendering. Write review-report.json, validate it, and repair blocking issues once before finishing.
 - Read design-config.json before authoring and use its chosen font category and palette consistently. Do not silently replace the selected visual system with your own defaults.
@@ -117,6 +138,35 @@ function commandLabel(command: string, target: string) {
   return `Working on ${target}`;
 }
 
+function normalizedPrompt(prompt: string) {
+  return prompt.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function looksLikeIndependentVideoRequest(text: string, project: StudioProject) {
+  const normalized = normalizedPrompt(text);
+  if (normalized && normalized === normalizedPrompt(project.prompt)) return true;
+  if (/\b(new video|new lesson|new animation|different (?:video|lesson|topic)|start (?:again|over)|from scratch|fresh draft)\b/i.test(text)) return true;
+  if (/^\s*(?:create|generate|produce|design|build|make|give me)\b[\s\S]{0,100}\b(?:video|lesson|animation|explainer)\b/i.test(text)) return true;
+  if (/^\s*(?:explain|teach|animate|show how)\b/i.test(text) && !/\b(?:this|current|existing|again|more|less|instead|change|fix|replace|remove)\b/i.test(text)) return true;
+  return false;
+}
+
+interface ProjectSeedPreferences {
+  reviewPreferences?: StudioProject["reviewPreferences"];
+  designPreferences?: StudioProject["designPreferences"];
+  narrationPreferences?: StudioProject["narrationPreferences"];
+  generationPreferences?: StudioProject["generationPreferences"];
+}
+
+interface SendMessageOptions {
+  agentRequest?: string;
+  localImagePaths?: string[];
+  requestKind?: string;
+  chatAttachment?: { type: "frameReview"; imageUrl: string; label: string };
+  intent?: GenerationIntent;
+  requestedEffort?: GenerationEffort;
+}
+
 function generationTarget(project: StudioProject) {
   return project.versions.length ? `revision ${project.versions.length + 1}` : "first draft";
 }
@@ -138,7 +188,7 @@ function safeFileStem(value: string) {
 export class StudioService extends EventEmitter {
   readonly root: string;
   readonly projectRoot: string;
-  readonly bridge = new CodexBridge();
+  readonly bridge: CodexBridge;
   private projects = new Map<string, StudioProject>();
   private threadToProject = new Map<string, string>();
   private assistantMessageByItem = new Map<string, string>();
@@ -150,6 +200,7 @@ export class StudioService extends EventEmitter {
     super();
     this.root = root;
     this.projectRoot = path.join(root, "studio", "projects");
+    this.bridge = new CodexBridge(root);
     fs.mkdirSync(this.projectRoot, { recursive: true });
     this.loadProjects();
     this.bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
@@ -190,17 +241,22 @@ export class StudioService extends EventEmitter {
           delete migrated.proxyUrl;
         }
         project.renderer ||= "manim";
+        project.ownerId ||= "__legacy__";
+        project.favorite = project.favorite === true;
         project.versions ||= [];
         project.reviews ||= [];
         project.assets ||= [];
         project.reviewPreferences ||= { focus: "balanced", strictness: "normal" };
         project.designPreferences = {
           fontCategory: project.designPreferences?.fontCategory || "modern",
-          colorPalette: project.designPreferences?.colorPalette || "studio",
+          colorPalette: project.designPreferences?.colorPalette || "cinematic",
         };
+        project.narrationPreferences = { enabled: project.narrationPreferences?.enabled !== false };
+        project.generationPreferences = normalizeGenerationPreferences(project.generationPreferences);
         fs.mkdirSync(path.join(this.projectRoot, project.id), { recursive: true });
         this.writeReviewConfig(project);
         this.writeDesignConfig(project);
+        this.writeNarrationConfig(project);
         if (project.status === "running") {
           project.status = "idle";
           project.stage = "ready";
@@ -238,12 +294,38 @@ export class StudioService extends EventEmitter {
     this.emitEvent({ type: "runtime", runtime: this.runtimeState });
   }
 
-  listProjects() {
-    return [...this.projects.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  listProjects(ownerId?: string) {
+    return [...this.projects.values()]
+      .filter((project) => !ownerId || project.ownerId === ownerId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  getProject(id: string) {
-    return this.projects.get(id);
+  getProject(id: string, ownerId?: string) {
+    const project = this.projects.get(id);
+    return project && (!ownerId || project.ownerId === ownerId) ? project : undefined;
+  }
+
+  getAuthState() {
+    return this.authState;
+  }
+
+  claimLegacyProjects(ownerId: string) {
+    let changed = false;
+    for (const project of this.projects.values()) {
+      if (project.ownerId === "__legacy__") {
+        project.ownerId = ownerId;
+        changed = true;
+      }
+    }
+    if (changed) this.persist();
+  }
+
+  updateFavorite(projectId: string, ownerId: string, favorite: boolean) {
+    const project = this.getProject(projectId, ownerId);
+    if (!project) throw new Error("Project not found.");
+    project.favorite = favorite;
+    this.updateProject(project);
+    return project;
   }
 
   private writeReviewConfig(project: StudioProject) {
@@ -260,6 +342,37 @@ export class StudioService extends EventEmitter {
       font: FONT_PRESETS[fontCategory],
       colorPalette,
       colors: COLOR_PRESETS[colorPalette],
+      productionStyle: {
+        reference: "cinematic editorial math explainer",
+        pacing: "about four chapter-like beats over 35-45 seconds unless the user asks otherwise",
+        composition: "one concise thesis and one dominant visual stage with generous negative space",
+        motion: "replace or transform the dominant visual between beats; avoid dashboard-like accumulation",
+        compositeDivision: "Manim for the mathematical centerpiece; Remotion for final typography, layout, timing, and polish",
+      },
+    }, null, 2));
+  }
+
+  private writeNarrationConfig(project: StudioProject) {
+    const projectDir = path.join(this.projectRoot, project.id);
+    fs.writeFileSync(path.join(projectDir, "narration-config.json"), JSON.stringify(project.narrationPreferences, null, 2));
+  }
+
+  private seedHouseStyleTemplate(project: StudioProject) {
+    if (project.renderer !== "composite") return;
+    const templateDir = path.join(this.root, "studio", "templates", "fourier-composite");
+    const projectDir = path.join(this.projectRoot, project.id);
+    const referenceDir = path.join(projectDir, "reference-template");
+    fs.mkdirSync(referenceDir, { recursive: true });
+    for (const file of ["video.tsx", "composite.json"]) {
+      const source = path.join(templateDir, file);
+      if (fs.existsSync(source)) fs.copyFileSync(source, path.join(referenceDir, file));
+    }
+    const manimSource = path.join(templateDir, "manim");
+    if (fs.existsSync(manimSource)) fs.cpSync(manimSource, path.join(referenceDir, "manim"), { recursive: true });
+    fs.writeFileSync(path.join(referenceDir, "template-origin.json"), JSON.stringify({
+      id: "cinematic-composite-scaffold-v1",
+      purpose: "internal editable visual scaffold only",
+      rule: "Replace every source-specific teaching element before rendering a different topic.",
     }, null, 2));
   }
 
@@ -282,6 +395,43 @@ export class StudioService extends EventEmitter {
       colorPalette: changes.colorPalette ?? project.designPreferences.colorPalette,
     };
     this.writeDesignConfig(project);
+    this.updateProject(project);
+    return project;
+  }
+
+  updateNarrationPreferences(projectId: string, enabled: boolean) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    if (project.status === "running") throw new Error("Wait for the current generation to finish.");
+    project.narrationPreferences = { enabled };
+    this.writeNarrationConfig(project);
+    const narrationOnlyFailure = !enabled
+      && project.status === "error"
+      && /narration was rejected|speechify/i.test(project.error || "");
+    if (narrationOnlyFailure) {
+      const projectDir = path.join(this.projectRoot, project.id);
+      const validationError = this.renderValidationError(projectDir, project.renderer, false);
+      if (!validationError && this.currentRenderNeedsArchive(project)) {
+        const version = this.archiveVersion(project);
+        if (version) {
+          project.status = "complete";
+          project.stage = "complete";
+          project.error = undefined;
+          project.videoUrl = version.videoUrl;
+          project.posterUrl = version.posterUrl;
+          project.actions.push({ id: randomUUID(), label: "Accepted finished video without AI voice", status: "done", createdAt: now() });
+        }
+      }
+    }
+    this.updateProject(project);
+    return project;
+  }
+
+  updateGenerationPreferences(projectId: string, effort: GenerationEffort) {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error("Project not found.");
+    if (project.status === "running") throw new Error("Wait for the current generation to finish.");
+    project.generationPreferences = generationPreferencesFor(effort);
     this.updateProject(project);
     return project;
   }
@@ -315,7 +465,7 @@ export class StudioService extends EventEmitter {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("Wait for the current revision to finish before sending frame feedback.");
-    if (!this.authState.connected) throw new Error("Connect Codex before sending frame feedback.");
+    if (!this.authState.connected) throw new Error("The generation service is not configured. Add OPENAI_API_KEY on the server.");
     if (!input.note.trim()) throw new Error("Add a short note explaining the change.");
     const match = input.annotatedImageData.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
     if (!match) throw new Error("The annotated frame must be a PNG image.");
@@ -436,12 +586,13 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     return asset;
   }
 
-  getSnapshot(): Extract<StudioEvent, { type: "snapshot" }> {
+  getSnapshot(ownerId: string, billing: BillingState): Extract<StudioEvent, { type: "snapshot" }> {
     return {
       type: "snapshot",
-      projects: this.listProjects(),
+      projects: this.listProjects(ownerId),
       auth: this.authState,
       runtime: this.runtimeState,
+      billing,
     };
   }
 
@@ -457,6 +608,32 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     this.emitEvent({ type: "project", project });
   }
 
+  private planningSatisfied(project: StudioProject) {
+    const projectDir = path.join(this.projectRoot, project.id);
+    const requestPath = path.join(projectDir, "generation-request.json");
+    if (!fs.existsSync(requestPath)) return true;
+    try {
+      const request = JSON.parse(fs.readFileSync(requestPath, "utf8")) as { mode?: string; startedAt?: string };
+      if (request.mode !== "first-draft") return true;
+      const startedAt = Date.parse(request.startedAt || "");
+      const planPath = path.join(projectDir, "beat-plan.md");
+      return Number.isFinite(startedAt)
+        && fs.existsSync(planPath)
+        && fs.statSync(planPath).size >= 180
+        && fs.statSync(planPath).mtimeMs >= startedAt - 1_000;
+    } catch {
+      return false;
+    }
+  }
+
+  private advanceFromPlanning(project: StudioProject) {
+    if (project.stage !== "brief" || !this.planningSatisfied(project)) return false;
+    for (const action of project.actions) if (action.status === "running") action.status = "done";
+    project.stage = "authoring";
+    project.actions.push({ id: randomUUID(), label: `Building ${generationTarget(project)}`, status: "running", createdAt: now() });
+    return true;
+  }
+
   private archiveVersion(project: StudioProject): ProjectVersion | undefined {
     const projectDir = path.join(this.projectRoot, project.id);
     const output = path.join(projectDir, "output.mp4");
@@ -468,7 +645,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["scene.py", "video.tsx", "composite.json", "composite-metadata.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "design-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
+    const assets = ["scene.py", "video.tsx", "composite.json", "composite-metadata.json", "generation-request.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
@@ -512,14 +689,18 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     return digest(current) !== digest(archived);
   }
 
-  private renderValidationError(projectDir: string, expectedRenderer: RendererKind) {
+  private renderValidationError(projectDir: string, expectedRenderer: RendererKind, narrationEnabled: boolean) {
     try {
       const metadata = JSON.parse(fs.readFileSync(path.join(projectDir, "metadata.json"), "utf8")) as RenderInfo;
       if (metadata.renderer !== expectedRenderer) {
         return `Render metadata reported ${metadata.renderer || "no renderer"}; this project is locked to ${expectedRenderer}.`;
       }
-      if (!fs.existsSync(path.join(projectDir, "narration.json"))) return undefined;
       const narration = metadata.narration;
+      if (!narrationEnabled) {
+        if (narration?.enabled === true) return "Voice is disabled, but the render still contains generated narration.";
+        return undefined;
+      }
+      if (!fs.existsSync(path.join(projectDir, "narration.json"))) return "Voice is enabled, but narration.json was not created.";
       if (
         narration?.status !== "ready"
         || narration.enabled !== true
@@ -545,7 +726,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       const result = await this.bridge.account();
       const account = result.account;
       this.authState = account
-        ? { connected: true, email: account.email, plan: account.planType, mode: account.type }
+        ? { connected: true, plan: account.planType, mode: account.type }
         : { connected: false };
     } catch {
       this.authState = { connected: false };
@@ -554,21 +735,13 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     return this.authState;
   }
 
-  async login() {
-    const result = await this.bridge.login();
-    return { authUrl: result.authUrl, loginId: result.loginId };
-  }
-
-  async logout() {
-    await this.bridge.logout();
-    await this.refreshAuth();
-  }
-
-  createProject(prompt = "", renderer: RendererKind = "manim") {
+  createProject(prompt = "", renderer: RendererKind = DEFAULT_RENDERER, seed: ProjectSeedPreferences = {}, ownerId = "__legacy__") {
     const id = randomUUID().slice(0, 8);
     const timestamp = now();
     const project: StudioProject = {
       id,
+      ownerId,
+      favorite: false,
       title: prompt ? safeTitle(prompt) : "Untitled video",
       prompt,
       renderer,
@@ -581,22 +754,44 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       versions: [],
       reviews: [],
       assets: [],
-      reviewPreferences: { focus: "balanced", strictness: "normal" },
-      designPreferences: { fontCategory: "modern", colorPalette: "studio" },
+      reviewPreferences: { ...(seed.reviewPreferences || { focus: "balanced", strictness: "normal" }) },
+      designPreferences: { ...(seed.designPreferences || { fontCategory: "modern", colorPalette: "cinematic" }) },
+      narrationPreferences: { ...(seed.narrationPreferences || { enabled: true }) },
+      generationPreferences: normalizeGenerationPreferences(seed.generationPreferences),
     };
     fs.mkdirSync(path.join(this.projectRoot, id), { recursive: true });
+    this.seedHouseStyleTemplate(project);
     this.writeReviewConfig(project);
     this.writeDesignConfig(project);
+    this.writeNarrationConfig(project);
     this.updateProject(project);
     if (prompt) void this.sendMessage(id, prompt, renderer).catch(() => undefined);
     return project;
   }
 
-  async sendMessage(projectId: string, text: string, requestedRenderer?: RendererKind, options?: { agentRequest?: string; localImagePaths?: string[]; requestKind?: string; chatAttachment?: { type: "frameReview"; imageUrl: string; label: string } }) {
+  async sendMessage(projectId: string, text: string, requestedRenderer?: RendererKind, options: SendMessageOptions = {}): Promise<SendMessageResult> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("The agent is already working on this project.");
-    if (!this.authState.connected) throw new Error("Connect Codex before generating a video.");
+    if (!this.authState.connected) throw new Error("The generation service is not configured. Add OPENAI_API_KEY on the server.");
+    const hasPriorWork = Boolean(project.threadId || project.messages.length || project.versions.length);
+    const shouldStartFresh = hasPriorWork && !options.agentRequest && (
+      options.intent === "new"
+      || (options.intent !== "revise" && (project.versions.length === 0 || looksLikeIndependentVideoRequest(text, project)))
+    );
+    if (shouldStartFresh) {
+      const freshProject = this.createProject("", requestedRenderer || project.renderer, {
+        reviewPreferences: project.reviewPreferences,
+        designPreferences: project.designPreferences,
+        narrationPreferences: project.narrationPreferences,
+        generationPreferences: options.requestedEffort
+          ? generationPreferencesFor(options.requestedEffort)
+          : project.generationPreferences,
+      }, project.ownerId);
+      const result = await this.sendMessage(freshProject.id, text, freshProject.renderer, { ...options, intent: "auto" });
+      return { ...result, startedFresh: true };
+    }
+    if (options.requestedEffort) project.generationPreferences = generationPreferencesFor(options.requestedEffort);
     const rendererLocked = Boolean(project.threadId || project.messages.length || project.versions.length);
     if (!rendererLocked && requestedRenderer) project.renderer = requestedRenderer;
     if (rendererLocked && requestedRenderer && requestedRenderer !== project.renderer) {
@@ -606,7 +801,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     if ((project.renderer === "remotion" || project.renderer === "composite") && !this.runtimeState.remotion) throw new Error("Remotion is not installed. Run npm install first.");
 
     const projectDir = path.join(this.projectRoot, project.id);
-    const isRevision = Boolean(project.threadId);
+    const isRevision = Boolean(project.threadId && project.versions.length);
     const targetVersion = project.versions.length + 1;
     project.messages.push({ id: randomUUID(), role: "user", text, createdAt: now(), attachment: options?.chatAttachment });
     project.prompt ||= text;
@@ -615,6 +810,16 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     project.stage = "brief";
     project.error = undefined;
     project.actions.push({ id: randomUUID(), label: isRevision ? `Preparing revision ${targetVersion}${options?.requestKind ? ` · ${options.requestKind}` : ""}` : "Planning first draft", status: "running", createdAt: now() });
+    fs.writeFileSync(path.join(projectDir, "generation-request.json"), JSON.stringify({
+      id: randomUUID(),
+      mode: isRevision ? "revision" : "first-draft",
+      prompt: text,
+      startedAt: now(),
+      renderer: project.renderer,
+      requirements: isRevision
+        ? ["Preserve unrelated successful work", "Produce a fresh validated render"]
+        : ["Write a fresh beat-plan.md", "Create active source after this request", "Transform the reference scaffold rather than rendering it unchanged"],
+    }, null, 2));
     this.updateProject(project);
 
     try {
@@ -624,27 +829,53 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
           : project.renderer === "composite"
             ? COMPOSITE_AGENT_INSTRUCTIONS
             : MANIM_AGENT_INSTRUCTIONS;
-        const response = await this.bridge.startThread(projectDir, instructions);
+        const response = await this.bridge.startThread(projectDir, instructions, project.generationPreferences.model);
         project.threadId = response.thread.id;
         this.threadToProject.set(project.threadId, project.id);
       } else {
         await this.bridge.resumeThread(project.threadId, projectDir);
       }
 
-      const requestBody = options?.agentRequest || (isRevision
+      const referenceFrameDirs = [
+        path.join(this.root, "studio", "references", "fourier-house-style", "frames"),
+        path.join(this.root, "studio", "references", "integral-house-style", "frames"),
+      ];
+      const referenceFrames = isRevision || options.agentRequest
+        ? []
+        : referenceFrameDirs.flatMap((referenceFrameDir) => fs.existsSync(referenceFrameDir)
+          ? fs.readdirSync(referenceFrameDir)
+            .filter((name) => /\.(?:png|jpe?g)$/i.test(name))
+            .sort()
+            .slice(0, 4)
+            .map((name) => path.join(referenceFrameDir, name))
+          : []);
+      const productionContext = isRevision
+        ? "This is a genuine revision of the current video's content. Preserve unrelated successful work and make the requested change deliberately."
+        : `This is a brand-new independent production in a clean project and thread. Plan the teaching content from scratch even if the user has submitted a similar prompt before. Do not inspect or copy another project's plan or narration. Read generation-request.json and write a new beat-plan.md before authoring. Read ../../references/DEFAULT_VISUAL_LANGUAGE.md before planning. The attached images come from the studio's strongest exemplar lessons: preserve their shared cinematic visual grammar, hierarchy, pacing, spaciousness, and Composite division of labor, but replace every subject-specific idea, label, formula, graphic, and narration passage for the user's topic. The complete integral pacing reference is available at ../../references/integral-house-style/integral-reference.mp4 when transition cadence or motion continuity needs deeper inspection. When reference-template/template-origin.json exists, reference-template/video.tsx, reference-template/composite.json, and reference-template/manim/*.py are an editable structural reference, never active finished source. Create the active files at the project root and treat the user's request as a full transformation, not a minimal patch: replace every source-specific element and every unused clip before rendering. Rendering is intentionally blocked until the request-specific plan and transformed active source are fresh.`;
+      const requestBody = options.agentRequest || (isRevision
         ? `Create revision ${targetVersion} of the existing animation with this request: ${text}`
         : `Create the first editable ${project.renderer === "manim" ? "Manim" : project.renderer === "remotion" ? "Remotion" : "Remotion-composited Manim + React"} video for this prompt: ${text}`);
       const request = `Current project workflow for this turn:
+- ${productionContext}
 - Read design-config.json and preserve its selected font category and palette.
+- Read narration-config.json. Voice is ${project.narrationPreferences.enabled ? "enabled; create and verify Speechify narration" : "disabled; render and validate a silent video without calling Speechify"}.
 - Read review-config.json and apply ../../skills/educational-video-reviewer/SKILL.md after rendering.
 - If this request introduces a real person, place, artifact, organism, or historical context, reconsider asset-decision.json and use the licensed candidate search workflow. Inspect at least three candidate previews before importing. For a localized revision, preserve existing assets unless the user asks to change them.
 - Keep the renderer locked to ${project.renderer}. The target output is ${generationTarget(project)}.
 - Begin the final response with "${project.versions.length ? `Revision ${targetVersion} ready:` : "First draft ready:"}" so the user always knows which generation completed.
 
 ${requestBody}`;
-      const response = await this.bridge.startTurn(project.threadId, projectDir, request, options?.localImagePaths || []);
+      const response = await this.bridge.startTurn(
+        project.threadId,
+        projectDir,
+        request,
+        [...(options.localImagePaths || []), ...referenceFrames],
+        project.generationPreferences.model,
+        project.generationPreferences.reasoningEffort,
+      );
       project.turnId = response.turn.id;
       this.updateProject(project);
+      return { project, startedFresh: false, mode: isRevision ? "revision" : "first-draft" };
     } catch (error) {
       project.status = "error";
       project.stage = "ready";
@@ -681,10 +912,7 @@ ${requestBody}`;
 
     if (message.method === "turn/started") {
       project.turnId = message.params.turn.id;
-      project.stage = "authoring";
-      const action = project.actions.at(-1);
-      if (action) action.status = "done";
-      project.actions.push({ id: randomUUID(), label: `Building ${generationTarget(project)}`, status: "running", createdAt: now() });
+      this.advanceFromPlanning(project);
       this.updateProject(project);
       return;
     }
@@ -696,13 +924,19 @@ ${requestBody}`;
         return;
       }
       if (item?.type === "commandExecution") {
+        if (!this.planningSatisfied(project)) {
+          this.updateProject(project);
+          return;
+        }
+        this.advanceFromPlanning(project);
         for (const action of project.actions) if (action.status === "running") action.status = "done";
         const label = commandLabel(item.command || "", generationTarget(project));
         project.stage = label.includes("Render") ? "rendering" : label.includes("Inspect") ? "inspecting" : "authoring";
         project.actions.push({ id: item.id, label, status: "running", createdAt: now() });
         this.updateProject(project);
       } else if (item?.type === "fileChange") {
-        project.stage = "authoring";
+        this.advanceFromPlanning(project);
+        if (project.stage !== "brief") project.stage = "authoring";
         this.updateProject(project);
       }
       return;
@@ -715,6 +949,7 @@ ${requestBody}`;
         action.status = item.status === "failed" ? "failed" : "done";
         this.updateProject(project);
       }
+      if (!action && this.advanceFromPlanning(project)) this.updateProject(project);
       return;
     }
 
@@ -743,7 +978,7 @@ ${requestBody}`;
 
       const output = path.join(this.projectRoot, project.id, "output.mp4");
       const poster = path.join(this.projectRoot, project.id, "poster.png");
-      const renderError = this.renderValidationError(path.join(this.projectRoot, project.id), project.renderer);
+      const renderError = this.renderValidationError(path.join(this.projectRoot, project.id), project.renderer, project.narrationPreferences.enabled);
       const hasFreshRender = this.currentRenderNeedsArchive(project);
       if (message.params.turn.status === "completed" && fs.existsSync(output) && hasFreshRender && !renderError) {
         const version = this.archiveVersion(project);

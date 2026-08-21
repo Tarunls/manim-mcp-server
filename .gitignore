@@ -9,6 +9,7 @@ dist/
 .env.*
 !.env.example
 studio/projects.json
+studio/billing.json
 studio/projects/*/
 !studio/projects/.gitkeep
 studio/cache/

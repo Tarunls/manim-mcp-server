@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateGenerationRequest } from "./validate_generation_request.mjs";
 
 function fail(message) {
   console.error(message);
@@ -26,6 +27,7 @@ const projectDir = path.resolve(process.argv[2] || "");
 const quality = process.argv[3] || "balanced";
 const relative = path.relative(allowedRoot, projectDir);
 if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) fail("Project directory must be a child of studio/projects.");
+try { validateGenerationRequest(projectDir, "composite"); } catch (error) { fail(error instanceof Error ? error.message : "Generation freshness check failed."); }
 
 const manifestPath = path.join(projectDir, "composite.json");
 if (!fs.existsSync(manifestPath)) fail("composite.json does not exist.");

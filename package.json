@@ -3,15 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs watch server/index.ts",
     "build": "vite build && tsc --noEmit",
     "start": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
     "check": "tsc --noEmit",
-    "setup:manim": "node scripts/setup_manim.mjs"
+    "test": "node --import tsx --test tests/generation-intent.test.ts tests/generation-freshness.test.mjs tests/billing.test.ts",
+    "setup:manim": "node scripts/setup_manim.mjs",
+    "stripe:setup": "node scripts/setup_stripe.mjs",
+    "stripe:listen": "stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to http://127.0.0.1:4321/api/stripe/webhook",
+    "render:marketing-reel": "node scripts/render_marketing_reel.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/caveat": "^5.3.0",
     "@fontsource-variable/manrope": "^5.2.7",
+    "@openai/codex": "^0.147.0",
     "@phosphor-icons/react": "^2.1.10",
     "@remotion/bundler": "^4.0.514",
     "@remotion/renderer": "^4.0.514",
@@ -19,7 +28,8 @@
     "express": "^5.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "remotion": "^4.0.514"
+    "remotion": "^4.0.514",
+    "stripe": "^22.5.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

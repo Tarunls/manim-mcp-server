@@ -1,8 +1,17 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import readline from "node:readline";
 
 import { spawnThroughShell } from "./platform.js";
+import type { AgentModel, AgentReasoningEffort } from "./types.js";
+
+// Keep the studio's quality/cost setting local to this app. The regular Codex
+// desktop/CLI configuration can remain on Sol for other work.
+const STUDIO_MODEL = "gpt-5.6-sol";
+const STUDIO_REASONING_EFFORT = "high";
 
 interface RpcMessage {
   id?: number;
@@ -23,6 +32,15 @@ export class CodexBridge extends EventEmitter {
   private nextId = 1;
   private pending = new Map<number, PendingRequest>();
   private startPromise?: Promise<void>;
+  private readonly credentialHome: string;
+
+  constructor(root: string) {
+    super();
+    // Keep the studio's API login isolated from a developer's regular Codex
+    // profile. Cloud Run also has a writable /tmp directory, unlike the image.
+    this.credentialHome = process.env.STUDIO_CODEX_CREDENTIAL_HOME?.trim()
+      || path.join(os.tmpdir(), `lesson-studio-codex-${path.basename(root)}`);
+  }
 
   get running() {
     return Boolean(this.process && !this.process.killed);
@@ -38,9 +56,17 @@ export class CodexBridge extends EventEmitter {
   }
 
   private async startInternal() {
-    const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
+    await this.loginWithApiKey();
+    const child = spawn("codex", [
+      "app-server",
+      "-c", `model=\"${STUDIO_MODEL}\"`,
+      "-c", `model_reasoning_effort=\"${STUDIO_REASONING_EFFORT}\"`,
+      "-c", "forced_login_method=\"api\"",
+      "-c", "cli_auth_credentials_store=\"file\"",
+      "--listen", "stdio://",
+    ], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
+      env: this.codexEnvironment(),
       // On Windows npm installs codex as a .cmd shim, which CreateProcess
       // cannot execute directly; without this the bridge dies with ENOENT
       // before the server finishes booting.
@@ -75,6 +101,40 @@ export class CodexBridge extends EventEmitter {
     });
     this.notify("initialized", {});
     this.emit("ready");
+  }
+
+  private codexEnvironment() {
+    return { ...process.env, CODEX_HOME: this.credentialHome };
+  }
+
+  private async loginWithApiKey() {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY is not configured. Add it to .env locally or Secret Manager in deployment.");
+    }
+    fs.mkdirSync(this.credentialHome, { recursive: true });
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("codex", [
+        "login",
+        "--with-api-key",
+        "-c", "forced_login_method=\"api\"",
+        "-c", "cli_auth_credentials_store=\"file\"",
+      ], {
+        stdio: ["pipe", "ignore", "pipe"],
+        env: this.codexEnvironment(),
+        shell: spawnThroughShell,
+      });
+      let diagnostic = "";
+      child.stderr.on("data", (chunk) => {
+        diagnostic = `${diagnostic}${String(chunk)}`.slice(-4_000);
+      });
+      child.once("error", reject);
+      child.once("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(diagnostic.trim() || `Codex API-key login failed with exit code ${code ?? "unknown"}.`));
+      });
+      child.stdin.end(`${apiKey}\n`);
+    });
   }
 
   private handleLine(line: string) {
@@ -134,32 +194,16 @@ export class CodexBridge extends EventEmitter {
 
   async account() {
     await this.start();
-    return this.rpc<{ account: null | { type: string; email?: string; planType?: string } }>(
-      "account/read",
-      { refreshToken: false },
-    );
+    return { account: { type: "api", planType: "usage-based" } };
   }
 
-  async login() {
-    await this.start();
-    return this.rpc<{ type: string; loginId: string; authUrl: string }>("account/login/start", {
-      type: "chatgpt",
-      useHostedLoginSuccessPage: true,
-      appBrand: "codex",
-    });
-  }
-
-  async logout() {
-    await this.start();
-    return this.rpc("account/logout");
-  }
-
-  async startThread(cwd: string, developerInstructions: string) {
+  async startThread(cwd: string, developerInstructions: string, model: AgentModel = STUDIO_MODEL) {
     await this.start();
     return this.rpc<{ thread: { id: string } }>("thread/start", {
       cwd,
       approvalPolicy: "never",
       sandbox: "workspace-write",
+      model,
       developerInstructions,
       personality: "friendly",
       serviceName: "manim_studio",
@@ -171,11 +215,20 @@ export class CodexBridge extends EventEmitter {
     return this.rpc<{ thread: { id: string } }>("thread/resume", { threadId, cwd }, 120_000);
   }
 
-  async startTurn(threadId: string, cwd: string, text: string, localImagePaths: string[] = []) {
+  async startTurn(
+    threadId: string,
+    cwd: string,
+    text: string,
+    localImagePaths: string[] = [],
+    model: AgentModel = STUDIO_MODEL,
+    reasoningEffort: AgentReasoningEffort = STUDIO_REASONING_EFFORT,
+  ) {
     await this.start();
     return this.rpc<{ turn: { id: string } }>("turn/start", {
       threadId,
       cwd,
+      model,
+      effort: reasoningEffort,
       input: [
         { type: "text", text, text_elements: [] },
         ...localImagePaths.map((imagePath) => ({ type: "localImage", path: imagePath, detail: "high" })),

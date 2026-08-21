@@ -6,23 +6,27 @@ This repository includes a local prompt-to-video studio with an explicit per-pro
 
 Rendered revisions include a seven-frame filmstrip. Pause anywhere, select **Review frame**, draw with the default pen or choose a circle, arrow, or rectangle, add a note, and send the clean plus annotated frame to the model as direct high-detail image inputs. The reviewer isolates the smallest marked target and records nearby objects that must remain unchanged.
 
-The agent automatically decides whether authentic imagery would help. When it would, it searches Wikimedia Commons with a context-rich query, downloads local candidate previews, visually checks at least three, and imports only a semantic match with creator, description, license, source URL, and SHA-256 digest. The manual asset picker remains available. Project settings also expose font categories, color palettes, review focus, and review depth; generation reads those settings from versioned JSON files.
+The agent automatically decides whether authentic imagery would help. When it would, it searches Wikimedia Commons with a context-rich query, downloads local candidate previews, visually checks at least three, and imports only a semantic match with creator, description, license, source URL, and SHA-256 digest. The manual asset picker remains available. Project settings expose a plain-language Thinking control, font categories, color palettes, voice control, review focus, and review depth; generation reads those settings from versioned JSON files.
+
+New projects default to Composite, Balanced thinking, modern type, and the studio's cinematic visual language. Four representative frames from each of the successful Fourier and integral lessons are attached to every first-draft turn as visual quality targets, and the complete integral video is available locally as a pacing reference. The internal source scaffold lives under `reference-template/`, not as active renderable source. The agent is told to preserve the exemplars' pacing, hierarchy, spaciousness, and Manim/Remotion division of labor while rebuilding all subject-specific teaching content. Rendering is blocked until the current request has a fresh topic-specific beat plan and transformed source; unchanged template clips and leftover reference-topic content are rejected. The request selector can force a new template-based video or a revision; Auto starts standalone video prompts and failed first attempts in a fresh project instead of quietly reusing an old plan.
 
 ### Run it
 
 Prerequisites:
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - Python 3.10 or newer
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - FFmpeg and FFprobe available on `PATH`
-- The [Codex CLI](https://developers.openai.com/codex/cli/) installed and authenticated
+- An [OpenAI Platform API key](https://platform.openai.com/api-keys)
 
 From a fresh clone:
 
 ```sh
 npm install
 npm run setup:manim
+cp .env.example .env
+# Set OPENAI_API_KEY in .env. Add the optional provider keys you use.
 npm run build
 npm run dev
 ```
@@ -50,11 +54,28 @@ Never put the key in a `VITE_*` variable. Vite exposes those values to browser c
 
 Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
 
-The app starts a local Codex App Server and reuses your existing Codex CLI authentication. If Codex is signed out, select **Connect Codex** in the sidebar and complete the managed ChatGPT browser flow. You can also authenticate before starting the app:
+The app starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Internally, Faster uses a cost-conscious configuration, Balanced preserves the studio's established high-quality default, and Try harder adds deeper reasoning for difficult generations.
+
+### Stripe test billing
+
+The front page and studio use a server-enforced monthly credit model: Free includes 1 credit, Creator is $20/month with 10 credits, and Pro is $49/month with 30 credits. Faster costs 1 credit, Balanced costs 2, and Try harder costs 4. Creator and Pro unlock Speechify narration and licensed visual search. Checkout and subscription management use Stripe-hosted pages; signed webhooks are the source of truth for paid access.
+
+Install and authenticate the Stripe CLI, then create the test-mode product catalog once:
 
 ```sh
-codex login
+stripe login
+npm run stripe:setup
 ```
+
+Copy `.env.example` to `.env`, set `STRIPE_SECRET_KEY` to a Stripe test secret, and start the local webhook forwarder in a second terminal:
+
+```sh
+npm run stripe:listen
+```
+
+Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`, then restart the app. Never commit either secret. The setup script is idempotent because Checkout resolves the stable lookup keys `lesson_studio_creator_monthly` and `lesson_studio_pro_monthly` instead of hard-coded price IDs.
+
+For Google Cloud, store `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and optionally `SPEECHIFY_API_KEY` in Secret Manager using these exact names. Set `APP_BASE_URL` as a normal Cloud Run environment variable after the service receives its URL.
 
 ### Useful commands
 
@@ -64,13 +85,15 @@ npm run check        # TypeScript validation
 npm run build        # production client build + validation
 npm start            # serve the production build
 npm run setup:manim  # create/update the local Manim environment
+npm run stripe:setup # create missing test products and monthly prices
+npm run stripe:listen # forward selected test webhooks to the local app
 ```
 
 If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.
 
 ### How generation works
 
-1. The Node backend starts one long-lived `codex app-server` process over stdio.
+1. The Node backend signs an isolated Codex worker into API-key mode, then starts one long-lived `codex app-server` process over stdio.
 2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
 3. The renderer choice is fixed when generation starts. Codex writes `scene.py` for Manim, `video.tsx` for Remotion, or `video.tsx` plus `manim/*.py` and `composite.json` for Composite.
 4. The matching render helper produces 1920×1080 video at 30 fps, validates layout, optimizes MP4 seeking, extracts a poster and twelve-frame contact sheet, and records the selected renderer in metadata.
@@ -103,7 +126,8 @@ studio/projects/<project-id>/
   review-report.json
   design-config.json
   reviews/ (clean and annotated frame feedback)
-  narration.json
+  narration-config.json
+  narration.json (only used when AI voice is enabled)
   output.mp4
   poster.png
   contact-sheet.png

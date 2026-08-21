@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,42 @@ def has_layout_call(code: str, function_name: str, minimum_positional: int) -> b
     return False
 
 
+def validate_generation_request(project_dir: Path, source: Path) -> None:
+    request_file = project_dir / "generation-request.json"
+    if not request_file.exists():
+        return
+    try:
+        request = json.loads(request_file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        fail("Generation freshness check failed: generation-request.json must contain valid JSON.")
+    if request.get("mode") != "first-draft":
+        return
+    if request.get("renderer") != "manim":
+        fail(f"Generation freshness check failed: the request expects {request.get('renderer')}, not manim.")
+    try:
+        started_at = datetime.fromisoformat(str(request["startedAt"]).replace("Z", "+00:00")).timestamp()
+    except (KeyError, TypeError, ValueError):
+        fail("Generation freshness check failed: generation-request.json has an invalid startedAt value.")
+    plan_file = project_dir / "beat-plan.md"
+    if not plan_file.exists() or plan_file.stat().st_size < 180:
+        fail("Generation freshness check failed: beat-plan.md was not created for this request.")
+    if plan_file.stat().st_mtime < started_at - 1:
+        fail("Generation freshness check failed: beat-plan.md predates this request.")
+    if source.stat().st_mtime < started_at - 1:
+        fail("Generation freshness check failed: scene.py predates this request.")
+    stop = {"create", "video", "explaining", "explain", "beautiful", "beautifully", "relate", "related", "their", "there", "about", "under", "with", "from", "into", "that", "this", "they", "them", "used", "using", "calculate", "show", "animate"}
+    keywords = set()
+    for word in re.findall(r"[a-z]{5,}", str(request.get("prompt", "")).lower()):
+        if word in stop:
+            continue
+        keywords.add(word)
+        if word.endswith("s") and len(word) > 5:
+            keywords.add(word[:-1])
+    plan = plan_file.read_text(encoding="utf-8").lower()
+    if keywords and not any(word in plan for word in keywords):
+        fail("Generation freshness check failed: beat-plan.md does not appear to address the requested topic.")
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         fail("Usage: render_scene.py PROJECT_DIR [draft|preview|balanced|high]")
@@ -67,6 +104,7 @@ def main() -> None:
     if not source.exists():
         fail("scene.py does not exist.")
     code = source.read_text(encoding="utf-8")
+    validate_generation_request(project_dir, source)
     if not re.search(r"class\s+GeneratedScene\s*\([^)]*Scene\s*\)", code):
         fail("scene.py must define GeneratedScene as a Scene subclass.")
     if "from manim_layout import" not in code:
@@ -127,11 +165,21 @@ def main() -> None:
         fail(faststart.stderr[-2000:] or "Could not optimize the browser video.")
     optimized.replace(output)
 
-    narration_result = {"status": "not_requested", "enabled": False}
+    narration_config_file = project_dir / "narration-config.json"
+    narration_enabled = True
+    if narration_config_file.exists():
+        try:
+            narration_enabled = json.loads(narration_config_file.read_text(encoding="utf-8")).get("enabled") is not False
+        except (json.JSONDecodeError, OSError):
+            fail("narration-config.json must contain valid JSON.")
+
+    narration_result = {"status": "disabled", "enabled": False}
     narration_file = project_dir / "narration.json"
-    if narration_file.exists():
+    if narration_enabled:
+        if not narration_file.exists():
+            fail("Voice is enabled, but narration.json does not exist.")
         narration = subprocess.run(
-            ["node", str(root / "scripts" / "generate_narration.mjs"), str(project_dir)],
+            ["node", f"--env-file-if-exists={root / '.env'}", str(root / "scripts" / "generate_narration.mjs"), str(project_dir)],
             text=True,
             capture_output=True,
             timeout=300,

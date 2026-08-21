@@ -1,10 +1,15 @@
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
 export type RendererKind = "manim" | "remotion" | "composite";
+export type AgentModel = "gpt-5.6-sol" | "gpt-5.6-terra";
+export type GenerationEffort = "quick" | "balanced" | "thorough";
+export type AgentReasoningEffort = "medium" | "high" | "xhigh";
+export type GenerationIntent = "auto" | "new" | "revise";
+export type BillingPlanId = "free" | "creator" | "pro";
 export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
 export type ReviewStrictness = "quick" | "normal" | "obsessive";
 export type FontCategory = "modern" | "editorial" | "technical" | "friendly" | "classic";
-export type ColorPalette = "studio" | "ocean" | "forest" | "sunset" | "monochrome" | "high-contrast";
+export type ColorPalette = "cinematic" | "studio" | "ocean" | "forest" | "sunset" | "monochrome" | "high-contrast";
 
 export interface ChatMessage {
   id: string;
@@ -91,8 +96,20 @@ export interface DesignPreferences {
   colorPalette: ColorPalette;
 }
 
+export interface NarrationPreferences {
+  enabled: boolean;
+}
+
+export interface GenerationPreferences {
+  effort: GenerationEffort;
+  model: AgentModel;
+  reasoningEffort: AgentReasoningEffort;
+}
+
 export interface StudioProject {
   id: string;
+  ownerId: string;
+  favorite: boolean;
   title: string;
   prompt: string;
   renderer: RendererKind;
@@ -109,9 +126,41 @@ export interface StudioProject {
   assets: ProjectAsset[];
   reviewPreferences: ReviewPreferences;
   designPreferences: DesignPreferences;
+  narrationPreferences: NarrationPreferences;
+  generationPreferences: GenerationPreferences;
   error?: string;
   messages: ChatMessage[];
   actions: AgentAction[];
+}
+
+export interface BillingEntitlements {
+  creditsPerMonth: number;
+  maxEffort: GenerationEffort;
+  narration: boolean;
+  licensedAssets: boolean;
+}
+
+export interface BillingState {
+  userId: string;
+  plan: BillingPlanId;
+  planName: string;
+  status: "free" | "active" | "trialing" | "past_due" | "canceled" | "incomplete";
+  creditsUsed: number;
+  creditsRemaining: number;
+  periodEnd: string;
+  email?: string;
+  stripeConfigured: boolean;
+  hasStripeCustomer: boolean;
+  entitlements: BillingEntitlements;
+}
+
+export interface PricingPlan {
+  id: BillingPlanId;
+  name: string;
+  monthlyPrice: number;
+  description: string;
+  entitlements: BillingEntitlements;
+  features: string[];
 }
 
 export interface AuthState {
@@ -128,8 +177,14 @@ export interface RuntimeState {
   ffmpeg: boolean;
 }
 
+export interface SendMessageResult {
+  project: StudioProject;
+  startedFresh: boolean;
+  mode: "first-draft" | "revision";
+}
+
 export type StudioEvent =
-  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState }
+  | { type: "snapshot"; projects: StudioProject[]; auth: AuthState; runtime: RuntimeState; billing: BillingState }
   | { type: "project"; project: StudioProject }
   | { type: "assistant_delta"; projectId: string; messageId: string; delta: string }
   | { type: "auth"; auth: AuthState }
