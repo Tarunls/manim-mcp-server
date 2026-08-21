@@ -1,5 +1,10 @@
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
+export type RendererKind = "manim" | "remotion" | "composite";
+export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
+export type ReviewStrictness = "quick" | "normal" | "obsessive";
+export type FontCategory = "modern" | "editorial" | "technical" | "friendly" | "classic";
+export type ColorPalette = "studio" | "ocean" | "forest" | "sunset" | "monochrome" | "high-contrast";
 
 export interface ChatMessage {
   id: string;
@@ -7,6 +12,7 @@ export interface ChatMessage {
   text: string;
   createdAt: string;
   streaming?: boolean;
+  attachment?: { type: "frameReview"; imageUrl: string; label: string };
 }
 
 export interface AgentAction {
@@ -17,6 +23,7 @@ export interface AgentAction {
 }
 
 export interface RenderInfo {
+  renderer?: RendererKind;
   quality?: string;
   duration?: number;
   width?: number;
@@ -48,10 +55,47 @@ export interface ProjectVersion {
   render?: RenderInfo;
 }
 
+export interface FrameReview {
+  id: string;
+  versionId: string;
+  time: number;
+  frame: number;
+  note: string;
+  createdAt: string;
+  cleanFrameUrl: string;
+  annotatedFrameUrl: string;
+}
+
+export interface ProjectAsset {
+  id: string;
+  title: string;
+  description?: string;
+  provider: "Wikimedia Commons";
+  sourceUrl: string;
+  license: string;
+  licenseUrl?: string;
+  creator?: string;
+  localPath: string;
+  mediaUrl: string;
+  sha256: string;
+  importedAt: string;
+}
+
+export interface ReviewPreferences {
+  focus: ReviewFocus;
+  strictness: ReviewStrictness;
+}
+
+export interface DesignPreferences {
+  fontCategory: FontCategory;
+  colorPalette: ColorPalette;
+}
+
 export interface StudioProject {
   id: string;
   title: string;
   prompt: string;
+  renderer: RendererKind;
   createdAt: string;
   updatedAt: string;
   status: ProjectStatus;
@@ -61,6 +105,10 @@ export interface StudioProject {
   videoUrl?: string;
   posterUrl?: string;
   versions: ProjectVersion[];
+  reviews: FrameReview[];
+  assets: ProjectAsset[];
+  reviewPreferences: ReviewPreferences;
+  designPreferences: DesignPreferences;
   error?: string;
   messages: ChatMessage[];
   actions: AgentAction[];
@@ -83,5 +131,6 @@ export interface AuthState {
 export interface RuntimeState {
   codex: boolean;
   manim: boolean;
+  remotion: boolean;
   ffmpeg: boolean;
 }

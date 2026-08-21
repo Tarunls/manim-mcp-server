@@ -1,0 +1,5 @@
+interface:
+  display_name: "Educational Video Reviewer"
+  short_description: "Review lesson frames for clarity and collisions"
+  brand_color: "#7C5CFC"
+  default_prompt: "Use $educational-video-reviewer to inspect this render and return prioritized visual feedback."

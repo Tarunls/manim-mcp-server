@@ -2,6 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
 
+import { spawnThroughShell } from "./platform.js";
+
 interface RpcMessage {
   id?: number;
   method?: string;
@@ -39,6 +41,10 @@ export class CodexBridge extends EventEmitter {
     const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: process.env,
+      // On Windows npm installs codex as a .cmd shim, which CreateProcess
+      // cannot execute directly; without this the bridge dies with ENOENT
+      // before the server finishes booting.
+      shell: spawnThroughShell,
     });
     this.process = child;
 
@@ -165,12 +171,15 @@ export class CodexBridge extends EventEmitter {
     return this.rpc<{ thread: { id: string } }>("thread/resume", { threadId, cwd }, 120_000);
   }
 
-  async startTurn(threadId: string, cwd: string, text: string) {
+  async startTurn(threadId: string, cwd: string, text: string, localImagePaths: string[] = []) {
     await this.start();
     return this.rpc<{ turn: { id: string } }>("turn/start", {
       threadId,
       cwd,
-      input: [{ type: "text", text, text_elements: [] }],
+      input: [
+        { type: "text", text, text_elements: [] },
+        ...localImagePaths.map((imagePath) => ({ type: "localImage", path: imagePath, detail: "high" })),
+      ],
       approvalPolicy: "never",
       // Rendering invokes Speechify from the project helper. Keep filesystem
       // access scoped to this project while allowing that API call to succeed.

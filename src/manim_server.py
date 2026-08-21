@@ -58,7 +58,8 @@ def execute_manim_code(manim_code: str, scene_name: str = "", quality: str = "lo
 
     Returns:
         A message with success/failure and, on success, the absolute path to the rendered mp4
-        (pass that path to get_preview_frame to inspect stills before finalizing).
+        (pass that path to get_preview_contact_sheet and inspect all sampled transitions
+        before finalizing; use get_preview_frame for a closer look at suspicious times).
     """
     tmpdir = os.path.join(BASE_DIR, "manim_tmp")
     os.makedirs(tmpdir, exist_ok=True)
@@ -132,6 +133,48 @@ def get_preview_frame(video_path: str, timestamp: float = 0.0) -> Image:
 
 
 @mcp.tool()
+def get_preview_contact_sheet(video_path: str, samples: int = 12) -> Image:
+    """Return evenly sampled frames for checking layout across the whole animation.
+
+    Inspect every tile for object collisions, clipped text, unsafe margins, and
+    transition frames that are more crowded than their starting or ending pose.
+
+    Args:
+        video_path: Absolute path to the mp4 returned by execute_manim_code.
+        samples: Number of evenly spaced frames. Values are clamped to 6-20.
+    """
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video not found: {video_path}")
+    samples = max(6, min(int(samples), 20))
+    ffprobe = os.getenv("FFPROBE_EXECUTABLE", "ffprobe")
+    probe = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {probe.stderr[-1000:]}")
+    duration = float(probe.stdout.strip())
+    columns = 4
+    rows = (samples + columns - 1) // columns
+    interval = max(duration / samples, 0.08)
+    sheet_path = os.path.join(os.path.dirname(video_path), "__preview_contact_sheet.png")
+    result = subprocess.run(
+        [
+            FFMPEG_EXECUTABLE, "-y", "-i", video_path,
+            "-vf", f"fps=1/{interval:.4f},scale=360:-2,tile={columns}x{rows}:padding=8:margin=8:color=white",
+            "-frames:v", "1", sheet_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or not os.path.exists(sheet_path):
+        raise RuntimeError(f"ffmpeg failed to build contact sheet: {result.stderr[-2000:]}")
+    with open(sheet_path, "rb") as image_file:
+        return Image(data=image_file.read(), format="png")
+
+
+@mcp.tool()
 def get_video_duration(video_path: str) -> str:
     """Return the duration in seconds of a rendered video, using ffprobe."""
     if not os.path.exists(video_path):
@@ -151,11 +194,16 @@ def get_video_duration(video_path: str) -> str:
 def cleanup_manim_temp_dir(directory: str) -> str:
     """Clean up the specified Manim temporary directory after execution."""
     try:
-        if os.path.exists(directory):
-            shutil.rmtree(directory)
-            return f"Cleanup successful for directory: {directory}"
-        else:
-            return f"Directory not found: {directory}"
+        resolved = os.path.realpath(directory)
+        allowed_root = os.path.realpath(BASE_DIR)
+        if resolved not in TEMP_DIRS or os.path.commonpath([resolved, allowed_root]) != allowed_root:
+            return "Cleanup refused: directory was not created by this MCP server."
+        if not os.path.exists(resolved):
+            TEMP_DIRS.pop(resolved, None)
+            return f"Directory not found: {resolved}"
+        shutil.rmtree(resolved)
+        TEMP_DIRS.pop(resolved, None)
+        return f"Cleanup successful for directory: {resolved}"
     except Exception as e:
         return f"Failed to clean up directory: {directory}. Error: {str(e)}"
 

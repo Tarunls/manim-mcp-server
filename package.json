@@ -4,19 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs watch server/index.ts",
+    "dev": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs watch server/index.ts",
     "build": "vite build && tsc --noEmit",
-    "start": "NODE_ENV=production TMPDIR=/tmp TEMP=/tmp TMP=/tmp node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
+    "start": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
     "check": "tsc --noEmit",
-    "setup:manim": "bash scripts/setup_manim.sh"
+    "setup:manim": "node scripts/setup_manim.mjs"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.2.7",
     "@phosphor-icons/react": "^2.1.10",
+    "@remotion/bundler": "^4.0.514",
+    "@remotion/renderer": "^4.0.514",
     "@speechify/api": "^4.0.1",
     "express": "^5.1.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "remotion": "^4.0.514"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",

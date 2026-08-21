@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,25 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
+def has_layout_call(code: str, function_name: str, minimum_positional: int) -> bool:
+    """Return true for a real call with enough peers, including starred groups."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = node.func.id if isinstance(node.func, ast.Name) else None
+        if name != function_name:
+            continue
+        if any(isinstance(argument, ast.Starred) for argument in node.args):
+            return True
+        if len(node.args) >= minimum_positional:
+            return True
+    return False
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         fail("Usage: render_scene.py PROJECT_DIR [draft|preview|balanced|high]")
@@ -53,12 +73,18 @@ def main() -> None:
         fail("scene.py must import the shared manim_layout guards.")
     if "assert_scene_safe(" not in code:
         fail("scene.py must call assert_scene_safe for its important visual groups.")
+    if not has_layout_call(code, "assert_no_overlap", 2):
+        fail("scene.py must call assert_no_overlap with at least two independent peer objects.")
+    if not has_layout_call(code, "watch_no_overlap", 3):
+        fail("scene.py must use watch_no_overlap with the scene and at least two moving peer objects.")
     if "RoundedRectangle(" in code and "assert_inside(" not in code:
         fail("Panel-based scenes must call assert_inside for every panel's content.")
 
-    manim = root / ".venv" / "bin" / "manim"
+    # A virtualenv puts executables in Scripts/ on Windows and bin/ elsewhere.
+    manim = (root / ".venv" / "Scripts" / "manim.exe" if os.name == "nt"
+             else root / ".venv" / "bin" / "manim")
     if not manim.exists():
-        fail("Manim is not installed in .venv.")
+        fail("Manim is not installed in .venv. Run: npm run setup:manim")
 
     media_dir = project_dir / ".media"
     command = [
@@ -155,11 +181,11 @@ def main() -> None:
         fail(frame.stderr[-2000:] or "Could not extract the poster frame.")
 
     contact_sheet = project_dir / "contact-sheet.png"
-    interval = max(duration / 6.0, 0.25)
+    interval = max(duration / 12.0, 0.12)
     sheet = subprocess.run(
         [
             "ffmpeg", "-y", "-i", str(output),
-            "-vf", f"fps=1/{interval:.4f},scale=480:-2,tile=3x2:padding=8:margin=8:color=white",
+            "-vf", f"fps=1/{interval:.4f},scale=360:-2,tile=4x3:padding=8:margin=8:color=white",
             "-frames:v", "1", str(contact_sheet),
         ],
         text=True,
@@ -171,6 +197,7 @@ def main() -> None:
 
     metadata = {
         "scene": "GeneratedScene",
+        "renderer": "manim",
         "quality": quality,
         "duration": duration,
         "width": int(stream["width"]),

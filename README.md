@@ -1,8 +1,12 @@
 # Manim MCP Server
 
-## Manim Studio MVP
+## Lesson Studio MVP
 
-This repository now includes a minimal local prompt-to-Manim website. It provides a collapsible project sidebar, streamed Codex agent activity, an editable `scene.py` per project, 1080p browser playback, revision history, optional timed AI narration, and MP4 download.
+This repository includes a local prompt-to-video studio with an explicit per-project renderer choice. Choose Manim for equations and geometry, Remotion for editorial motion, or Composite when a Remotion-directed video should contain self-contained Manim inserts. Composite does not let two layout engines compete: Remotion always owns the final canvas.
+
+Rendered revisions include a seven-frame filmstrip. Pause anywhere, select **Review frame**, draw with the default pen or choose a circle, arrow, or rectangle, add a note, and send the clean plus annotated frame to the model as direct high-detail image inputs. The reviewer isolates the smallest marked target and records nearby objects that must remain unchanged.
+
+The agent automatically decides whether authentic imagery would help. When it would, it searches Wikimedia Commons with a context-rich query, downloads local candidate previews, visually checks at least three, and imports only a semantic match with creator, description, license, source URL, and SHA-256 digest. The manual asset picker remains available. Project settings also expose font categories, color palettes, review focus, and review depth; generation reads those settings from versioned JSON files.
 
 ### Run it
 
@@ -68,8 +72,8 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim
 
 1. The Node backend starts one long-lived `codex app-server` process over stdio.
 2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
-3. Codex writes or revises `scene.py` inside that folder.
-4. `scripts/render_scene.py` renders the browser default at 1920×1080 and 30 fps, validates scene and panel bounds, optimizes MP4 seeking, extracts a poster and six-frame contact sheet, and records render metadata.
+3. The renderer choice is fixed when generation starts. Codex writes `scene.py` for Manim, `video.tsx` for Remotion, or `video.tsx` plus `manim/*.py` and `composite.json` for Composite.
+4. The matching render helper produces 1920×1080 video at 30 fps, validates layout, optimizes MP4 seeking, extracts a poster and twelve-frame contact sheet, and records the selected renderer in metadata.
 5. If `narration.json` and a server API key are present, timed speech segments are generated and muxed into the MP4.
 6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
 7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
@@ -89,7 +93,16 @@ Every successful generation remains editable:
 
 ```text
 studio/projects/<project-id>/
-  scene.py
+  scene.py or video.tsx
+  composite.json (Composite projects)
+  manim/ (Composite insert sources)
+  public/assets/ (licensed imported assets)
+  assets.json
+  asset-decision.json
+  review-config.json
+  review-report.json
+  design-config.json
+  reviews/ (clean and annotated frame feedback)
   narration.json
   output.mp4
   poster.png
@@ -99,6 +112,10 @@ studio/projects/<project-id>/
     v001/
     v002/
 ```
+
+### Collision checks
+
+Layout is checked by code as well as by image review. Manim projects use `assert_no_overlap` for stable poses and `watch_no_overlap` during motion. Remotion projects wrap independent visual groups in `LayoutItem`; `LayoutAudit` checks their browser bounds on every rendered frame. Intentional composites should be grouped so container-child overlap is not mistaken for a collision.
 
 ## MCP server
 

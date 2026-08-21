@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from manim import Mobject, VGroup, config
+from itertools import combinations
+from typing import Iterable
+
+from manim import Mobject, Scene, VGroup, config
 
 
 def fit_inside(mobject: Mobject, container: Mobject, padding: float = 0.30) -> Mobject:
@@ -71,3 +74,74 @@ def assert_scene_safe(*mobjects: Mobject, margin: float = 0.32) -> None:
     if violations:
         joined = ", ".join(violations)
         raise ValueError(f"Frame overflow: {joined} exceed the scene safe area.")
+
+
+def _pair_key(first: str, second: str) -> frozenset[str]:
+    return frozenset((first, second))
+
+
+def assert_no_overlap(
+    *mobjects: Mobject,
+    min_gap: float = 0.12,
+    names: Iterable[str] | None = None,
+    allow_pairs: Iterable[tuple[str, str]] = (),
+) -> None:
+    """Fail when independent peer objects overlap or get too close.
+
+    Pass composite groups rather than a container and its children. ``allow_pairs``
+    is intentionally name-based so exceptions remain readable in generated code.
+    """
+    labels = list(names) if names is not None else [f"item {index}" for index in range(1, len(mobjects) + 1)]
+    if len(labels) != len(mobjects):
+        raise ValueError("names must contain exactly one label per mobject.")
+    allowed = {_pair_key(first, second) for first, second in allow_pairs}
+    collisions: list[str] = []
+    for (first_index, first), (second_index, second) in combinations(enumerate(mobjects), 2):
+        first_name = labels[first_index]
+        second_name = labels[second_index]
+        if _pair_key(first_name, second_name) in allowed:
+            continue
+        horizontal_gap = max(
+            second.get_left()[0] - first.get_right()[0],
+            first.get_left()[0] - second.get_right()[0],
+        )
+        vertical_gap = max(
+            second.get_bottom()[1] - first.get_top()[1],
+            first.get_bottom()[1] - second.get_top()[1],
+        )
+        if horizontal_gap < min_gap and vertical_gap < min_gap:
+            collisions.append(f"{first_name} / {second_name}")
+    if collisions:
+        raise ValueError(
+            f"Layout collision (minimum gap {min_gap:.2f}): " + ", ".join(collisions)
+        )
+
+
+def watch_no_overlap(
+    scene: Scene,
+    *mobjects: Mobject,
+    min_gap: float = 0.12,
+    names: Iterable[str] | None = None,
+    allow_pairs: Iterable[tuple[str, str]] = (),
+) -> Mobject:
+    """Audit peer-object spacing on every rendered frame until removed.
+
+    Store the returned watcher and remove it from the scene when that visual beat
+    ends. This catches collisions that occur between otherwise safe key poses.
+    """
+    stable_names = tuple(names) if names is not None else None
+    stable_allow_pairs = tuple(allow_pairs)
+    watcher = Mobject()
+
+    def audit(_mobject: Mobject, _dt: float = 0.0) -> None:
+        assert_no_overlap(
+            *mobjects,
+            min_gap=min_gap,
+            names=stable_names,
+            allow_pairs=stable_allow_pairs,
+        )
+
+    watcher.add_updater(audit)
+    scene.add(watcher)
+    audit(watcher)
+    return watcher
