@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ConvexReactClient } from "convex/react";
 import {
   ConvexAuthProvider,
   useConvexAuth,
   useAuthActions,
+  useAuthToken,
 } from "@convex-dev/auth/react";
 import { CheckCircle, FilmSlate } from "@phosphor-icons/react";
 
@@ -11,18 +12,27 @@ export const convexUrl = (import.meta as { env?: Record<string, string> }).env?.
 
 const client = convexUrl ? new ConvexReactClient(convexUrl) : undefined;
 
+// Live JWT issued by convex-auth. Bound by <TokenBinder/> inside the provider;
+// module-level helpers (request(), EventSource) read it from here.
+let currentAuthToken: string | null = null;
+
 export function authToken() {
-  try {
-    return localStorage.getItem("convex-auth-token");
-  } catch {
-    return null;
-  }
+  return currentAuthToken;
+}
+
+function TokenBinder() {
+  const token = useAuthToken();
+  useEffect(() => {
+    currentAuthToken = token;
+  }, [token]);
+  return null;
 }
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!client) return <>{children}</>;
   return (
     <ConvexAuthProvider client={client}>
+      <TokenBinder />
       <Gate>
         {children}
       </Gate>

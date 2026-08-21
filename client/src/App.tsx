@@ -1238,7 +1238,9 @@ export function App() {
       }
     };
 
-    void fetch("/api/state", { headers: tokenHeader() }).then((response) => response.json()).then((event: StudioEvent) => applyEvent(event));
+    void fetch("/api/state", { headers: tokenHeader() })
+      .then((response) => response.ok ? response.json() : null)
+      .then((event: StudioEvent | null) => { if (event?.type) applyEvent(event); });
     void request<{ plans: PricingPlan[] }>("/api/pricing").then((result) => setPricingPlans(result.plans));
     const token = authToken();
     const events = new EventSource(token ? `/api/events?auth=${encodeURIComponent(token)}` : "/api/events");

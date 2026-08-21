@@ -213,6 +213,9 @@ export class StudioService extends EventEmitter {
 
   setBridgeFactory(factory: BridgeFactory) {
     this.bridgeFactory = factory;
+    // Sandbox execution owns the toolchain; local process checks are moot.
+    this.runtimeState = { codex: true, manim: true, remotion: true, ffmpeg: true };
+    this.emitEvent({ type: "runtime", runtime: this.runtimeState });
   }
 
   constructor(root: string) {
@@ -310,6 +313,16 @@ export class StudioService extends EventEmitter {
   }
 
   async initialize() {
+    // Sandbox mode: the toolchain and codex live inside E2B; nothing to
+    // bootstrap locally. Configuration presence decides the auth banner.
+    if (this.bridgeFactory) {
+      const configured = Boolean(process.env.OPENAI_API_KEY?.trim());
+      this.authState = configured
+        ? { connected: true, plan: "usage-based", mode: "api" }
+        : { connected: false };
+      this.emitEvent({ type: "auth", auth: this.authState });
+      return;
+    }
     const [codex, manim, remotion, ffmpeg] = await Promise.all([
       this.bridge.start().then(() => true).catch(() => false),
       fs.promises.access(manimPath(this.root)).then(() => true).catch(() => false),
