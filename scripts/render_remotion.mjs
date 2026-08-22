@@ -86,6 +86,7 @@ async function main() {
       concurrency: "50%",
       colorSpace: "bt709",
       pixelFormat: "yuv420p",
+      chromiumOptions: process.platform === "linux" ? { enableMultiProcessOnLinux: true } : undefined,
     });
   } catch (error) {
     fail(error instanceof Error ? error.message : "Remotion render failed.");

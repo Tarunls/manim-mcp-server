@@ -75,7 +75,41 @@ npm run stripe:listen
 
 Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`, then restart the app. Never commit either secret. The setup script is idempotent because Checkout resolves the stable lookup keys `lesson_studio_creator_monthly` and `lesson_studio_pro_monthly` instead of hard-coded price IDs.
 
-For Google Cloud, store `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and optionally `SPEECHIFY_API_KEY` in Secret Manager using these exact names. Set `APP_BASE_URL` as a normal Cloud Run environment variable after the service receives its URL.
+### Google Cloud test deployment
+
+The included `Dockerfile` packages Node, FFmpeg, Manim, and Remotion's browser dependencies for Cloud Run. Build it with Cloud Build, deploy it with a dedicated runtime service account, and map credentials from Secret Manager instead of putting them in the image or command history. The hosted test app requires HTTP Basic authentication; set `STUDIO_ACCESS_USERNAME` as a normal environment variable and map `STUDIO_ACCESS_PASSWORD` from Secret Manager.
+
+Use these Secret Manager names:
+
+- `openai_api_key` -> `OPENAI_API_KEY`
+- `stripe_test_api_key` -> `STRIPE_SECRET_KEY`
+- `stripe_webhook_secret` -> `STRIPE_WEBHOOK_SECRET`
+- `speechify_key` -> `SPEECHIFY_API_KEY`
+- `studio_access_password` -> `STUDIO_ACCESS_PASSWORD`
+
+After the first service deployment gives you a URL, the authenticated Stripe CLI can create the test webhook without printing its signing secret. The script stores that secret, grants only the runtime service account access, and updates the Cloud Run service:
+
+```sh
+GCP_PROJECT="your-project-id" \
+APP_BASE_URL="https://your-service-url" \
+GCP_RUNTIME_SERVICE_ACCOUNT="lesson-studio-runtime@your-project-id.iam.gserviceaccount.com" \
+npm run stripe:cloud-webhook
+```
+
+On Windows, set the same values with PowerShell's `$env:` syntax. If the Google Cloud CLI is not on `PATH`, also set `GCLOUD_BIN` to the absolute path of `gcloud.cmd`.
+
+To activate generation, add a value to `openai_api_key` in Secret Manager, then attach it without exposing the key in source or deployment history:
+
+```sh
+gcloud run services update lesson-studio \
+  --project="your-project-id" \
+  --region="us-central1" \
+  --update-secrets="OPENAI_API_KEY=openai_api_key:latest"
+```
+
+For a private test deployment, share the service URL, username, and access password out of band. The default username is `studio`; an authorized project operator can retrieve the password with `gcloud secrets versions access latest --secret=studio_access_password --project=your-project-id`.
+
+Cloud Run's writable filesystem is temporary and can disappear when an instance stops. This configuration is appropriate for private testing, but a customer-facing deployment must move projects, billing state, and rendered outputs to a database plus object storage before allowing multiple instances or real subscriptions.
 
 ### Useful commands
 
@@ -87,6 +121,7 @@ npm start            # serve the production build
 npm run setup:manim  # create/update the local Manim environment
 npm run stripe:setup # create missing test products and monthly prices
 npm run stripe:listen # forward selected test webhooks to the local app
+npm run stripe:cloud-webhook # create and securely attach a Cloud Run test webhook
 ```
 
 If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.

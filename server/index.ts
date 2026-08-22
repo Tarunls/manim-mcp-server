@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { isWindows, manimPath } from "./platform.js";
 import { StudioService } from "./studio-service.js";
 import { BillingService } from "./billing-service.js";
@@ -25,6 +25,42 @@ const studio = new StudioService(root);
 const billing = new BillingService(root);
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+const accessUsername = process.env.STUDIO_ACCESS_USERNAME?.trim() || "studio";
+const accessPassword = process.env.STUDIO_ACCESS_PASSWORD?.trim() || "";
+
+if (process.env.NODE_ENV === "production" && !accessPassword) {
+  throw new Error("STUDIO_ACCESS_PASSWORD is required in production so the generation agent is not publicly exposed.");
+}
+
+function safeEqual(actual: string, expected: string) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function hasStudioAccess(request: express.Request) {
+  if (!accessPassword) return true;
+  const authorization = request.header("authorization") || "";
+  if (!authorization.startsWith("Basic ")) return false;
+  try {
+    const decoded = Buffer.from(authorization.slice(6), "base64").toString("utf8");
+    const separator = decoded.indexOf(":");
+    if (separator < 0) return false;
+    return safeEqual(decoded.slice(0, separator), accessUsername)
+      && safeEqual(decoded.slice(separator + 1), accessPassword);
+  } catch {
+    return false;
+  }
+}
+
+app.get(["/healthz", "/api/health"], (_request, response) => response.status(200).send("ok"));
+app.use((request, response, next) => {
+  // Stripe cannot attach Cloud Run identity tokens. Its webhook remains public,
+  // but every event is authenticated below with Stripe's signing secret.
+  if (request.path === "/api/stripe/webhook" || hasStudioAccess(request)) return next();
+  response.setHeader("WWW-Authenticate", 'Basic realm="Lesson Studio", charset="UTF-8"');
+  response.status(401).send("Lesson Studio test access is required.");
+});
 
 function cookieValue(header: string | undefined, name: string) {
   return header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);

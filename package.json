@@ -15,6 +15,7 @@
     "setup:manim": "node scripts/setup_manim.mjs",
     "stripe:setup": "node scripts/setup_stripe.mjs",
     "stripe:listen": "stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to http://127.0.0.1:4321/api/stripe/webhook",
+    "stripe:cloud-webhook": "node scripts/configure_cloud_run_webhook.mjs",
     "render:marketing-reel": "node scripts/render_marketing_reel.mjs"
   },
   "dependencies": {
@@ -32,6 +33,7 @@
     "stripe": "^22.5.0"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.514",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.10",
