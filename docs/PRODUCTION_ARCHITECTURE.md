@@ -21,6 +21,8 @@ This document is the implementation contract for the hosted SaaS. Production mus
 - **Database:** Private-IP Cloud SQL PostgreSQL with regional HA, PITR, deletion protection, and bounded connection pools.
 - **Artifacts:** Private Cloud Storage with uniform bucket-level access and public access prevention. Browsers use expiring signed URLs after application authorization.
 
+The same immutable container image runs with `SERVICE_ROLE=api` or `SERVICE_ROLE=dispatcher`. Route guards fail closed across roles, and Terraform gives each role a different service account and different Secret Manager grants. The API cannot read OpenAI or E2B credentials; the dispatcher cannot read Identity Platform, Stripe, Speechify, or staff configuration.
+
 ## Database ownership model
 
 `app_users.id` is the Identity Platform UID. Every user-owned table contains an `owner_id` foreign key. Repository methods require that owner ID and include it in every select/update/delete predicate. Cross-user misses return `404` to avoid confirming resource existence.

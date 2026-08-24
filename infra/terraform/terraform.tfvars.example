@@ -1,0 +1,21 @@
+project_id           = "educationalvideo-506219"
+region               = "us-central1"
+environment          = "staging"
+image                = "us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:<immutable-commit-sha>"
+app_base_url         = "https://staging.example.com"
+e2b_template_version = "<immutable-release-id>"
+
+max_concurrent_sandboxes = 20
+api_max_instances         = 50
+
+secret_ids = {
+  identity_api_key  = "identity_platform_api_key"
+  openai_api_key    = "openai_api_key"
+  e2b_api_key       = "e2b_api_key"
+  speechify_api_key = "speechify_key"
+  stripe_api_key    = "stripe_test_api_key"
+  stripe_webhook    = "stripe_webhook_secret"
+  staff_emails      = "staff_emails"
+}
+
+notification_channel_ids = []

@@ -3,6 +3,7 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import path from "node:path";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { isWindows, manimPath } from "./platform.js";
@@ -20,6 +21,7 @@ import { E2BDispatcher } from "./e2b-dispatcher.js";
 import { verifyCloudTask } from "./internal-auth.js";
 import { HostedBillingService } from "./hosted-billing-service.js";
 import { ScopedNarrationService } from "./scoped-narration.js";
+import { HostedMediaService } from "./hosted-media-service.js";
 import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
@@ -46,20 +48,25 @@ const artifacts = new ArtifactService();
 const dispatcher = new E2BDispatcher(generations, artifacts);
 const hostedBilling = new HostedBillingService(database);
 const scopedNarration = new ScopedNarrationService(database);
+const hostedMedia = new HostedMediaService(database, artifacts);
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+const serviceRole = process.env.SERVICE_ROLE === "api" || process.env.SERVICE_ROLE === "dispatcher" ? process.env.SERVICE_ROLE : "all";
 
 function validateProductionConfiguration() {
   if (process.env.NODE_ENV !== "production") return;
   const missing: string[] = [];
   if (!database.configured) missing.push("DATABASE_URL");
   if (process.env.EXECUTION_MODE !== "e2b") missing.push("EXECUTION_MODE=e2b");
-  if (!auth.configured) missing.push("IDENTITY_PLATFORM_API_KEY");
-  if (!dispatcher.configured) missing.push("E2B/OpenAI/artifact configuration");
-  if (!generationQueue.configured) missing.push("Cloud Tasks configuration");
-  if (!hostedBilling.configured) missing.push("Stripe configuration");
+  if (serviceRole !== "dispatcher" && !auth.configured) missing.push("IDENTITY_PLATFORM_API_KEY");
+  if (serviceRole !== "api" && !dispatcher.configured) missing.push("E2B/OpenAI/artifact configuration");
+  if (!generationQueue.configured) missing.push("Cloud Tasks identity and URL configuration");
+  if (serviceRole !== "dispatcher" && !hostedBilling.configured) missing.push("Stripe configuration");
+  if (serviceRole !== "dispatcher" && process.env.BILLING_MODE_REQUIRED && hostedBilling.billingMode !== process.env.BILLING_MODE_REQUIRED) {
+    missing.push(`STRIPE_SECRET_KEY (${process.env.BILLING_MODE_REQUIRED} mode)`);
+  }
   if ((process.env.JOB_CALLBACK_SECRET?.length || 0) < 32) missing.push("JOB_CALLBACK_SECRET (32+ characters)");
-  if ((process.env.AUDIT_HASH_SECRET?.length || 0) < 32) missing.push("AUDIT_HASH_SECRET (32+ characters)");
+  if (serviceRole !== "dispatcher" && (process.env.AUDIT_HASH_SECRET?.length || 0) < 32) missing.push("AUDIT_HASH_SECRET (32+ characters)");
   for (const name of ["APP_BASE_URL", "JOB_CALLBACK_BASE_URL"] as const) {
     const value = process.env[name];
     if (!value || !value.startsWith("https://")) missing.push(`${name} (HTTPS URL)`);
@@ -99,6 +106,15 @@ app.get("/api/health/ready", async (_request, response) => {
   }
 });
 
+app.use((request, response, next) => {
+  const dispatchPath = request.path === "/api/internal/generation/dispatch";
+  if (serviceRole === "api" && dispatchPath) return response.status(404).end();
+  if (serviceRole === "dispatcher" && !dispatchPath && !request.path.startsWith("/api/health") && request.path !== "/healthz") {
+    return response.status(404).end();
+  }
+  next();
+});
+
 function authUser(request: express.Request) {
   return request.res?.locals.authUser as AuthUser | undefined;
 }
@@ -129,7 +145,8 @@ async function assertLicensedAssets(request: express.Request) {
 }
 
 function hostedRuntime() {
-  return { codex: dispatcher.configured, manim: dispatcher.configured, remotion: dispatcher.configured, ffmpeg: dispatcher.configured };
+  const ready = generations.configured && generationQueue.configured && artifacts.configured;
+  return { codex: ready, manim: ready, remotion: ready, ffmpeg: ready };
 }
 
 async function ownedProject(request: express.Request) {
@@ -518,12 +535,18 @@ app.get("/api/projects/:id/frames", async (request, response) => {
   const versionId = typeof request.query.version === "string" ? request.query.version : "";
   const time = Number(request.query.time || 0);
   try {
-    await ownedProject(request);
-    const frame = await studio.extractFrame(request.params.id, versionId, time);
+    const project = await ownedProject(request);
+    const frame = generations.configured
+      ? await hostedMedia.extractFrame(userId(request), project, versionId, time)
+      : await studio.extractFrame(String(request.params.id), versionId, time);
     response.setHeader("X-Video-Frame", String(frame.frame));
     response.setHeader("X-Video-Time", frame.time.toFixed(6));
     response.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-    response.sendFile(frame.path);
+    const cleanup = "cleanup" in frame && typeof frame.cleanup === "function" ? frame.cleanup : undefined;
+    response.sendFile(frame.path, (error) => {
+      if (cleanup) void cleanup();
+      if (error && !response.headersSent) response.status(404).end();
+    });
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "Could not extract frame." });
   }
@@ -531,7 +554,51 @@ app.get("/api/projects/:id/frames", async (request, response) => {
 
 app.post("/api/projects/:id/reviews", async (request, response) => {
   try {
-    await ownedProject(request);
+    const project = await ownedProject(request);
+    if (generations.configured) {
+      if (project.status === "running") throw new Error("Wait for the current revision to finish before sending frame feedback.");
+      const versionId = String(request.body?.versionId || "");
+      const note = String(request.body?.note || "").trim();
+      if (!note || note.length > 4000) throw new Error("Add a review note under 4,000 characters.");
+      const match = String(request.body?.annotatedImageData || "").match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) throw new Error("The annotated frame must be a PNG image.");
+      const annotated = Buffer.from(match[1], "base64");
+      const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      if (!annotated.subarray(0, 8).equals(pngSignature) || annotated.length > 12 * 1024 * 1024) throw new Error("The annotated frame is not a valid PNG under 12 MB.");
+      const extracted = await hostedMedia.extractFrame(userId(request), project, versionId, Number(request.body?.time || 0));
+      try {
+        const clean = fs.readFileSync(extracted.path);
+        const stored = await hostedMedia.storeReviewImages(userId(request), project.id, clean, annotated);
+        const reviewId = randomUUID();
+        const review = {
+          id: reviewId,
+          versionId,
+          time: extracted.time,
+          frame: extracted.frame,
+          note,
+          createdAt: new Date().toISOString(),
+          cleanFrameUrl: `/api/project-files/${stored.cleanId}`,
+          annotatedFrameUrl: `/api/project-files/${stored.annotatedId}`,
+        };
+        project.reviews.push(review);
+        await projects.save(project, userId(request));
+        const result = await generations.submit({
+          ownerId: userId(request),
+          project,
+          prompt: `Frame review at ${review.time.toFixed(2)} seconds: ${note}`,
+          effort: project.generationPreferences.effort,
+          idempotencyKey: request.header("idempotency-key") || "",
+          attachments: [
+            { fileId: stored.cleanId, label: "Clean rendered frame" },
+            { fileId: stored.annotatedId, label: "Reviewer-annotated frame" },
+          ],
+        });
+        void generationQueue.flush();
+        return response.status(202).json({ ...review, jobId: result.jobId });
+      } finally {
+        await extracted.cleanup();
+      }
+    }
     const review = await studio.createFrameReview(request.params.id, {
       versionId: String(request.body?.versionId || ""),
       time: Number(request.body?.time || 0),
@@ -558,10 +625,17 @@ app.get("/api/assets/search", async (request, response) => {
 
 app.post("/api/projects/:id/assets", async (request, response) => {
   try {
-    await ownedProject(request);
+    const project = await ownedProject(request);
     await assertLicensedAssets(request);
-    const asset = await studio.importAsset(String(request.params.id), request.body);
-    await persistHostedProject(studio.getProject(String(request.params.id), userId(request)));
+    const asset = generations.configured
+      ? await hostedMedia.importAsset(userId(request), project, request.body || {})
+      : await studio.importAsset(String(request.params.id), request.body);
+    if (generations.configured) {
+      project.assets.push(asset);
+      await projects.save(project, userId(request));
+    } else {
+      await persistHostedProject(project);
+    }
     response.status(201).json(asset);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not import asset." });
@@ -594,6 +668,13 @@ app.get("/api/artifacts/:artifactId", async (request, response) => {
   if (!artifact) return response.status(404).json({ error: "Artifact not found." });
   response.setHeader("Cache-Control", "private, no-store");
   response.redirect(303, await artifacts.signedReadUrl(artifact.bucket, artifact.object_name, Number(artifact.generation)));
+});
+
+app.get("/api/project-files/:fileId", async (request, response) => {
+  const file = await hostedMedia.ownedFile(String(request.params.fileId), userId(request));
+  if (!file) return response.status(404).json({ error: "File not found." });
+  response.setHeader("Cache-Control", "private, no-store");
+  response.redirect(303, await artifacts.signedReadUrl(file.bucket, file.object_name, Number(file.generation)));
 });
 
 app.use("/media/:projectId", (request, response, next) => {

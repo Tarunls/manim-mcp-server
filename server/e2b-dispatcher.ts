@@ -28,6 +28,28 @@ export class E2BDispatcher {
     const uploads = await this.artifacts.createUploadManifest(job);
     const project = await this.generations.getProjectForJob(job);
     if (!project) throw new Error("Generation project not found.");
+    const revisionSource = await this.generations.getRevisionSource(job);
+    const revisionSourceUrl = revisionSource
+      ? await this.artifacts.signedReadUrl(revisionSource.bucket, revisionSource.object_name, Number(revisionSource.generation))
+      : undefined;
+    const attachmentRows = await this.generations.getAttachmentFiles(job);
+    const attachments = await Promise.all(attachmentRows.map(async (file) => ({
+      id: file.id,
+      label: file.label,
+      url: await this.artifacts.signedReadUrl(file.bucket, file.object_name, Number(file.generation)),
+    })));
+    const assetIds = project.assets.map((asset) => asset.mediaUrl.match(/^\/api\/project-files\/([0-9a-f-]{36})$/i)?.[1]).filter((id): id is string => Boolean(id));
+    const assetRows = await this.generations.getProjectFilesByIds(job, assetIds);
+    const assetById = new Map(assetRows.map((row) => [row.id, row]));
+    const projectAssets = await Promise.all(project.assets.flatMap((asset) => {
+      const fileId = asset.mediaUrl.match(/^\/api\/project-files\/([0-9a-f-]{36})$/i)?.[1];
+      const row = fileId ? assetById.get(fileId) : undefined;
+      return row ? [{
+        localPath: asset.localPath,
+        metadata: asset,
+        urlPromise: this.artifacts.signedReadUrl(row.bucket, row.object_name, Number(row.generation)),
+      }] : [];
+    }).map(async (asset) => ({ localPath: asset.localPath, metadata: asset.metadata, url: await asset.urlPromise })));
     const templateName = process.env.E2B_TEMPLATE?.trim() || "lesson-studio-renderer";
     const template = job.templateVersion && job.templateVersion !== "dev" ? `${templateName}:${job.templateVersion}` : templateName;
     let sandbox: Sandbox | undefined;
@@ -57,6 +79,9 @@ export class E2BDispatcher {
         designPreferences: project.designPreferences,
         reviewPreferences: project.reviewPreferences,
         narrationPreferences: project.narrationPreferences,
+        revisionSourceUrl,
+        attachments,
+        projectAssets,
         uploads,
       }));
       const processHandle = await sandbox.commands.run("node /opt/lesson-studio/app/e2b/bootstrap.mjs", {

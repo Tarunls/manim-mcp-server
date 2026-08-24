@@ -1,0 +1,23 @@
+substitutions:
+  _REGION: us-central1
+  _ENVIRONMENT: staging
+  _REPOSITORY: lesson-studio
+
+steps:
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -euo
+      - pipefail
+      - -c
+      - |
+        image="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/app:${COMMIT_SHA}"
+        gcloud run jobs update "lesson-studio-${_ENVIRONMENT}-migrate" --region="${_REGION}" --image="$${image}"
+        gcloud run jobs execute "lesson-studio-${_ENVIRONMENT}-migrate" --region="${_REGION}" --wait
+        gcloud run services update "lesson-studio-${_ENVIRONMENT}-dispatcher" --region="${_REGION}" --image="$${image}"
+        gcloud run services update "lesson-studio-${_ENVIRONMENT}-api" --region="${_REGION}" --image="$${image}"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s

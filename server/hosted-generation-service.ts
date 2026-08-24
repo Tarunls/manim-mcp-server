@@ -18,6 +18,7 @@ export type HostedJob = {
   templateVersion: string;
   sandboxId?: string;
   reservedCredits: number;
+  input: { attachments?: Array<{ fileId: string; label: string }> };
 };
 
 type JobRow = {
@@ -32,6 +33,7 @@ type JobRow = {
   e2b_sandbox_id: string | null;
   reserved_credits: number;
   callback_token_hash: string;
+  input: HostedJob["input"];
 };
 
 type BillingRow = {
@@ -122,6 +124,7 @@ export class HostedGenerationService {
     prompt: string;
     effort: GenerationEffort;
     idempotencyKey: string;
+    attachments?: Array<{ fileId: string; label: string }>;
   }) {
     if (!this.configured) throw new Error("Hosted generation is not configured.");
     if (!/^[A-Za-z0-9._:-]{16,200}$/.test(input.idempotencyKey)) throw new Error("A valid Idempotency-Key header is required.");
@@ -193,10 +196,11 @@ export class HostedGenerationService {
       await client.query(
         `INSERT INTO generation_jobs
           (id, owner_id, project_id, status, prompt, renderer, effort, idempotency_key,
-           template_version, callback_token_hash, reserved_credits)
-         VALUES ($1, $2, $3, 'queued', $4, $5, $6, $7, $8, $9, $10)`,
+           template_version, callback_token_hash, reserved_credits, input)
+         VALUES ($1, $2, $3, 'queued', $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
         [jobId, input.ownerId, project.id, input.prompt, project.renderer, input.effort, input.idempotencyKey,
-          process.env.E2B_TEMPLATE_VERSION || "dev", this.callbackHash(jobId), credits],
+          process.env.E2B_TEMPLATE_VERSION || "dev", this.callbackHash(jobId), credits,
+          JSON.stringify({ attachments: input.attachments || [] })],
       );
       if (credits > 0) {
         await client.query(
@@ -231,6 +235,7 @@ export class HostedGenerationService {
       templateVersion: row.template_version,
       sandboxId: row.e2b_sandbox_id || undefined,
       reservedCredits: row.reserved_credits,
+      input: row.input || {},
     };
   }
 
@@ -273,6 +278,42 @@ export class HostedGenerationService {
       [job.projectId, job.ownerId],
     );
     return result.rows[0]?.document;
+  }
+
+  async getRevisionSource(job: HostedJob) {
+    const result = await this.db.query<{ bucket: string; object_name: string; generation: string }>(
+      `SELECT bucket, object_name, generation::text
+         FROM artifacts
+        WHERE project_id = $1 AND owner_id = $2 AND kind = 'source_archive'
+        ORDER BY created_at DESC LIMIT 1`,
+      [job.projectId, job.ownerId],
+    );
+    return result.rows[0];
+  }
+
+  async getAttachmentFiles(job: HostedJob) {
+    const ids = (job.input.attachments || []).map((item) => item.fileId);
+    if (!ids.length) return [];
+    const result = await this.db.query<{ id: string; bucket: string; object_name: string; generation: string }>(
+      `SELECT id, bucket, object_name, generation::text FROM project_files
+        WHERE id = ANY($1::uuid[]) AND owner_id = $2 AND project_id = $3`,
+      [ids, job.ownerId, job.projectId],
+    );
+    const byId = new Map(result.rows.map((row) => [row.id, row]));
+    return (job.input.attachments || []).flatMap((item) => {
+      const row = byId.get(item.fileId);
+      return row ? [{ ...row, label: item.label }] : [];
+    });
+  }
+
+  async getProjectFilesByIds(job: HostedJob, ids: string[]) {
+    if (!ids.length) return [];
+    const result = await this.db.query<{ id: string; bucket: string; object_name: string; generation: string }>(
+      `SELECT id, bucket, object_name, generation::text FROM project_files
+        WHERE id = ANY($1::uuid[]) AND owner_id = $2 AND project_id = $3`,
+      [ids, job.ownerId, job.projectId],
+    );
+    return result.rows;
   }
 
   async markSandboxStarted(jobId: string, sandboxId: string) {

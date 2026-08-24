@@ -6,6 +6,8 @@ Production hardening is being implemented incrementally. The target trust bounda
 
 Hosted mode uses `EXECUTION_MODE=e2b`, PostgreSQL, Cloud Tasks, private GCS artifacts, and a pinned E2B template. Build that template with `npm run e2b:build-template`; production startup intentionally fails if any required hosted dependency is missing.
 
+Deployment is defined in [infra/terraform](infra/terraform/README.md). Follow [the GCP runbook](docs/DEPLOYMENT_RUNBOOK.md) and [production checklist](docs/PRODUCTION_CHECKLIST.md); applying Terraform is a deliberate billable operation and is not part of ordinary application CI.
+
 This repository includes a local prompt-to-video studio with an explicit per-project renderer choice. Choose Manim for equations and geometry, Remotion for editorial motion, or Composite when a Remotion-directed video should contain self-contained Manim inserts. Composite does not let two layout engines compete: Remotion always owns the final canvas.
 
 Rendered revisions include a seven-frame filmstrip. Pause anywhere, select **Review frame**, draw with the default pen or choose a circle, arrow, or rectangle, add a note, and send the clean plus annotated frame to the model as direct high-detail image inputs. The reviewer isolates the smallest marked target and records nearby objects that must remain unchanged.

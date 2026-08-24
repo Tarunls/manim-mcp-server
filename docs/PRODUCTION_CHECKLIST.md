@@ -1,0 +1,35 @@
+# Production launch checklist
+
+## Security
+
+- Identity Platform authorized domains contain only staging and production domains.
+- Session cookies are `Secure`, host-only, `httpOnly`, and revocation-tested.
+- Cross-user project, job, artifact, review, and billing requests return `404` or `401` without leaking existence.
+- Cloud Run dispatcher rejects public callers and accepts only the Cloud Tasks OIDC service account.
+- E2B egress tests prove arbitrary hosts are blocked and `.env` is mode `0600`, excluded from archives, and deleted.
+- GCS public access prevention and uniform bucket-level access are enabled.
+- Secret Manager access logs show the API/dispatcher split described in the runbook.
+- Dependency audit reports no high or critical vulnerabilities; SAST and container scanning pass.
+
+## Reliability
+
+- Cloud SQL regional HA, PITR, automated backups, deletion protection, and a restore drill are verified.
+- Duplicate browser requests, Stripe webhooks, Cloud Tasks deliveries, and sandbox callbacks do not double-charge or create duplicate versions.
+- Queue pause/resume, E2B quota exhaustion, OpenAI throttling, sandbox timeout, callback timeout, and invalid artifact paths are exercised.
+- Failed or cancelled generations refund credits exactly once.
+- A prior API image and prior E2B template can be restored independently.
+
+## Scale gate
+
+- Load test at least the target submission rate with realistic authenticated sessions and SSE connections.
+- Confirm API p95 latency, Cloud SQL connection count/CPU, outbox age, queue age, task retries, active sandboxes, job completion latency, and provider error rate remain within the launch SLO.
+- Cloud Tasks concurrency is at or below contracted E2B concurrency and verified OpenAI throughput.
+- Per-plan active-job limits and global concurrency remain enforced under concurrent submissions.
+- Do not claim thousands of simultaneous renders unless E2B and OpenAI have confirmed that active capacity; thousands of durable queued submissions are a separate claim.
+
+## Product and operations
+
+- Production Stripe prices, Customer Portal, tax/legal settings, webhook destination, and refund/support process are verified.
+- Privacy policy, terms, retention/deletion process, support contact, and abuse response are published.
+- Monitoring notification channels and on-call ownership are configured; alert tests reach a human.
+- Staging end-to-end silent and narrated videos pass visual, audio, artifact, and download checks.

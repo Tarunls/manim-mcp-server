@@ -99,4 +99,24 @@ export class ArtifactService {
     });
     return url;
   }
+
+  async storeProjectFile(projectId: string, fileId: string, filename: string, contentType: string, contents: Buffer) {
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120);
+    const objectName = `project-files/${projectId}/${fileId}/${safeFilename}`;
+    const file = this.storage.bucket(this.bucketName()).file(objectName);
+    await file.save(contents, {
+      resumable: contents.length > 8 * 1024 * 1024,
+      validation: "crc32c",
+      metadata: { contentType, cacheControl: "private, max-age=3600" },
+    });
+    const [metadata] = await file.getMetadata();
+    return {
+      bucket: this.bucketName(),
+      objectName,
+      generation: Number(metadata.generation),
+      contentType: metadata.contentType || contentType,
+      byteSize: Number(metadata.size || contents.length),
+      checksum: metadata.crc32c || metadata.md5Hash || "",
+    };
+  }
 }

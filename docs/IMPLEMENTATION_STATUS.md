@@ -24,10 +24,18 @@ Updated: 2026-08-23
 - PostgreSQL-backed Stripe profiles and idempotent webhook processing.
 - A PostgreSQL integration test verifies migrations, generation idempotency, one-time credit reservation, failure, and refund behavior.
 
+## Completed deployment layer
+
+- Separate `api` and `dispatcher` runtime roles with disjoint routes and Secret Manager access.
+- Terraform for private-network regional Cloud SQL PostgreSQL, PITR/backups/deletion protection, Cloud Tasks, private versioned GCS, Cloud Run, migration job, least-privilege service accounts, and alert policies.
+- Commit-SHA application builds, gated CI, ordered migration/deployment pipeline, deployment runbook, rollback procedure, and production certification checklist.
+- Hosted frame extraction, frame-review images, and licensed assets use owner-scoped private GCS objects instead of GCS-FUSE or local durable state.
+- Revisions restore the prior immutable source archive in a new E2B sandbox; frame-review images and licensed assets are supplied through short-lived signed reads.
+
 ## Remaining before production launch
 
-- Move frame-review images and imported licensed assets from the transitional local filesystem to private GCS.
-- Split the API and dispatcher deployments and add Terraform, CI/CD, monitoring, backups, and alerting.
-- Provision staging, build the pinned E2B template, run an end-to-end generation, and certify load/security behavior before opening traffic.
+- Create the missing E2B Secret Manager secret and select the correct live Stripe secrets for production.
+- Apply the staging Terraform plan (a billable operation), build the pinned E2B template, and run a real end-to-end generation.
+- Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.
 
 No production database or paid E2B capacity is provisioned by committing these files. Infrastructure creation remains an explicit deployment operation.
