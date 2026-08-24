@@ -217,7 +217,13 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
 app.use(express.json({ limit: "16mb" }));
 app.use((request, response, next) => request.path.startsWith("/api/internal/") ? next() : verifyMutationRequest(request, response, next));
 
-const authLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+const authLimiter = rateLimit({
+  windowMs: 10 * 60_000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  skip: (request) => request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS",
+});
 const generationLimiter = rateLimit({ windowMs: 60_000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false });
 app.use("/api/auth", authLimiter);
 
@@ -369,7 +375,15 @@ app.get("/api/state", async (request, response) => {
   }
   response.json(snapshot);
 });
-app.get("/api/pricing", (_request, response) => response.json({ plans: billing.listPlans(), billingMode: database.configured ? hostedBilling.billingMode : billing.billingMode, contactEmail: "tarun.l.sankar@gmail.com" }));
+app.get("/api/pricing", (_request, response) => {
+  const billingMode = database.configured ? hostedBilling.billingMode : billing.billingMode;
+  response.json({
+    plans: billing.listPlans(),
+    billingMode,
+    checkoutEnabled: billingMode === "live" || (billingMode === "test" && process.env.ALLOW_TEST_CHECKOUT === "true"),
+    contactEmail: "tarun.l.sankar@gmail.com",
+  });
+});
 app.get("/api/billing", async (request, response) => response.json(await billingState(request)));
 
 app.post("/api/billing/checkout", async (request, response) => {

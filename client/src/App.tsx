@@ -12,7 +12,6 @@ import {
   DownloadSimple,
   FilmSlate,
   List,
-  Moon,
   MagicWand,
   MagnifyingGlass,
   MonitorPlay,
@@ -32,7 +31,6 @@ import {
   SignOut,
   Star,
   Stop,
-  Sun,
   UserCircle,
   Warning,
   X,
@@ -1066,24 +1064,24 @@ function VideoWorkspace({ project, runtime }: { project?: StudioProject; runtime
 
 const CONTACT_EMAIL = "tarun.l.sankar@gmail.com";
 
-function PricingCards({ plans, currentPlan, billingMode = "live", onChoose }: { plans: PricingPlan[]; currentPlan?: BillingPlanId; billingMode?: BillingState["billingMode"]; onChoose: (plan: BillingPlanId) => void }) {
+function PricingCards({ plans, currentPlan, checkoutEnabled = true, onChoose }: { plans: PricingPlan[]; currentPlan?: BillingPlanId; checkoutEnabled?: boolean; onChoose: (plan: BillingPlanId) => void }) {
   return (
     <div className="pricing-grid">
       {plans.map((plan) => (
         <article className={`pricing-card ${plan.id === "creator" ? "pricing-featured" : ""}`} key={plan.id}>
-          {plan.id === "creator" && <span className="pricing-ribbon">Best place to start</span>}
+          {plan.id === "creator" && <span className="pricing-ribbon">Recommended</span>}
           <div className="pricing-card-head"><span>{plan.name}</span><strong>{plan.monthlyPrice ? `$${plan.monthlyPrice}` : "$0"}<small>/month</small></strong></div>
           <p>{plan.description}</p>
           <ul>{plan.features.map((feature) => <li key={feature}><Check size={16} weight="bold" /> {feature}</li>)}</ul>
           <button className={plan.id === "creator" ? "primary-cta" : "secondary-cta"} disabled={currentPlan === plan.id} onClick={() => onChoose(plan.id)}>
-            {currentPlan === plan.id ? "Current plan" : plan.id === "free" ? "Open the studio" : billingMode !== "live" ? "Coming soon" : `Choose ${plan.name}`}
+            {currentPlan === plan.id ? "Current plan" : plan.id === "free" ? "Open studio" : !checkoutEnabled ? "Coming soon" : `Choose ${plan.name}`}
           </button>
         </article>
       ))}
       <article className="pricing-card contact-card">
-        <div className="pricing-card-head"><span>Team & custom</span><strong>Let’s talk</strong></div>
-        <p>Need shared workspaces, custom volume, onboarding, or an API agreement? Those are not self-serve features yet.</p>
-        <ul><li><Check size={16} weight="bold" /> Honest roadmap conversation</li><li><Check size={16} weight="bold" /> Volume and school pricing</li><li><Check size={16} weight="bold" /> Direct founder contact</li></ul>
+        <div className="pricing-card-head"><span>Teams</span><strong>Custom</strong></div>
+        <p>Shared workspaces, volume, onboarding, and API agreements.</p>
+        <ul><li><Check size={16} weight="bold" /> School and volume pricing</li><li><Check size={16} weight="bold" /> Direct onboarding</li></ul>
         <a className="secondary-cta" href={`mailto:${CONTACT_EMAIL}?subject=Lesson Studio team plan`}>Contact us</a>
       </article>
     </div>
@@ -1099,49 +1097,46 @@ function MarketingSite() {
       </header>
 
       <section className="hero-section">
-        <div className="hero-media" aria-hidden="true">
-          <video autoPlay muted loop playsInline preload="auto" poster="/lesson-studio-reel-poster.jpg">
+        <div className="hero-copy">
+          <span className="hero-eyebrow">AI video workspace</span>
+          <h1>Make ideas visible.</h1>
+          <p>Describe an idea. Get a polished video you can review, revise, and download.</p>
+          <div className="hero-actions"><a className="primary-cta" href="/studio">Open studio <ArrowRight size={17} /></a><a className="secondary-cta" href="/pricing">View pricing</a></div>
+          <div className="hero-proof"><span><Check size={15} /> Start free</span><span><Check size={15} /> Review every frame</span><span><Check size={15} /> Export MP4</span></div>
+        </div>
+        <div className="hero-media">
+          <video autoPlay muted loop playsInline preload="metadata" poster="/lesson-studio-reel-poster.jpg" aria-label="Example lesson generated in Lesson Studio">
             <source src="/lesson-studio-reel.mp4" type="video/mp4" />
           </video>
-          <div className="hero-scrim" />
-          <div className="hero-flare hero-flare-one" />
-          <div className="hero-flare hero-flare-two" />
+          <span className="hero-media-caption"><i /> Generated in Lesson Studio</span>
         </div>
-        <div className="hero-copy">
-          <span className="hero-eyebrow"><i /> Visual learning, rebuilt.</span>
-          <h1>Don’t just explain it.<br /><em>Make it move.</em></h1>
-          <p>Turn any idea into a cinematic visual lesson—planned, animated, checked, and still yours to revise down to the frame.</p>
-          <div className="hero-actions"><a className="primary-cta" href="/studio">Make your first video <ArrowRight size={17} /></a><a className="secondary-cta" href="/pricing">See pricing</a></div>
-          <div className="hero-proof"><span><Check size={15} /> Free first generation</span><span><Check size={15} /> Editable outputs</span><span><Check size={15} /> No card required</span></div>
-        </div>
-        <a className="hero-scroll" href="#how-it-works"><span>See how it works</span><ArrowDown size={20} /></a>
       </section>
 
       <section className="how-section" id="how-it-works">
-        <div><span>01</span><strong>Ask</strong><p>Describe what you want to teach and how hard the studio should think.</p></div>
-        <div><span>02</span><strong>Watch</strong><p>Follow planning, drawing, rendering, and visual inspection as distinct stages.</p></div>
-        <div><span>03</span><strong>Mark up</strong><p>Pause any frame, draw directly on it, and send precise revision feedback.</p></div>
+        <header><span>From prompt to export</span><h2>A focused workflow for visual ideas.</h2></header>
+        <div><strong>Describe</strong><p>Set the topic, style, and depth.</p></div>
+        <div><strong>Generate</strong><p>Follow planning, rendering, and checks.</p></div>
+        <div><strong>Refine</strong><p>Mark a frame and request the exact change.</p></div>
       </section>
 
       <section className="home-close-section">
-        <span className="chalk-kicker">A better way to show an idea.</span>
-        <h2>Your next lesson can move.</h2>
-        <p>Start free, build the first draft in the studio, and revise the exact frames that need another pass.</p>
-        <div className="hero-actions"><a className="primary-cta" href="/studio">Open the studio <ArrowRight size={17} /></a><a className="secondary-cta" href="/pricing">Compare plans</a></div>
+        <span>One free generation. No card.</span>
+        <h2>Make the idea visible.</h2>
+        <a className="primary-cta" href="/studio">Open studio <ArrowRight size={17} /></a>
       </section>
-      <footer className="marketing-footer"><span>Lesson Studio</span><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a><span>Stripe Checkout · Cancel anytime</span></footer>
+      <footer className="marketing-footer"><span>Lesson Studio</span><a href={`mailto:${CONTACT_EMAIL}`}>Contact</a><span>Stripe Checkout</span></footer>
     </main>
   );
 }
 
 function PricingSite() {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [billingMode, setBillingMode] = useState<BillingState["billingMode"]>("unconfigured");
+  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
 
   useEffect(() => {
-    void request<{ plans: PricingPlan[]; billingMode: BillingState["billingMode"] }>("/api/pricing").then((result) => {
+    void request<{ plans: PricingPlan[]; billingMode: BillingState["billingMode"]; checkoutEnabled: boolean }>("/api/pricing").then((result) => {
       setPlans(result.plans);
-      setBillingMode(result.billingMode);
+      setCheckoutEnabled(result.checkoutEnabled);
     });
   }, []);
 
@@ -1150,7 +1145,7 @@ function PricingSite() {
       window.location.href = "/studio";
       return;
     }
-    if (billingMode !== "live") {
+    if (!checkoutEnabled) {
       window.alert("Paid plans are opening soon. You can create a free account and use the studio now.");
       return;
     }
@@ -1164,27 +1159,27 @@ function PricingSite() {
         <nav><a href="/">Home</a><a className="nav-studio" href="/studio">Open studio <ArrowRight size={15} /></a></nav>
       </header>
       <section className="pricing-page-hero">
-        <span className="hero-eyebrow"><i /> Pricing that maps to real work.</span>
-        <h1>Start free.<br />Scale when it helps.</h1>
-        <p>Credits reflect how much planning and iteration each generation uses. No vague unlimited plan, and no advertised feature that does not exist yet.</p>
+        <span className="hero-eyebrow">Pricing</span>
+        <h1>Simple plans for real output.</h1>
+        <p>Pay for the amount of generation and reasoning you use.</p>
       </section>
       <section className="pricing-section" id="pricing">
-        <div className="section-heading"><span className="chalk-kicker">Simple monthly credits</span><h2>Choose how often you want to create.</h2><p>Faster uses 1 credit, Balanced uses 2, and Try harder uses 4. You can always review and revise the result inside the studio.</p></div>
-        {billingMode !== "live" && <div className="billing-launch-note"><strong>Free accounts are open now.</strong><span>Creator and Pro billing will open when live payments are enabled.</span></div>}
-        <PricingCards plans={plans} billingMode={billingMode} onChoose={choose} />
+        <div className="section-heading"><span>Monthly credits</span><h2>Choose your pace.</h2><p>Faster uses 1 credit, Balanced uses 2, and Try harder uses 4.</p></div>
+        {!checkoutEnabled && <div className="billing-launch-note"><strong>Free is available now.</strong><span>Paid checkout is not enabled in this environment.</span></div>}
+        <PricingCards plans={plans} checkoutEnabled={checkoutEnabled} onChoose={choose} />
       </section>
       <footer className="marketing-footer"><span>Lesson Studio</span><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a><a href="/studio">Open studio</a></footer>
     </main>
   );
 }
 
-function BillingDialog({ billing, plans, onClose, onCheckout, onPortal }: { billing: BillingState; plans: PricingPlan[]; onClose: () => void; onCheckout: (plan: BillingPlanId) => void; onPortal: () => void }) {
+function BillingDialog({ billing, plans, checkoutEnabled, onClose, onCheckout, onPortal }: { billing: BillingState; plans: PricingPlan[]; checkoutEnabled: boolean; onClose: () => void; onCheckout: (plan: BillingPlanId) => void; onPortal: () => void }) {
   return (
     <div className="dialog-backdrop billing-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="billing-dialog" role="dialog" aria-modal="true" aria-label="Plan and billing">
         <header><div><span className="panel-kicker">Plan & billing</span><h2>{billing.planName} plan</h2></div><button className="icon-button" onClick={onClose} aria-label="Close billing"><X size={18} /></button></header>
         <div className="credit-meter"><div><strong>{billing.creditsRemaining}</strong><span>of {billing.entitlements.creditsPerMonth} credits left</span></div><span className="credit-track"><i style={{ width: `${Math.max(0, Math.min(100, billing.entitlements.creditsPerMonth ? billing.creditsRemaining / billing.entitlements.creditsPerMonth * 100 : 0))}%` }} /></span><small>Renews {billing.periodEnd ? new Date(billing.periodEnd).toLocaleDateString([], { month: "short", day: "numeric" }) : "monthly"}</small></div>
-        <PricingCards plans={plans} currentPlan={billing.plan} billingMode={billing.billingMode} onChoose={(plan) => plan === "free" ? undefined : onCheckout(plan)} />
+        <PricingCards plans={plans} currentPlan={billing.plan} checkoutEnabled={checkoutEnabled} onChoose={(plan) => plan === "free" ? undefined : onCheckout(plan)} />
         <div className="billing-dialog-footer">{billing.hasStripeCustomer && <button className="secondary-cta" onClick={onPortal}>Manage or cancel in Stripe</button>}<a href={`mailto:${CONTACT_EMAIL}`}>Questions? Contact us</a></div>
       </section>
     </div>
@@ -1240,26 +1235,29 @@ function AccessGate({ configured, onAuthorized }: { configured: boolean; onAutho
 
   return (
     <main className="access-page">
-      <div className="access-glow access-glow-one" />
-      <div className="access-glow access-glow-two" />
-      <section className="access-card" aria-labelledby="access-title">
+      <aside className="access-preview">
         <a className="access-brand" href="/"><span className="brand-mark"><FilmSlate size={18} weight="fill" /></span><strong>Lesson Studio</strong></a>
-        <span className="access-kicker">Your creative workspace</span>
-        <h1 id="access-title">{mode === "signin" ? "Welcome back." : "Create your studio."}</h1>
-        <p>{mode === "signin" ? "Sign in to continue your videos and frame reviews." : "Start free with one generation credit. No card required."}</p>
+        <div className="access-preview-copy"><span>Visual lesson workspace</span><h2>From idea to clear motion.</h2></div>
+        <img src="/intro-integral.png" alt="Generated integral lesson preview" />
+      </aside>
+      <section className="access-card" aria-labelledby="access-title">
+        <a className="access-brand access-brand-mobile" href="/"><span className="brand-mark"><FilmSlate size={18} weight="fill" /></span><strong>Lesson Studio</strong></a>
+        <span className="access-kicker">{mode === "signin" ? "Welcome back" : "Start free"}</span>
+        <h1 id="access-title">{mode === "signin" ? "Sign in to your studio" : "Create your account"}</h1>
+        <p>{mode === "signin" ? "Continue where you left off." : "One generation credit. No card required."}</p>
         {!configured && <div className="access-error" role="alert"><Warning size={15} /> Account sign-in is being configured. Please try again shortly.</div>}
         <form onSubmit={(event) => void submit(event)}>
           <label><span>Email</span><input name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} autoFocus required /></label>
           <label><span>Password</span><input name="password" type="password" minLength={10} autoComplete={mode === "signin" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
           {error && <div className="access-error" role="alert"><Warning size={15} /> {error}</div>}
           {notice && <div className="access-notice" role="status"><Check size={15} /> {notice}</div>}
-          <button type="submit" disabled={!configured || submitting || !email || password.length < 10}>{submitting ? <CircleNotch className="spin" size={17} /> : <>{mode === "signin" ? "Enter studio" : "Create free account"} <ArrowRight size={17} /></>}</button>
+          <button type="submit" disabled={!configured || submitting || !email || password.length < 10}>{submitting ? <CircleNotch className="spin" size={17} /> : <>{mode === "signin" ? "Sign in" : "Create account"} <ArrowRight size={17} /></>}</button>
         </form>
         <div className="access-switch">
-          <button type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setNotice(""); }}>{mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}</button>
+          <button type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setNotice(""); }}>{mode === "signin" ? "Create an account" : "Sign in instead"}</button>
           {mode === "signin" && <button type="button" onClick={() => void resetPassword()}>Forgot password?</button>}
         </div>
-        <a className="access-home-link" href="/">Back to the homepage</a>
+        <a className="access-home-link" href="/">Back home</a>
       </section>
     </main>
   );
@@ -1271,6 +1269,7 @@ export function App() {
   const [auth, setAuth] = useState<AuthState>(EMPTY_AUTH);
   const [billing, setBilling] = useState<BillingState>(EMPTY_BILLING);
   const [pricingPlans, setPricingPlans] = useState<PricingPlan[]>([]);
+  const [pricingCheckoutEnabled, setPricingCheckoutEnabled] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [runtime, setRuntime] = useState<RuntimeState>(EMPTY_RUNTIME);
   const [loaded, setLoaded] = useState(false);
@@ -1283,11 +1282,6 @@ export function App() {
   const [chatMode, setChatMode] = useState<ChatMode>("docked");
   const [chatSide, setChatSide] = useState<ChatSide>("left");
   const [floatingPosition, setFloatingPosition] = useState<FloatingPosition>({ x: Math.max(24, window.innerWidth - 520), y: 88 });
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    const saved = window.localStorage.getItem("lesson-studio-theme");
-    if (saved === "light" || saved === "dark") return saved;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  });
   const [mobilePane, setMobilePane] = useState<"chat" | "preview">("preview");
   const studioRoute = window.location.pathname.startsWith("/studio");
   const pricingRoute = window.location.pathname.startsWith("/pricing");
@@ -1295,15 +1289,13 @@ export function App() {
   const activeProject = useMemo(() => projects.find((project) => project.id === activeId), [projects, activeId]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem("lesson-studio-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
     void request<{ configured: boolean; authenticated: boolean; user?: AccountUser }>("/api/auth/status")
       .then((status) => setAccess({ checked: true, ...status }))
       .catch(() => setAccess({ checked: true, configured: false, authenticated: false }));
-    void request<{ plans: PricingPlan[] }>("/api/pricing").then((result) => setPricingPlans(result.plans));
+    void request<{ plans: PricingPlan[]; checkoutEnabled: boolean }>("/api/pricing").then((result) => {
+      setPricingPlans(result.plans);
+      setPricingCheckoutEnabled(result.checkoutEnabled);
+    });
   }, []);
 
   useEffect(() => {
@@ -1499,9 +1491,6 @@ export function App() {
               aria-label={previewCollapsed ? "Show video" : "Collapse video"}
               title={previewCollapsed ? "Show video" : "Collapse video"}
             ><MonitorPlay size={18} /><span>{previewCollapsed ? "Show video" : "Focus"}</span></button>
-            <button className="theme-toggle" onClick={() => setTheme((value) => value === "dark" ? "light" : "dark")} aria-label={`Use ${theme === "dark" ? "light" : "dark"} mode`} title={`Use ${theme === "dark" ? "light" : "dark"} mode`}>
-              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
           </div>
         </header>
 
@@ -1538,7 +1527,7 @@ export function App() {
           <button className={mobilePane === "preview" ? "active" : ""} onClick={() => setMobilePane("preview")}><MonitorPlay size={18} /> Preview</button>
         </nav>
       </div>
-      {billingOpen && <BillingDialog billing={billing} plans={pricingPlans} onClose={() => setBillingOpen(false)} onCheckout={(plan) => void startCheckout(plan, billing.email)} onPortal={() => void openBillingPortal()} />}
+      {billingOpen && <BillingDialog billing={billing} plans={pricingPlans} checkoutEnabled={pricingCheckoutEnabled} onClose={() => setBillingOpen(false)} onCheckout={(plan) => void startCheckout(plan, billing.email)} onPortal={() => void openBillingPortal()} />}
     </main>
   );
 }
