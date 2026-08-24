@@ -44,6 +44,7 @@ Updated: 2026-08-24
 - OpenAI calls now enforce model, output-token, and per-job request ceilings while recording token and estimated-cost telemetry without retaining provider response bodies.
 - Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
 - Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
+- Terraform now supports a domainless, scale-to-zero staging profile with a shared-core database, two E2B workers, three API instances, and a $20 GCP alerting budget while retaining strict production safety checks.
 
 ## Remaining before production launch
 

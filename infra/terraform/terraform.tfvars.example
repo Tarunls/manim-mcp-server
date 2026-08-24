@@ -2,12 +2,18 @@ project_id           = "educationalvideo-506219"
 region               = "us-central1"
 environment          = "staging"
 image                = "us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:<immutable-commit-sha>"
-app_base_url         = "https://staging.example.com"
-app_domain           = "staging.example.com"
+app_base_url         = ""
+app_domain           = ""
+enable_external_edge = false
 e2b_template_version = "<immutable-release-id>"
 
-max_concurrent_sandboxes = 20
-api_max_instances         = 50
+max_concurrent_sandboxes = 2
+api_max_instances         = 3
+sql_tier                 = "db-f1-micro"
+sql_availability_type    = "ZONAL"
+sql_disk_size_gb         = 10
+billing_account_id       = "0181BB-902BC6-5D4673"
+monthly_budget_usd       = 20
 
 secret_ids = {
   identity_api_key  = "identity_platform_api_key"

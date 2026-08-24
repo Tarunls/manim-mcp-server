@@ -78,6 +78,8 @@ The template builds dependency layers outside the application source-copy target
 
 Never deploy the mutable `dev` tag to production. Set Cloud Tasks maximum concurrent dispatches no higher than `E2B_MAX_CONCURRENT_SANDBOXES`; the database gate is a second line of defense, not a replacement for queue throttling.
 
+The budget staging profile starts with two concurrent sandboxes, three API instances, a 30-minute sandbox lifetime, twelve OpenAI calls per job, and 12,000 output tokens per provider response. Model selection is overwritten by the API: Faster and Balanced use `gpt-5.6-terra`, while Try harder uses `gpt-5.6-sol`. Provider-call rows record token counts and estimated cost without retaining response bodies.
+
 ## Capacity model
 
 Submitting a generation is fast and asynchronous. Cloud Tasks `maxConcurrentDispatches` must be at or below purchased E2B concurrency. Per-user and per-plan active-job limits prevent a single account from monopolizing the queue. E2B and OpenAI quota errors leave the job queued with exponential backoff instead of losing it.

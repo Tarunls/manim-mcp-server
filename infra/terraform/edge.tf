@@ -1,4 +1,5 @@
 resource "google_compute_region_network_endpoint_group" "api" {
+  count                 = var.enable_external_edge ? 1 : 0
   name                  = "${local.name}-api"
   region                = var.region
   network_endpoint_type = "SERVERLESS"
@@ -8,6 +9,7 @@ resource "google_compute_region_network_endpoint_group" "api" {
 }
 
 resource "google_compute_security_policy" "edge" {
+  count       = var.enable_external_edge ? 1 : 0
   name        = "${local.name}-edge"
   description = "Rate limiting for authentication and generation entry points."
 
@@ -50,14 +52,15 @@ resource "google_compute_security_policy" "edge" {
 }
 
 resource "google_compute_backend_service" "api" {
+  count                 = var.enable_external_edge ? 1 : 0
   name                  = "${local.name}-api"
   protocol              = "HTTP"
   port_name             = "http"
   load_balancing_scheme = "EXTERNAL_MANAGED"
   timeout_sec           = 3600
-  security_policy       = google_compute_security_policy.edge.id
+  security_policy       = google_compute_security_policy.edge[0].id
   backend {
-    group = google_compute_region_network_endpoint_group.api.id
+    group = google_compute_region_network_endpoint_group.api[0].id
   }
   log_config {
     enable      = true
@@ -66,12 +69,14 @@ resource "google_compute_backend_service" "api" {
 }
 
 resource "google_compute_url_map" "https" {
+  count           = var.enable_external_edge ? 1 : 0
   name            = "${local.name}-https"
-  default_service = google_compute_backend_service.api.id
+  default_service = google_compute_backend_service.api[0].id
 }
 
 resource "google_compute_managed_ssl_certificate" "app" {
-  name = "${local.name}-certificate"
+  count = var.enable_external_edge ? 1 : 0
+  name  = "${local.name}-certificate"
   managed {
     domains = [var.app_domain]
   }
@@ -84,32 +89,37 @@ resource "google_compute_managed_ssl_certificate" "app" {
 }
 
 resource "google_compute_ssl_policy" "modern" {
+  count           = var.enable_external_edge ? 1 : 0
   name            = "${local.name}-modern-tls"
   profile         = "MODERN"
   min_tls_version = "TLS_1_2"
 }
 
 resource "google_compute_target_https_proxy" "app" {
+  count            = var.enable_external_edge ? 1 : 0
   name             = "${local.name}-https"
-  url_map          = google_compute_url_map.https.id
-  ssl_certificates = [google_compute_managed_ssl_certificate.app.id]
-  ssl_policy       = google_compute_ssl_policy.modern.id
+  url_map          = google_compute_url_map.https[0].id
+  ssl_certificates = [google_compute_managed_ssl_certificate.app[0].id]
+  ssl_policy       = google_compute_ssl_policy.modern[0].id
 }
 
 resource "google_compute_global_address" "app" {
-  name = "${local.name}-edge"
+  count = var.enable_external_edge ? 1 : 0
+  name  = "${local.name}-edge"
 }
 
 resource "google_compute_global_forwarding_rule" "https" {
+  count                 = var.enable_external_edge ? 1 : 0
   name                  = "${local.name}-https"
-  target                = google_compute_target_https_proxy.app.id
-  ip_address            = google_compute_global_address.app.address
+  target                = google_compute_target_https_proxy.app[0].id
+  ip_address            = google_compute_global_address.app[0].address
   port_range            = "443"
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }
 
 resource "google_compute_url_map" "http_redirect" {
-  name = "${local.name}-http-redirect"
+  count = var.enable_external_edge ? 1 : 0
+  name  = "${local.name}-http-redirect"
   default_url_redirect {
     https_redirect         = true
     redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
@@ -118,14 +128,16 @@ resource "google_compute_url_map" "http_redirect" {
 }
 
 resource "google_compute_target_http_proxy" "redirect" {
+  count   = var.enable_external_edge ? 1 : 0
   name    = "${local.name}-http-redirect"
-  url_map = google_compute_url_map.http_redirect.id
+  url_map = google_compute_url_map.http_redirect[0].id
 }
 
 resource "google_compute_global_forwarding_rule" "http" {
+  count                 = var.enable_external_edge ? 1 : 0
   name                  = "${local.name}-http"
-  target                = google_compute_target_http_proxy.redirect.id
-  ip_address            = google_compute_global_address.app.address
+  target                = google_compute_target_http_proxy.redirect[0].id
+  ip_address            = google_compute_global_address.app[0].address
   port_range            = "80"
   load_balancing_scheme = "EXTERNAL_MANAGED"
 }

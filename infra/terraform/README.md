@@ -7,9 +7,13 @@ Prerequisites:
 1. Create the E2B API key Secret Manager secret named by `secret_ids.e2b_api_key`.
 2. Use a live Stripe restricted key and a production webhook secret for the production workspace. Never point production at `stripe_test_api_key`.
 3. Build and test an immutable application image and an immutable E2B template tag.
-4. Create a remote, versioned Terraform state bucket and configure a `backend "gcs"` block locally or in the deployment pipeline.
+4. Create the remote, versioned Terraform state bucket named in `versions.tf`. State contains generated database and callback credentials and must not be public.
 5. Copy `terraform.tfvars.example` to an untracked environment-specific tfvars file.
-6. After the first apply, point the `app_domain` DNS A record at `load_balancer_ip` and wait for the managed certificate to become active.
+6. Domainless staging can leave `app_base_url` and `app_domain` empty and `enable_external_edge=false`; it uses the canonical `run.app` origin. After a domain is available, set the exact HTTPS origin, enable the edge, apply, create the DNS A record from `load_balancer_ip`, and wait for the managed certificate.
+
+The checked-in staging example is deliberately budget constrained: `db-f1-micro`, zonal availability, 10 GB storage, two concurrent E2B workers, three API instances, scale-to-zero Cloud Run, and no global load balancer before DNS exists. The shared-core database has no SLA and is not accepted by the Terraform production safety check.
+
+The project-scoped $20 budget sends threshold and forecast alerts to billing recipients. It is not a hard cap. OpenAI, E2B, Speechify, and Stripe charges are outside the GCP billing account and need separate provider controls.
 
 Review before applying:
 

@@ -20,11 +20,13 @@ Do not convert the existing singleton in place. Build staging beside it, validat
 2. Build an immutable E2B template with the same release identifier used in Terraform.
    Run `npm run smoke:e2b` against that exact tag before deploying it.
 3. Submit `cloudbuild.yaml`; it runs typecheck, tests, build, and audit before publishing both commit-SHA and convenience `latest` image tags.
-4. Review and apply `infra/terraform` for `staging`. Terraform application is intentionally manual because it creates billable resources.
+4. Review and apply `infra/terraform` for `staging`. The initial domainless configuration uses the canonical `run.app` origin and omits the global edge until DNS is supplied. Terraform application is intentionally manual because it creates billable resources.
 5. Run the Cloud Run migration job. It uses a PostgreSQL advisory lock and can be invoked again safely.
 6. Deploy the commit-SHA image with `cloudbuild.deploy.yaml`.
 7. Verify readiness, sign-up/email verification/login/logout, ownership isolation, checkout/webhook idempotency, one silent and one narrated E2B generation, cancellation/refund, artifact access expiry, and a failed-job retry.
 8. Run the load and security gates in `docs/PRODUCTION_CHECKLIST.md` before creating production traffic.
+
+The $20 project budget is an alerting threshold, not a guaranteed stop. The initial staging database is a zonal shared-core instance without an SLA; production validation rejects that tier and requires regional availability, a non-shared-core database, the managed HTTPS edge, and a real domain.
 
 ## Rollback
 

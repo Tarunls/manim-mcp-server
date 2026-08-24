@@ -1,11 +1,13 @@
 locals {
-  dispatcher_url = "https://${local.name}-dispatcher-${data.google_project.current.number}.${var.region}.run.app/api/internal/generation/dispatch"
-  billing_mode   = var.environment == "production" ? "live" : "test"
+  direct_api_url         = "https://${local.name}-api-${data.google_project.current.number}.${var.region}.run.app"
+  effective_app_base_url = var.app_base_url != "" ? var.app_base_url : local.direct_api_url
+  dispatcher_url         = "https://${local.name}-dispatcher-${data.google_project.current.number}.${var.region}.run.app/api/internal/generation/dispatch"
+  billing_mode           = var.environment == "production" ? "live" : "test"
   common_env = {
     NODE_ENV                            = "production"
     EXECUTION_MODE                      = "e2b"
-    APP_BASE_URL                        = var.app_base_url
-    JOB_CALLBACK_BASE_URL               = var.app_base_url
+    APP_BASE_URL                        = local.effective_app_base_url
+    JOB_CALLBACK_BASE_URL               = local.effective_app_base_url
     GCP_PROJECT                         = var.project_id
     GCP_REGION                          = var.region
     GENERATION_QUEUE                    = "${local.name}-generation"
@@ -13,10 +15,13 @@ locals {
     GENERATION_DISPATCH_SERVICE_ACCOUNT = google_service_account.task_invoker.email
     STUDIO_ARTIFACT_BUCKET              = google_storage_bucket.artifacts.name
     E2B_MAX_CONCURRENT_SANDBOXES        = tostring(var.max_concurrent_sandboxes)
-    CODEX_MAX_API_CALLS_PER_JOB         = "64"
+    CODEX_MAX_API_CALLS_PER_JOB         = "12"
+    CODEX_MAX_OUTPUT_TOKENS_PER_CALL    = "12000"
     CODEX_UPSTREAM_TIMEOUT_MS           = "2700000"
+    E2B_SANDBOX_TIMEOUT_MS              = "1800000"
     REQUIRE_DATABASE                    = "true"
     DATABASE_SSL                        = "disable"
+    DATABASE_POOL_MAX                   = var.environment == "staging" ? "5" : "10"
   }
   dispatcher_env = merge(local.common_env, {
     SERVICE_ROLE         = "dispatcher"
@@ -142,7 +147,7 @@ resource "google_cloud_run_v2_service_iam_member" "task_invoker" {
 resource "google_cloud_run_v2_service" "api" {
   name                = "${local.name}-api"
   location            = var.region
-  ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  ingress             = var.enable_external_edge ? "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER" : "INGRESS_TRAFFIC_ALL"
   deletion_protection = var.environment == "production"
   template {
     service_account                  = google_service_account.api.email
@@ -172,8 +177,8 @@ resource "google_cloud_run_v2_service" "api" {
       }
       resources {
         limits = {
-          cpu    = "2"
-          memory = "2Gi"
+          cpu    = var.environment == "staging" ? "1" : "2"
+          memory = var.environment == "staging" ? "1Gi" : "2Gi"
         }
         cpu_idle          = true
         startup_cpu_boost = true

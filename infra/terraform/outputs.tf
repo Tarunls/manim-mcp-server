@@ -15,8 +15,13 @@ output "migration_job" {
 }
 
 output "load_balancer_ip" {
-  value       = google_compute_global_address.app.address
+  value       = try(google_compute_global_address.app[0].address, null)
   description = "Create the app_domain A record at this address before waiting for the managed certificate."
+}
+
+output "effective_app_base_url" {
+  value       = local.effective_app_base_url
+  description = "Canonical origin enforced by application security checks."
 }
 
 output "release_service_account" {

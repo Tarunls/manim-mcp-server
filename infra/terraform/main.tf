@@ -5,6 +5,7 @@ locals {
   database_user   = "lesson_studio_app"
   required_services = toset([
     "artifactregistry.googleapis.com",
+    "billingbudgets.googleapis.com",
     "cloudbuild.googleapis.com",
     "compute.googleapis.com",
     "iamcredentials.googleapis.com",
@@ -17,6 +18,53 @@ locals {
     "storage.googleapis.com",
     "cloudtasks.googleapis.com",
   ])
+}
+
+resource "google_billing_budget" "project" {
+  billing_account = "billingAccounts/${var.billing_account_id}"
+  display_name    = "${local.name} monthly budget"
+
+  budget_filter {
+    projects = ["projects/${data.google_project.current.number}"]
+  }
+
+  amount {
+    specified_amount {
+      currency_code = "USD"
+      units         = tostring(var.monthly_budget_usd)
+    }
+  }
+
+  threshold_rules { threshold_percent = 0.5 }
+  threshold_rules { threshold_percent = 0.8 }
+  threshold_rules { threshold_percent = 1.0 }
+  threshold_rules {
+    threshold_percent = 1.0
+    spend_basis       = "FORECASTED_SPEND"
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+check "production_safety" {
+  assert {
+    condition = var.environment != "production" || (
+      var.enable_external_edge &&
+      var.app_domain != "" &&
+      var.sql_availability_type == "REGIONAL" &&
+      !contains(["db-f1-micro", "db-g1-small"], var.sql_tier)
+    )
+    error_message = "Production requires the external edge, a real domain, regional Cloud SQL, and a non-shared-core database tier."
+  }
+}
+
+check "edge_origin" {
+  assert {
+    condition = !var.enable_external_edge || (
+      var.app_domain != "" && var.app_base_url == "https://${var.app_domain}"
+    )
+    error_message = "When enable_external_edge is true, app_domain and its exact HTTPS app_base_url are required."
+  }
 }
 
 data "google_project" "current" {
@@ -100,10 +148,10 @@ resource "google_sql_database_instance" "postgres" {
   deletion_protection = true
 
   settings {
-    tier              = "db-custom-2-7680"
-    availability_type = "REGIONAL"
+    tier              = var.sql_tier
+    availability_type = var.sql_availability_type
     disk_type         = "PD_SSD"
-    disk_size         = 50
+    disk_size         = var.sql_disk_size_gb
     disk_autoresize   = true
 
     backup_configuration {
