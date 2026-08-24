@@ -50,7 +50,9 @@ export class HostedBillingService {
 
   constructor(private readonly db: Database) {
     if (process.env.STRIPE_SECRET_KEY)
-      this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+      this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+        httpClient: Stripe.createFetchHttpClient(),
+      });
   }
 
   get configured() {

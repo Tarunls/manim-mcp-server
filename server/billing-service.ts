@@ -158,7 +158,9 @@ export class BillingService {
   constructor(root: string) {
     this.storePath = path.join(root, "studio", "billing.json");
     if (process.env.STRIPE_SECRET_KEY)
-      this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+      this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+        httpClient: Stripe.createFetchHttpClient(),
+      });
     this.load();
   }
 
