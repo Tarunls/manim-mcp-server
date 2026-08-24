@@ -19,10 +19,12 @@ async function expectNoSeriousA11yViolations(page: Page) {
 
 test("homepage is responsive and links to real product routes", async ({ page }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Make ideas visible.");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Learn whatever way you want.");
   await expect(page.getByRole("link", { name: /Open studio/ }).first()).toHaveAttribute("href", "/studio");
-  await expect(page.getByRole("link", { name: "View pricing" })).toHaveAttribute("href", "/pricing");
-  await expect(page.locator(".hero-media video source")).toHaveAttribute("src", /lesson-studio-reel\.mp4/);
+  await expect(page.getByRole("link", { name: "Create your first lesson" }).first()).toHaveAttribute("href", "/studio");
+  await expect(page.getByRole("link", { name: "Compare plans" })).toHaveAttribute("href", "/pricing");
+  await expect(page.locator(".live-integral-hero")).toBeVisible();
+  await expect(page.locator(".live-integral-equation")).toContainText(/∫|eˣ/);
   await expectNoHorizontalOverflow(page);
   if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
 });

@@ -2148,9 +2148,106 @@ function PricingCards({
   );
 }
 
+function FormatHero() {
+  const [timeline, setTimeline] = useState({
+    style: 0,
+    step: 0,
+    glitching: true,
+  });
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const startedAt = performance.now();
+    const equationStarts = [
+      0,
+      (70 / 30) * 1000,
+      (162 / 30) * 1000,
+      (258 / 30) * 1000,
+      (340 / 30) * 1000,
+      (410 / 30) * 1000,
+    ];
+    let frame = 0;
+    let previousKey = "";
+
+    const tick = () => {
+      const elapsed = (performance.now() - startedAt) % 16_000;
+      const style = Math.min(3, Math.floor(elapsed / 4_000));
+      const step = equationStarts.reduce(
+        (active, start, index) => (elapsed >= start ? index : active),
+        0,
+      );
+      const withinStyle = elapsed % 4_000;
+      const glitching = withinStyle < 190 || withinStyle > 3_810;
+      const key = `${style}-${step}-${glitching}`;
+
+      if (key !== previousKey) {
+        previousKey = key;
+        setTimeline({ style, step, glitching });
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  const equations = [
+    "∫ x²eˣ dx",
+    "x²eˣ − 2∫ xeˣ dx",
+    "x²eˣ − 2xeˣ + 2∫ eˣ dx",
+    "eˣ(x² − 2x + 2) + C",
+    "d/dx [ eˣ(x² − 2x + 2) ] = x²eˣ",
+    "∫ x²eˣ dx",
+  ];
+
+  return (
+    <section
+      className={`format-hero live-integral-hero live-integral-style-${timeline.style} ${timeline.glitching ? "is-glitching" : ""}`}
+      aria-labelledby="format-hero-title"
+    >
+      <h1 className="sr-only" id="format-hero-title">
+        Learn whatever way you want.
+      </h1>
+      <div className="live-integral-atmosphere" aria-hidden="true" />
+      <div className="live-integral-layout" aria-hidden="true">
+        <p className="live-integral-headline">
+          Learn <em>whatever way</em> you want.
+        </p>
+        <div className="live-integral-work">
+          <span key={timeline.step} className="live-integral-equation">
+            {equations[timeline.step]}
+          </span>
+          <i className="live-integral-proof-line" />
+        </div>
+      </div>
+      <div className="live-integral-glitch" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </div>
+      <div className="integral-reel-controls live-integral-controls">
+        <div className="format-actions">
+          <a className="format-primary" href="/studio">
+            Create your first lesson <ArrowRight size={18} />
+          </a>
+          <a href="#how-it-works">See how it works</a>
+        </div>
+      </div>
+      <a className="format-scroll" href="#how-it-works">
+        <span>Keep scrolling</span>
+        <ArrowDown size={18} />
+      </a>
+    </section>
+  );
+}
+
 function MarketingSite() {
   return (
-    <main className="marketing-shell marketing-arrived">
+    <main className="marketing-shell marketing-arrived landing-format-shell">
       <header className="marketing-nav">
         <a className="marketing-brand" href="/">
           <span className="brand-mark">
@@ -2167,77 +2264,50 @@ function MarketingSite() {
         </nav>
       </header>
 
-      <section className="hero-section">
-        <div className="hero-copy">
-          <span className="hero-eyebrow">AI video workspace</span>
-          <h1>Make ideas visible.</h1>
-          <p>
-            Describe an idea. Get a polished video you can review, revise, and
-            download.
-          </p>
-          <div className="hero-actions">
-            <a className="primary-cta" href="/studio">
-              Open studio <ArrowRight size={17} />
-            </a>
-            <a className="secondary-cta" href="/pricing">
-              View pricing
-            </a>
-          </div>
-          <div className="hero-proof">
-            <span>
-              <Check size={15} /> Start free
-            </span>
-            <span>
-              <Check size={15} /> Review every frame
-            </span>
-            <span>
-              <Check size={15} /> Export MP4
-            </span>
-          </div>
-        </div>
-        <div className="hero-media">
-          <video
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            poster="/lesson-studio-reel-poster.jpg"
-            aria-label="Example lesson generated in Lesson Studio"
-          >
-            <source src="/lesson-studio-reel.mp4" type="video/mp4" />
-          </video>
-          <span className="hero-media-caption">
-            <i /> Generated in Lesson Studio
-          </span>
-        </div>
-      </section>
+      <FormatHero />
 
       <section className="how-section" id="how-it-works">
-        <header>
-          <span>From prompt to export</span>
-          <h2>A focused workflow for visual ideas.</h2>
-        </header>
         <div>
-          <strong>Describe</strong>
-          <p>Set the topic, style, and depth.</p>
+          <span>01</span>
+          <strong>Say what you mean</strong>
+          <p>
+            Describe the idea, the audience, and the feeling you want the lesson
+            to have.
+          </p>
         </div>
         <div>
-          <strong>Generate</strong>
-          <p>Follow planning, rendering, and checks.</p>
+          <span>02</span>
+          <strong>See it take shape</strong>
+          <p>
+            Watch one thought become a visual explanation built around how you
+            understand.
+          </p>
         </div>
         <div>
-          <strong>Refine</strong>
-          <p>Mark a frame and request the exact change.</p>
+          <span>03</span>
+          <strong>Make it yours</strong>
+          <p>
+            Pause any frame, draw directly on it, and ask for the exact change
+            you imagined.
+          </p>
         </div>
       </section>
 
       <section className="home-close-section">
-        <span>One free generation. No card.</span>
-        <h2>Make the idea visible.</h2>
-        <a className="primary-cta" href="/studio">
-          Open studio <ArrowRight size={17} />
-        </a>
+        <span className="chalk-kicker">Understanding is personal.</span>
+        <h2>So the explanation should be too.</h2>
+        <p>
+          Start with an idea. Build it in the visual language that finally makes
+          it click.
+        </p>
+        <div className="hero-actions">
+          <a className="primary-cta" href="/studio">
+            Create your first lesson <ArrowRight size={17} />
+          </a>
+          <a className="secondary-cta" href="/pricing">
+            Compare plans
+          </a>
+        </div>
       </section>
       <footer className="marketing-footer">
         <span>Lesson Studio</span>
