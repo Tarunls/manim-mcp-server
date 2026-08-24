@@ -63,7 +63,7 @@ test("hosted billing verifies webhooks, ignores replays, cancels access, and iso
     const billing = new HostedBillingService(db);
     assert.equal(billing.billingMode, "test");
     assert.equal((await billing.getState(ownerId)).plan, "free");
-    await assert.rejects(() => billing.assertNarration(ownerId), /Creator and Pro/);
+    await assert.rejects(() => billing.assertNarration(ownerId), /paid plans/);
 
     const checkoutPayload = JSON.stringify({
       id: `evt_${randomUUID()}`,
@@ -124,7 +124,7 @@ test("hosted billing verifies webhooks, ignores replays, cancels access, and iso
     const canceled = await billing.getState(ownerId);
     assert.equal(canceled.plan, "free");
     assert.equal(canceled.status, "free");
-    await assert.rejects(() => billing.assertNarration(ownerId), /Creator and Pro/);
+    await assert.rejects(() => billing.assertNarration(ownerId), /paid plans/);
   } finally {
     await db.query("DELETE FROM app_users WHERE id = ANY($1::text[])", [[ownerId, otherId]]).catch(() => undefined);
     await db.close();

@@ -37,7 +37,7 @@ type JobRow = {
 };
 
 type BillingRow = {
-  plan: "free" | "creator" | "pro";
+  plan: "free" | "creator" | "pro" | "studio";
   status: "free" | "active" | "trialing" | "past_due" | "canceled" | "incomplete";
   period_start: Date;
   period_end: Date;
@@ -55,7 +55,7 @@ function effortRank(effort: GenerationEffort) {
 
 function activeJobLimit(plan: BillingRow["plan"], staff: boolean) {
   if (staff) return Number(process.env.STAFF_ACTIVE_JOB_LIMIT || 20);
-  return plan === "pro" ? 5 : plan === "creator" ? 2 : 1;
+  return plan === "studio" ? 10 : plan === "pro" ? 5 : plan === "creator" ? 2 : 1;
 }
 
 function safeMessage(error: unknown) {

@@ -65,7 +65,7 @@ Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KE
 
 ### Billing
 
-The front page and studio use a server-enforced monthly credit model: Free includes 1 credit, Creator is $20/month with 10 credits, and Pro is $49/month with 30 credits. Faster costs 1 credit, Balanced costs 2, and Try harder costs 4. Creator and Pro unlock Speechify narration and licensed visual search. Checkout and subscription management use Stripe-hosted pages; signed webhooks are the source of truth for paid access.
+The front page and studio use a server-enforced monthly credit model: Free includes 1 credit, Creator is $20/month with 10 credits, Pro is $50/month with 30 credits, and Studio is $100/month with 70 credits. Faster costs 1 credit, Balanced costs 2, and Try harder costs 4. Paid plans unlock Speechify narration and licensed visual search. Checkout and subscription management use Stripe-hosted pages; signed webhooks are the source of truth for paid access.
 
 Install and authenticate the Stripe CLI, then create the test-mode product catalog once:
 
@@ -88,7 +88,7 @@ Never commit the sandbox key. Put it in Secret Manager as `stripe_sandbox_api_ke
 npm run stripe:listen
 ```
 
-Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`, then restart the app. Never commit either secret. The setup script is idempotent because Checkout resolves the stable lookup keys `lesson_studio_creator_monthly` and `lesson_studio_pro_monthly` instead of hard-coded price IDs.
+Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`, then restart the app. Never commit either secret. The setup script is idempotent because Checkout resolves stable `lesson_studio_<plan>_monthly` lookup keys instead of hard-coded price IDs.
 
 ### Google Cloud deployment
 

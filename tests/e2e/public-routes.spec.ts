@@ -32,7 +32,8 @@ test("pricing shows every plan and an honest checkout state", async ({ page }, t
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Simple plans for real output.");
   await expect(page.locator(".pricing-card")).toHaveCount(4);
   await expect(page.getByText("$20", { exact: false })).toBeVisible();
-  await expect(page.getByText("$49", { exact: false })).toBeVisible();
+  await expect(page.getByText("$50", { exact: false })).toBeVisible();
+  await expect(page.getByText("$100", { exact: false })).toBeVisible();
   await expect(page.getByText(/Paid checkout is not enabled|Recommended/).first()).toBeVisible();
   await expectNoHorizontalOverflow(page);
   if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
@@ -46,6 +47,17 @@ test("studio gate exposes sign-in, sign-up, and reset controls", async ({ page }
   await page.getByRole("button", { name: "Create an account" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Create your account");
   await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "new-password");
+  await expectNoHorizontalOverflow(page);
+  if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
+});
+
+test("privacy and terms routes publish the account controls and service boundaries", async ({ page }, testInfo) => {
+  await page.goto("/privacy");
+  await expect(page.getByRole("heading", { name: "Privacy policy" })).toBeVisible();
+  await expect(page.getByText(/export or delete your account/i)).toBeVisible();
+  await page.goto("/terms");
+  await expect(page.getByRole("heading", { name: "Terms of service" })).toBeVisible();
+  await expect(page.getByText(/Generated videos can contain mistakes/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
 });

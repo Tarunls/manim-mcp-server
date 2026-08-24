@@ -59,3 +59,21 @@ test("Stripe CLI sandbox restricted keys are recognized as test mode", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("paid tiers preserve the approved prices and workload-based allowances", () => {
+  const root = temporaryStudio();
+  try {
+    const plans = new BillingService(root).listPlans();
+    assert.deepEqual(
+      plans.map((plan) => [plan.id, plan.monthlyPrice, plan.entitlements.creditsPerMonth]),
+      [
+        ["free", 0, 1],
+        ["creator", 20, 10],
+        ["pro", 50, 30],
+        ["studio", 100, 70],
+      ],
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -154,6 +154,7 @@ ${String(job.prompt).slice(0, 12000)}
     networkAccessEnabled: false,
     webSearchMode: "disabled",
     approvalPolicy: "never",
+    model: job.effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
     modelReasoningEffort: job.effort === "thorough" ? "xhigh" : job.effort === "balanced" ? "high" : "medium",
   });
   const turn = await thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions);

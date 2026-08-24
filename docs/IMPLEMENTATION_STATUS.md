@@ -1,6 +1,6 @@
 # Production implementation status
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 
 ## Completed foundation
 
@@ -40,6 +40,10 @@ Updated: 2026-08-23
 - Identity Platform sign-up, verification gating, sign-in, Firebase session creation, session verification, and cleanup passed against the configured GCP project.
 - A reusable release-smoke harness now verifies Identity Platform, Stripe Checkout, and the pinned E2B runtime without committing provider credentials.
 - `lesson-studio-renderer:d13958f-r4` passed the E2B runtime smoke with a non-root user, Node 22, Manim, FFmpeg, Codex SDK resolution, workspace I/O, outbound-network denial, and sandbox teardown.
+- Workload-based $20, $50, and $100 tiers are enforced server-side; Faster/Balanced use the cost-controlled model and Try harder is reserved for the highest-cost model.
+- OpenAI calls now enforce model, output-token, and per-job request ceilings while recording token and estimated-cost telemetry without retaining provider response bodies.
+- Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
+- Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
 
 ## Remaining before production launch
 
