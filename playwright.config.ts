@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = process.env.PLAYWRIGHT_PORT || "4321";
+const baseURL = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
@@ -9,7 +12,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["line"], ["html", { open: "never" }]] : "line",
   use: {
-    baseURL: "http://127.0.0.1:4321",
+    baseURL,
     channel: "chrome",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
@@ -19,8 +22,9 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["iPhone 13"], browserName: "chromium", channel: "chrome" } },
   ],
   webServer: {
-    command: "TMPDIR=/tmp TEMP=/tmp TMP=/tmp npm run start",
-    url: "http://127.0.0.1:4321/api/health",
+    command: "npm run start",
+    url: `${baseURL}/api/health`,
+    env: { PORT: port },
     reuseExistingServer: true,
     timeout: 120_000,
   },
