@@ -42,11 +42,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev
 RUN npx remotion browser ensure
+RUN python3 -m venv .venv \
+    && .venv/bin/pip install --no-cache-dir "manim>=0.19,<0.20"
 
 COPY . .
-RUN python3 -m venv .venv \
-    && .venv/bin/pip install --no-cache-dir "manim>=0.19,<0.20" \
-    && npm run build \
+RUN npm run build \
     && mkdir -p studio/projects
 
 EXPOSE 8080

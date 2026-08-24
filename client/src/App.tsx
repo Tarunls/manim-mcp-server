@@ -29,6 +29,7 @@ import {
   Sparkle,
   SlidersHorizontal,
   SpeakerHigh,
+  SignOut,
   Star,
   Stop,
   Sun,
@@ -36,19 +37,21 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as CanvasPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as CanvasPointerEvent } from "react";
 import type { AuthState, BillingPlanId, BillingState, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, PricingPlan, ProjectVersion, RendererKind, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types";
 
 const EMPTY_AUTH: AuthState = { connected: false };
 const EMPTY_RUNTIME: RuntimeState = { codex: false, manim: false, remotion: false, ffmpeg: false };
 const EMPTY_BILLING: BillingState = {
   userId: "", plan: "free", planName: "Free", status: "free", creditsUsed: 0, creditsRemaining: 1,
-  periodEnd: "", stripeConfigured: false, hasStripeCustomer: false,
+  periodEnd: "", stripeConfigured: false, hasStripeCustomer: false, isStaff: false, billingMode: "unconfigured",
   entitlements: { creditsPerMonth: 1, maxEffort: "quick", narration: false, licensedAssets: false },
 };
 type ChatMode = "docked" | "floating";
 type ChatSide = "left" | "right";
 type FloatingPosition = { x: number; y: number };
+type AccountUser = { uid: string; email: string; emailVerified: boolean; isStaff: boolean };
+type AccountState = { checked: boolean; configured: boolean; authenticated: boolean; user?: AccountUser };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -132,6 +135,7 @@ function Sidebar({
   projects,
   activeId,
   billing,
+  account,
   open,
   collapsed,
   onClose,
@@ -140,10 +144,12 @@ function Sidebar({
   onSelect,
   onFavorite,
   onBilling,
+  onLogout,
 }: {
   projects: StudioProject[];
   activeId?: string;
   billing: BillingState;
+  account: AccountUser;
   open: boolean;
   collapsed: boolean;
   onClose: () => void;
@@ -152,6 +158,7 @@ function Sidebar({
   onSelect: (id: string) => void;
   onFavorite: (project: StudioProject) => void;
   onBilling: () => void;
+  onLogout: () => void;
 }) {
   return (
     <aside className={`sidebar ${open ? "sidebar-open" : ""} ${collapsed ? "sidebar-is-collapsed" : ""}`} aria-label="Projects">
@@ -197,9 +204,10 @@ function Sidebar({
         <div className="account-card">
           <UserCircle size={23} weight="fill" />
           <div className="account-copy collapsible-copy">
-            <span>Studio workspace</span>
+            <span title={account.email}>{account.isStaff ? "Studio team" : account.email}</span>
             <button className="billing-summary" onClick={onBilling}>{billing.planName} · {billing.creditsRemaining} credits</button>
           </div>
+          <button className="account-logout collapsible-copy" onClick={onLogout} aria-label="Sign out" title="Sign out"><SignOut size={17} /></button>
         </div>
       </div>
     </aside>
@@ -1047,7 +1055,7 @@ function VideoWorkspace({ project, runtime }: { project?: StudioProject; runtime
 
 const CONTACT_EMAIL = "tarun.l.sankar@gmail.com";
 
-function PricingCards({ plans, currentPlan, onChoose }: { plans: PricingPlan[]; currentPlan?: BillingPlanId; onChoose: (plan: BillingPlanId) => void }) {
+function PricingCards({ plans, currentPlan, billingMode = "live", onChoose }: { plans: PricingPlan[]; currentPlan?: BillingPlanId; billingMode?: BillingState["billingMode"]; onChoose: (plan: BillingPlanId) => void }) {
   return (
     <div className="pricing-grid">
       {plans.map((plan) => (
@@ -1057,7 +1065,7 @@ function PricingCards({ plans, currentPlan, onChoose }: { plans: PricingPlan[]; 
           <p>{plan.description}</p>
           <ul>{plan.features.map((feature) => <li key={feature}><Check size={16} weight="bold" /> {feature}</li>)}</ul>
           <button className={plan.id === "creator" ? "primary-cta" : "secondary-cta"} disabled={currentPlan === plan.id} onClick={() => onChoose(plan.id)}>
-            {currentPlan === plan.id ? "Current plan" : plan.id === "free" ? "Open the studio" : `Choose ${plan.name}`}
+            {currentPlan === plan.id ? "Current plan" : plan.id === "free" ? "Open the studio" : billingMode !== "live" ? "Coming soon" : `Choose ${plan.name}`}
           </button>
         </article>
       ))}
@@ -1115,12 +1123,15 @@ function MarketingSite() {
   );
 }
 
-function PricingSite({ billing, onCheckout }: { billing: BillingState; onCheckout: (plan: BillingPlanId, email?: string) => void }) {
+function PricingSite() {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [email, setEmail] = useState(billing.email || "");
+  const [billingMode, setBillingMode] = useState<BillingState["billingMode"]>("unconfigured");
 
   useEffect(() => {
-    void request<{ plans: PricingPlan[] }>("/api/pricing").then((result) => setPlans(result.plans));
+    void request<{ plans: PricingPlan[]; billingMode: BillingState["billingMode"] }>("/api/pricing").then((result) => {
+      setPlans(result.plans);
+      setBillingMode(result.billingMode);
+    });
   }, []);
 
   function choose(plan: BillingPlanId) {
@@ -1128,15 +1139,11 @@ function PricingSite({ billing, onCheckout }: { billing: BillingState; onCheckou
       window.location.href = "/studio";
       return;
     }
-    if (!billing.stripeConfigured) {
-      window.alert("Stripe is wired but this server still needs its Stripe secret and webhook secret.");
+    if (billingMode !== "live") {
+      window.alert("Paid plans are opening soon. You can create a free account and use the studio now.");
       return;
     }
-    if (!email.trim()) {
-      document.getElementById("billing-email")?.focus();
-      return;
-    }
-    onCheckout(plan, email.trim());
+    window.location.href = `/studio?plan=${encodeURIComponent(plan)}`;
   }
 
   return (
@@ -1152,8 +1159,8 @@ function PricingSite({ billing, onCheckout }: { billing: BillingState; onCheckou
       </section>
       <section className="pricing-section" id="pricing">
         <div className="section-heading"><span className="chalk-kicker">Simple monthly credits</span><h2>Choose how often you want to create.</h2><p>Faster uses 1 credit, Balanced uses 2, and Try harder uses 4. You can always review and revise the result inside the studio.</p></div>
-        <label className="billing-email-field"><span>Email for paid checkout</span><input id="billing-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
-        <PricingCards plans={plans} currentPlan={billing.plan} onChoose={choose} />
+        {billingMode !== "live" && <div className="billing-launch-note"><strong>Free accounts are open now.</strong><span>Creator and Pro billing will open when live payments are enabled.</span></div>}
+        <PricingCards plans={plans} billingMode={billingMode} onChoose={choose} />
       </section>
       <footer className="marketing-footer"><span>Lesson Studio</span><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a><a href="/studio">Open studio</a></footer>
     </main>
@@ -1166,10 +1173,84 @@ function BillingDialog({ billing, plans, onClose, onCheckout, onPortal }: { bill
       <section className="billing-dialog" role="dialog" aria-modal="true" aria-label="Plan and billing">
         <header><div><span className="panel-kicker">Plan & billing</span><h2>{billing.planName} plan</h2></div><button className="icon-button" onClick={onClose} aria-label="Close billing"><X size={18} /></button></header>
         <div className="credit-meter"><div><strong>{billing.creditsRemaining}</strong><span>of {billing.entitlements.creditsPerMonth} credits left</span></div><span className="credit-track"><i style={{ width: `${Math.max(0, Math.min(100, billing.entitlements.creditsPerMonth ? billing.creditsRemaining / billing.entitlements.creditsPerMonth * 100 : 0))}%` }} /></span><small>Renews {billing.periodEnd ? new Date(billing.periodEnd).toLocaleDateString([], { month: "short", day: "numeric" }) : "monthly"}</small></div>
-        <PricingCards plans={plans} currentPlan={billing.plan} onChoose={(plan) => plan === "free" ? undefined : onCheckout(plan)} />
+        <PricingCards plans={plans} currentPlan={billing.plan} billingMode={billing.billingMode} onChoose={(plan) => plan === "free" ? undefined : onCheckout(plan)} />
         <div className="billing-dialog-footer">{billing.hasStripeCustomer && <button className="secondary-cta" onClick={onPortal}>Manage or cancel in Stripe</button>}<a href={`mailto:${CONTACT_EMAIL}`}>Questions? Contact us</a></div>
       </section>
     </div>
+  );
+}
+
+function AccessGate({ configured, onAuthorized }: { configured: boolean; onAuthorized: (user: AccountUser) => void }) {
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const [notice, setNotice] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await request<{ authenticated: boolean; user: AccountUser; verificationRequired?: boolean }>(mode === "signin" ? "/api/auth/login" : "/api/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) });
+      if (result.authenticated) {
+        onAuthorized(result.user);
+      } else {
+        setMode("signin");
+        setPassword("");
+        setNotice("Check your email to verify the account, then sign in.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not sign in.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!email.trim()) {
+      setError("Enter your email first.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await request("/api/auth/password-reset", { method: "POST", body: JSON.stringify({ email }) });
+      setNotice("If an account exists for that email, a reset link is on its way.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not send the reset email.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="access-page">
+      <div className="access-glow access-glow-one" />
+      <div className="access-glow access-glow-two" />
+      <section className="access-card" aria-labelledby="access-title">
+        <a className="access-brand" href="/"><span className="brand-mark"><FilmSlate size={18} weight="fill" /></span><strong>Lesson Studio</strong></a>
+        <span className="access-kicker">Your creative workspace</span>
+        <h1 id="access-title">{mode === "signin" ? "Welcome back." : "Create your studio."}</h1>
+        <p>{mode === "signin" ? "Sign in to continue your videos and frame reviews." : "Start free with one generation credit. No card required."}</p>
+        {!configured && <div className="access-error" role="alert"><Warning size={15} /> Account sign-in is being configured. Please try again shortly.</div>}
+        <form onSubmit={(event) => void submit(event)}>
+          <label><span>Email</span><input name="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} autoFocus required /></label>
+          <label><span>Password</span><input name="password" type="password" minLength={10} autoComplete={mode === "signin" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+          {error && <div className="access-error" role="alert"><Warning size={15} /> {error}</div>}
+          {notice && <div className="access-notice" role="status"><Check size={15} /> {notice}</div>}
+          <button type="submit" disabled={!configured || submitting || !email || password.length < 10}>{submitting ? <CircleNotch className="spin" size={17} /> : <>{mode === "signin" ? "Enter studio" : "Create free account"} <ArrowRight size={17} /></>}</button>
+        </form>
+        <div className="access-switch">
+          <button type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); setNotice(""); }}>{mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}</button>
+          {mode === "signin" && <button type="button" onClick={() => void resetPassword()}>Forgot password?</button>}
+        </div>
+        <a className="access-home-link" href="/">Back to the homepage</a>
+      </section>
+    </main>
   );
 }
 
@@ -1182,6 +1263,8 @@ export function App() {
   const [billingOpen, setBillingOpen] = useState(false);
   const [runtime, setRuntime] = useState<RuntimeState>(EMPTY_RUNTIME);
   const [loaded, setLoaded] = useState(false);
+  const [access, setAccess] = useState<AccountState>({ checked: false, configured: false, authenticated: false });
+  const checkoutStarted = useRef(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatCollapsed, setChatCollapsed] = useState(false);
@@ -1206,6 +1289,14 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
+    void request<{ configured: boolean; authenticated: boolean; user?: AccountUser }>("/api/auth/status")
+      .then((status) => setAccess({ checked: true, ...status }))
+      .catch(() => setAccess({ checked: true, configured: false, authenticated: false }));
+    void request<{ plans: PricingPlan[] }>("/api/pricing").then((result) => setPricingPlans(result.plans));
+  }, []);
+
+  useEffect(() => {
+    if (!access.authenticated) return;
     const applyEvent = (event: StudioEvent) => {
       if (event.type === "snapshot") {
         setProjects(event.projects);
@@ -1232,15 +1323,15 @@ export function App() {
       }
     };
 
+    setLoaded(false);
     void fetch("/api/state").then((response) => response.json()).then((event: StudioEvent) => applyEvent(event));
-    void request<{ plans: PricingPlan[] }>("/api/pricing").then((result) => setPricingPlans(result.plans));
     const events = new EventSource("/api/events");
     events.onmessage = (message) => {
       const event = JSON.parse(message.data) as StudioEvent;
       applyEvent(event);
     };
     return () => events.close();
-  }, []);
+  }, [access.authenticated]);
 
   useEffect(() => {
     if (!studioRoute || new URLSearchParams(window.location.search).get("checkout") !== "success") return;
@@ -1253,6 +1344,14 @@ export function App() {
     };
     void refresh();
   }, [studioRoute]);
+
+  useEffect(() => {
+    if (!studioRoute || !access.authenticated || !loaded || checkoutStarted.current) return;
+    const requestedPlan = new URLSearchParams(window.location.search).get("plan");
+    if (requestedPlan !== "creator" && requestedPlan !== "pro") return;
+    checkoutStarted.current = true;
+    void startCheckout(requestedPlan);
+  }, [studioRoute, access.authenticated, loaded]);
 
   async function createProject() {
     const project = await request<StudioProject>("/api/projects", { method: "POST", body: JSON.stringify({}) });
@@ -1331,10 +1430,14 @@ export function App() {
     setProjects((current) => mergeProject(current, project));
   }
 
-  if (pricingRoute) return <PricingSite billing={billing} onCheckout={(plan, email) => void startCheckout(plan, email)} />;
+  if (pricingRoute) return <PricingSite />;
   if (!studioRoute) return <MarketingSite />;
 
-  if (!loaded) {
+  if (access.checked && !access.authenticated) {
+    return <AccessGate configured={access.configured} onAuthorized={(user) => setAccess((current) => ({ ...current, authenticated: true, user }))} />;
+  }
+
+  if (!access.checked || !loaded) {
     return (
       <main className="app-loading" aria-label="Loading Lesson Studio">
         <div className="loading-brand"><span className="brand-mark"><FilmSlate size={18} weight="fill" /></span><strong>Lesson Studio</strong></div>
@@ -1349,6 +1452,7 @@ export function App() {
         projects={projects}
         activeId={activeId}
         billing={billing}
+        account={access.user!}
         open={sidebarOpen}
         collapsed={sidebarCollapsed}
         onClose={() => setSidebarOpen(false)}
@@ -1357,6 +1461,7 @@ export function App() {
         onSelect={(id) => { setActiveId(id); setSidebarOpen(false); }}
         onFavorite={(project) => void toggleFavorite(project)}
         onBilling={() => setBillingOpen(true)}
+        onLogout={() => void request("/api/auth/logout", { method: "POST" }).finally(() => { window.location.href = "/"; })}
       />
       {sidebarOpen && <button className="sidebar-scrim mobile-only" onClick={() => setSidebarOpen(false)} aria-label="Close projects" />}
 

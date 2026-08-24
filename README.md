@@ -26,7 +26,8 @@ From a fresh clone:
 npm install
 npm run setup:manim
 cp .env.example .env
-# Set OPENAI_API_KEY in .env. Add the optional provider keys you use.
+# Set OPENAI_API_KEY, IDENTITY_PLATFORM_API_KEY, and a 32+ character
+# SESSION_SECRET in .env. Add the optional provider keys you use.
 npm run build
 npm run dev
 ```
@@ -56,7 +57,7 @@ Narration uses 3-5 chapter-length passages instead of isolated sentence clips. T
 
 The app starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Internally, Faster uses a cost-conscious configuration, Balanced preserves the studio's established high-quality default, and Try harder adds deeper reasoning for difficult generations.
 
-### Stripe test billing
+### Billing
 
 The front page and studio use a server-enforced monthly credit model: Free includes 1 credit, Creator is $20/month with 10 credits, and Pro is $49/month with 30 credits. Faster costs 1 credit, Balanced costs 2, and Try harder costs 4. Creator and Pro unlock Speechify narration and licensed visual search. Checkout and subscription management use Stripe-hosted pages; signed webhooks are the source of truth for paid access.
 
@@ -67,7 +68,7 @@ stripe login
 npm run stripe:setup
 ```
 
-Copy `.env.example` to `.env`, set `STRIPE_SECRET_KEY` to a Stripe test secret, and start the local webhook forwarder in a second terminal:
+Copy `.env.example` to `.env`, set `STRIPE_SECRET_KEY` to a Stripe test secret, set `ALLOW_TEST_CHECKOUT=true` only for local billing tests, and start the local webhook forwarder in a second terminal:
 
 ```sh
 npm run stripe:listen
@@ -75,9 +76,9 @@ npm run stripe:listen
 
 Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`, then restart the app. Never commit either secret. The setup script is idempotent because Checkout resolves the stable lookup keys `lesson_studio_creator_monthly` and `lesson_studio_pro_monthly` instead of hard-coded price IDs.
 
-### Google Cloud test deployment
+### Google Cloud deployment
 
-The included `Dockerfile` packages Node, FFmpeg, Manim, and Remotion's browser dependencies for Cloud Run. Build it with Cloud Build, deploy it with a dedicated runtime service account, and map credentials from Secret Manager instead of putting them in the image or command history. The hosted test app requires HTTP Basic authentication; set `STUDIO_ACCESS_USERNAME` as a normal environment variable and map `STUDIO_ACCESS_PASSWORD` from Secret Manager.
+The included `Dockerfile` packages Node, FFmpeg, Manim, and Remotion's browser dependencies for Cloud Run. `cloudbuild.yaml` caches the heavy rendering layers. The public homepage and pricing page require no account; the studio uses Google Cloud Identity Platform email/password accounts with mandatory email verification. Staff emails receive the full internal plan without requiring a Stripe subscription.
 
 Use these Secret Manager names:
 
@@ -85,7 +86,26 @@ Use these Secret Manager names:
 - `stripe_test_api_key` -> `STRIPE_SECRET_KEY`
 - `stripe_webhook_secret` -> `STRIPE_WEBHOOK_SECRET`
 - `speechify_key` -> `SPEECHIFY_API_KEY`
-- `studio_access_password` -> `STUDIO_ACCESS_PASSWORD`
+- `identity_platform_api_key` -> `IDENTITY_PLATFORM_API_KEY`
+- `session_secret` -> `SESSION_SECRET`
+- `staff_emails` -> `STAFF_EMAILS`
+
+Provision Identity Platform, staff accounts, private initial-password secrets, and the Cloud Run secret mappings with:
+
+```sh
+GCP_PROJECT="your-project-id" \
+APP_BASE_URL="https://your-service-url" \
+GCP_RUNTIME_SERVICE_ACCOUNT="lesson-studio-runtime@your-project-id.iam.gserviceaccount.com" \
+npm run identity:setup
+```
+
+Create a private Cloud Storage bucket, grant only the runtime service account access, mount it at `/data`, and keep Cloud Run in a single-writer configuration with:
+
+```sh
+GCP_PROJECT="your-project-id" \
+GCP_RUNTIME_SERVICE_ACCOUNT="lesson-studio-runtime@your-project-id.iam.gserviceaccount.com" \
+npm run gcp:storage
+```
 
 After the first service deployment gives you a URL, the authenticated Stripe CLI can create the test webhook without printing its signing secret. The script stores that secret, grants only the runtime service account access, and updates the Cloud Run service:
 
@@ -107,9 +127,9 @@ gcloud run services update lesson-studio \
   --update-secrets="OPENAI_API_KEY=openai_api_key:latest"
 ```
 
-For a private test deployment, share the service URL, username, and access password out of band. The default username is `studio`; an authorized project operator can retrieve the password with `gcloud secrets versions access latest --secret=studio_access_password --project=your-project-id`.
+Projects, billing state, and rendered outputs live on the mounted bucket rather than Cloud Run's temporary filesystem. The service intentionally stays at one instance because its JSON metadata stores have single-writer semantics. Before horizontally scaling, move metadata to a transactional database while keeping large media in object storage.
 
-Cloud Run's writable filesystem is temporary and can disappear when an instance stops. This configuration is appropriate for private testing, but a customer-facing deployment must move projects, billing state, and rendered outputs to a database plus object storage before allowing multiple instances or real subscriptions.
+Public deployments must use a live Stripe secret before paid buttons are enabled. Keep `ALLOW_TEST_CHECKOUT=false` in production. Before collecting live payments, configure the appropriate tax registrations and decide whether Stripe Tax should be enabled; do not turn on automatic tax collection without those business decisions.
 
 ### Useful commands
 
@@ -122,6 +142,8 @@ npm run setup:manim  # create/update the local Manim environment
 npm run stripe:setup # create missing test products and monthly prices
 npm run stripe:listen # forward selected test webhooks to the local app
 npm run stripe:cloud-webhook # create and securely attach a Cloud Run test webhook
+npm run identity:setup # provision Identity Platform and staff access
+npm run gcp:storage # attach persistent Cloud Storage data
 ```
 
 If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.

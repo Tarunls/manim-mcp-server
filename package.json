@@ -16,6 +16,8 @@
     "stripe:setup": "node scripts/setup_stripe.mjs",
     "stripe:listen": "stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to http://127.0.0.1:4321/api/stripe/webhook",
     "stripe:cloud-webhook": "node scripts/configure_cloud_run_webhook.mjs",
+    "identity:setup": "node scripts/setup_identity_platform.mjs",
+    "gcp:storage": "node scripts/setup_cloud_storage.mjs",
     "render:marketing-reel": "node scripts/render_marketing_reel.mjs"
   },
   "dependencies": {

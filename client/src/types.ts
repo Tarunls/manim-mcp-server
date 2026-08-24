@@ -149,7 +149,9 @@ export interface BillingState {
   creditsRemaining: number;
   periodEnd: string;
   email?: string;
+  isStaff: boolean;
   stripeConfigured: boolean;
+  billingMode: "test" | "live" | "unconfigured";
   hasStripeCustomer: boolean;
   entitlements: BillingEntitlements;
 }

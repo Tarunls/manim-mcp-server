@@ -187,6 +187,7 @@ function safeFileStem(value: string) {
 
 export class StudioService extends EventEmitter {
   readonly root: string;
+  readonly dataRoot: string;
   readonly projectRoot: string;
   readonly bridge: CodexBridge;
   private projects = new Map<string, StudioProject>();
@@ -196,10 +197,11 @@ export class StudioService extends EventEmitter {
   private authState: AuthState = { connected: false };
   private runtimeState: RuntimeState = { codex: false, manim: false, remotion: false, ffmpeg: false };
 
-  constructor(root: string) {
+  constructor(root: string, dataRoot = root) {
     super();
     this.root = root;
-    this.projectRoot = path.join(root, "studio", "projects");
+    this.dataRoot = dataRoot;
+    this.projectRoot = path.join(dataRoot, "studio", "projects");
     this.bridge = new CodexBridge(root);
     fs.mkdirSync(this.projectRoot, { recursive: true });
     this.loadProjects();
@@ -218,7 +220,7 @@ export class StudioService extends EventEmitter {
   }
 
   private get storePath() {
-    return path.join(this.root, "studio", "projects.json");
+    return path.join(this.dataRoot, "studio", "projects.json");
   }
 
   private loadProjects() {

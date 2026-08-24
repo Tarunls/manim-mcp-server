@@ -3,10 +3,10 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
-import { randomUUID, timingSafeEqual } from "node:crypto";
 import { isWindows, manimPath } from "./platform.js";
 import { StudioService } from "./studio-service.js";
 import { BillingService } from "./billing-service.js";
+import { IdentityAuthService, type AuthUser } from "./auth-service.js";
 import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
@@ -20,54 +20,26 @@ if (!isWindows) {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
+const dataRoot = process.env.STUDIO_DATA_ROOT ? path.resolve(process.env.STUDIO_DATA_ROOT) : root;
 const app = express();
-const studio = new StudioService(root);
-const billing = new BillingService(root);
+const studio = new StudioService(root, dataRoot);
+const billing = new BillingService(dataRoot);
+const auth = new IdentityAuthService();
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
-const accessUsername = process.env.STUDIO_ACCESS_USERNAME?.trim() || "studio";
-const accessPassword = process.env.STUDIO_ACCESS_PASSWORD?.trim() || "";
-
-if (process.env.NODE_ENV === "production" && !accessPassword) {
-  throw new Error("STUDIO_ACCESS_PASSWORD is required in production so the generation agent is not publicly exposed.");
-}
-
-function safeEqual(actual: string, expected: string) {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
-}
-
-function hasStudioAccess(request: express.Request) {
-  if (!accessPassword) return true;
-  const authorization = request.header("authorization") || "";
-  if (!authorization.startsWith("Basic ")) return false;
-  try {
-    const decoded = Buffer.from(authorization.slice(6), "base64").toString("utf8");
-    const separator = decoded.indexOf(":");
-    if (separator < 0) return false;
-    return safeEqual(decoded.slice(0, separator), accessUsername)
-      && safeEqual(decoded.slice(separator + 1), accessPassword);
-  } catch {
-    return false;
-  }
-}
 
 app.get(["/healthz", "/api/health"], (_request, response) => response.status(200).send("ok"));
-app.use((request, response, next) => {
-  // Stripe cannot attach Cloud Run identity tokens. Its webhook remains public,
-  // but every event is authenticated below with Stripe's signing secret.
-  if (request.path === "/api/stripe/webhook" || hasStudioAccess(request)) return next();
-  response.setHeader("WWW-Authenticate", 'Basic realm="Lesson Studio", charset="UTF-8"');
-  response.status(401).send("Lesson Studio test access is required.");
-});
 
-function cookieValue(header: string | undefined, name: string) {
-  return header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
+function authUser(request: express.Request) {
+  return request.res?.locals.authUser as AuthUser | undefined;
 }
 
 function userId(request: express.Request) {
-  return String(request.res?.locals.studioUserId || "");
+  return authUser(request)?.uid || "";
+}
+
+function billingState(request: express.Request) {
+  return billing.getState(userId(request), authUser(request)?.email);
 }
 
 function ownedProject(request: express.Request) {
@@ -121,26 +93,79 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), (requ
 });
 
 app.use(express.json({ limit: "16mb" }));
-app.use(["/api", "/media"], (request, response, next) => {
-  let id = cookieValue(request.header("cookie"), "lesson_studio_user");
-  if (!id || !/^[a-zA-Z0-9-]{12,64}$/.test(id)) {
-    id = randomUUID();
-    response.cookie("lesson_studio_user", id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 365 * 24 * 60 * 60 * 1_000 });
+
+function setAuthCookie(response: express.Response, user: AuthUser) {
+  response.cookie(auth.cookieName, auth.createSession(user), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1_000,
+  });
+}
+
+app.get("/api/auth/status", (request, response) => {
+  const user = auth.authenticate(request.header("cookie"));
+  response.json({ configured: auth.configured, authenticated: Boolean(user), user });
+});
+
+app.post("/api/auth/signup", async (request, response) => {
+  try {
+    const result = await auth.signUp(request.body?.email, request.body?.password);
+    response.status(201).json({ authenticated: false, ...result });
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "Could not create the account." });
   }
-  response.locals.studioUserId = id;
-  studio.claimLegacyProjects(id);
+});
+
+app.post("/api/auth/login", async (request, response) => {
+  try {
+    const user = await auth.signIn(request.body?.email, request.body?.password);
+    setAuthCookie(response, user);
+    response.json({ authenticated: true, user });
+  } catch (error) {
+    response.status(401).json({ error: error instanceof Error ? error.message : "Could not sign in." });
+  }
+});
+
+app.post("/api/auth/password-reset", async (request, response) => {
+  try {
+    await auth.sendPasswordReset(request.body?.email);
+    response.status(204).end();
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "Could not send a reset email." });
+  }
+});
+
+app.post("/api/auth/logout", (_request, response) => {
+  response.clearCookie(auth.cookieName, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
+  response.status(204).end();
+});
+
+app.use((request, response, next) => {
+  const protectedPath = request.path.startsWith("/api/") || request.path.startsWith("/media/");
+  const publicPath = request.path === "/api/pricing" || request.path === "/api/health";
+  if (!protectedPath || publicPath) return next();
+  const user = auth.authenticate(request.header("cookie"));
+  if (!user) return response.status(401).json({ error: "Sign in to continue." });
+  response.locals.authUser = user;
+  billing.setStaffAccess(user.uid, user.isStaff);
+  studio.claimLegacyProjects(user.uid);
   next();
 });
 
-app.get("/api/state", (request, response) => response.json(studio.getSnapshot(userId(request), billing.getState(userId(request)))));
-app.get("/api/pricing", (_request, response) => response.json({ plans: billing.listPlans(), contactEmail: "tarun.l.sankar@gmail.com" }));
-app.get("/api/billing", (request, response) => response.json(billing.getState(userId(request), studio.getAuthState().email)));
+app.get("/api/state", (request, response) => response.json(studio.getSnapshot(userId(request), billingState(request))));
+app.get("/api/pricing", (_request, response) => response.json({ plans: billing.listPlans(), billingMode: billing.billingMode, contactEmail: "tarun.l.sankar@gmail.com" }));
+app.get("/api/billing", (request, response) => response.json(billingState(request)));
 
 app.post("/api/billing/checkout", async (request, response) => {
   try {
     const plan = request.body?.plan as BillingPlanId;
     if (plan !== "creator" && plan !== "pro") return response.status(400).json({ error: "Choose Creator or Pro." });
-    const email = typeof request.body?.email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(request.body.email.trim()) ? request.body.email.trim() : studio.getAuthState().email;
+    const email = authUser(request)?.email;
     response.json({ url: await billing.createCheckout(userId(request), plan, email, baseUrl(request)) });
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not start Stripe Checkout." });
@@ -166,7 +191,7 @@ app.get("/api/events", (request, response) => {
     if (event.type === "project" && event.project.ownerId !== currentUserId) return;
     response.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  send(studio.getSnapshot(currentUserId, billing.getState(currentUserId)));
+  send(studio.getSnapshot(currentUserId, billingState(request)));
   studio.on("event", send);
   const heartbeat = setInterval(() => response.write(": keepalive\n\n"), 20_000);
   request.on("close", () => {
@@ -177,7 +202,7 @@ app.get("/api/events", (request, response) => {
 
 app.post("/api/projects", (request, response) => {
   const prompt = typeof request.body?.prompt === "string" ? request.body.prompt.trim() : "";
-  const state = billing.getState(userId(request));
+  const state = billingState(request);
   const project = studio.createProject(prompt, "composite", { narrationPreferences: { enabled: state.entitlements.narration } }, userId(request));
   response.status(201).json(studio.updateGenerationPreferences(project.id, state.plan === "free" ? "quick" : "balanced"));
 });
@@ -326,7 +351,7 @@ app.use("/media/:projectId", (request, response, next) => {
   next();
 });
 
-app.use("/media", express.static(path.join(root, "studio", "projects"), {
+app.use("/media", express.static(studio.projectRoot, {
   fallthrough: false,
   immutable: false,
   setHeaders(response) {

@@ -26,12 +26,38 @@ body { min-width: 320px; overflow: hidden; }
 button, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
-button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .app-loading { min-height: 100dvh; display: grid; place-content: center; gap: 18px; background: var(--page); }
 .loading-brand { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .loading-line { width: 136px; height: 2px; overflow: hidden; border-radius: 999px; background: var(--surface-strong); }
 .loading-line span { display: block; width: 55%; height: 100%; background: var(--accent); animation: load-slide 1.1s ease-in-out infinite alternate; }
+
+.access-page { position: relative; min-height: 100dvh; padding: 24px; overflow: hidden; display: grid; place-items: center; color: #f7f2df; background: #050708; isolation: isolate; }
+.access-page::before { content: ""; position: absolute; z-index: -1; inset: 0; opacity: .15; background: radial-gradient(circle at center, rgba(255,255,255,.08) 0 1px, transparent 1.5px) 0 0 / 28px 28px; mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent); }
+.access-glow { position: absolute; z-index: -2; width: min(520px, 56vw); aspect-ratio: 1; border-radius: 50%; filter: blur(110px); opacity: .14; }
+.access-glow-one { top: -260px; right: -110px; background: #4de4ff; }
+.access-glow-two { bottom: -310px; left: -130px; background: #ffc857; }
+.access-card { width: min(100%, 470px); padding: clamp(30px, 5vw, 50px); border: 1px solid rgba(247,242,223,.16); border-radius: 24px; background: rgba(14,17,18,.9); box-shadow: 0 40px 110px rgba(0,0,0,.6); backdrop-filter: blur(24px); }
+.access-brand { width: fit-content; display: inline-flex; align-items: center; gap: 10px; color: #f7f2df; text-decoration: none; font-size: 15px; }
+.access-kicker { display: block; margin-top: 54px; color: #4de4ff; font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+.access-card h1 { margin: 11px 0 12px; font-size: clamp(42px, 8vw, 64px); line-height: .92; letter-spacing: -.06em; }
+.access-card > p { margin: 0; color: #aaa99f; line-height: 1.65; }
+.access-card form { margin-top: 32px; display: grid; gap: 16px; }
+.access-card label { display: grid; gap: 8px; color: #c5c2b6; font-size: 12px; font-weight: 750; }
+.access-card input { width: 100%; height: 50px; padding: 0 14px; border: 1px solid rgba(247,242,223,.18); border-radius: 11px; color: #fff9e7; background: rgba(255,255,255,.055); font: inherit; transition: border-color 150ms ease, background 150ms ease; }
+.access-card input:hover { border-color: rgba(247,242,223,.3); }
+.access-card input:focus { border-color: #4de4ff; background: rgba(77,228,255,.055); outline: none; }
+.access-card form button { min-height: 52px; margin-top: 4px; border: 0; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; color: #090b0c; background: #ffc857; font: inherit; font-weight: 800; cursor: pointer; transition: transform 150ms ease, filter 150ms ease; }
+.access-card form button:hover { filter: brightness(1.07); transform: translateY(-1px); }
+.access-card form button:disabled { opacity: .55; cursor: wait; transform: none; }
+.access-error { min-height: 38px; padding: 9px 11px; border: 1px solid rgba(255,111,97,.28); border-radius: 9px; display: flex; align-items: center; gap: 7px; color: #ffc1b8; background: rgba(255,111,97,.08); font-size: 12px; }
+.access-notice { min-height: 38px; padding: 9px 11px; border: 1px solid rgba(77,228,255,.25); border-radius: 9px; display: flex; align-items: center; gap: 7px; color: #b9f5ff; background: rgba(77,228,255,.07); font-size: 12px; }
+.access-switch { margin-top: 18px; display: flex; justify-content: space-between; gap: 12px; }
+.access-switch button { padding: 0; border: 0; color: #aaa99f; background: transparent; font-size: 11px; cursor: pointer; }
+.access-switch button:hover { color: #f7f2df; }
+.access-home-link { width: fit-content; margin: 24px auto 0; display: block; color: #888a86; text-decoration: none; font-size: 12px; }
+.access-home-link:hover { color: #f7f2df; }
 
 .app-shell {
   display: grid;
@@ -138,6 +164,8 @@ button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 2px sol
 .account-copy { display: grid; min-width: 0; }
 .account-copy span { overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 650; }
 .account-copy small { color: var(--soft); font-size: 11px; text-transform: capitalize; }
+.account-logout { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; display: grid; place-items: center; color: var(--soft); background: transparent; cursor: pointer; }
+.account-logout:hover { color: var(--ink); background: var(--surface-strong); }
 
 .icon-button {
   width: 36px;
@@ -1006,7 +1034,8 @@ body::before {
 .pricing-page-hero .hero-eyebrow { position: relative; z-index: 1; }
 .pricing-section { padding: 100px max(20px, calc((100% - 1220px) / 2)) 110px; color: #24231f; background: #ede7d9; }
 .section-heading { max-width: 760px; margin-bottom: 38px; }.section-heading h2 { margin: 10px 0 14px; font-size: clamp(36px, 4vw, 56px); line-height: 1.02; letter-spacing: -.05em; }.section-heading p { color: #6f6b62; line-height: 1.7; }
-.billing-email-field { width: min(420px, 100%); margin: 0 0 24px; display: grid; gap: 7px; }.billing-email-field span { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }.billing-email-field input { height: 46px; padding: 0 14px; border: 1px solid #cac1af; border-radius: 10px; color: #24231f; background: rgba(255,255,255,.5); font: inherit; }
+.billing-launch-note { width: min(720px, 100%); margin: 0 0 28px; padding: 14px 16px; border: 1px solid #c9b88f; border-radius: 11px; display: flex; flex-wrap: wrap; gap: 6px 12px; color: #5d5546; background: rgba(255,250,240,.58); font-size: 13px; }
+.billing-launch-note strong { color: #2d2a25; }
 .pricing-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .pricing-card { position: relative; min-height: 460px; padding: 24px; border: 1px solid #cdc4b3; border-radius: 15px 12px 17px 13px; display: flex; flex-direction: column; color: #24231f; background: rgba(255,255,255,.43); }
 .pricing-featured { border: 2px solid #b8682c; background: #fffaf0; transform: translateY(-8px); box-shadow: 0 18px 45px rgba(74,48,27,.11); }

@@ -75,6 +75,7 @@ function subscriptionPeriod(subscription: Stripe.Subscription) {
 export class BillingService {
   private readonly storePath: string;
   private readonly profiles = new Map<string, StoredBillingProfile>();
+  private readonly staffUsers = new Set<string>();
   private readonly stripe?: Stripe;
 
   constructor(root: string) {
@@ -85,6 +86,18 @@ export class BillingService {
 
   get configured() {
     return Boolean(this.stripe && process.env.STRIPE_WEBHOOK_SECRET);
+  }
+
+  get billingMode(): BillingState["billingMode"] {
+    const key = process.env.STRIPE_SECRET_KEY || "";
+    if (key.startsWith("sk_live_") || key.startsWith("rk_live_")) return "live";
+    if (key.startsWith("sk_test_") || key.startsWith("rk_test_")) return "test";
+    return "unconfigured";
+  }
+
+  setStaffAccess(userId: string, enabled: boolean) {
+    if (enabled) this.staffUsers.add(userId);
+    else this.staffUsers.delete(userId);
   }
 
   listPlans() {
@@ -129,6 +142,23 @@ export class BillingService {
 
   getState(userId: string, email?: string): BillingState {
     const profile = this.profile(userId, email);
+    if (this.staffUsers.has(userId)) {
+      return {
+        userId,
+        plan: "pro",
+        planName: "Studio team",
+        status: "active",
+        creditsUsed: 0,
+        creditsRemaining: 999,
+        periodEnd: profile.periodEnd,
+        email: profile.email,
+        isStaff: true,
+        stripeConfigured: this.configured,
+        billingMode: this.billingMode,
+        hasStripeCustomer: false,
+        entitlements: { ...PRICING_PLANS.pro.entitlements, creditsPerMonth: 999 },
+      };
+    }
     const subscribed = profile.plan !== "free" && ACTIVE_SUBSCRIPTIONS.has(profile.status);
     const plan = subscribed ? profile.plan : "free";
     const definition = PRICING_PLANS[plan];
@@ -141,7 +171,9 @@ export class BillingService {
       creditsRemaining: Math.max(0, definition.entitlements.creditsPerMonth - profile.creditsUsed),
       periodEnd: profile.periodEnd,
       email: profile.email,
+      isStaff: false,
       stripeConfigured: this.configured,
+      billingMode: this.billingMode,
       hasStripeCustomer: Boolean(profile.stripeCustomerId),
       entitlements: definition.entitlements,
     };
@@ -164,6 +196,7 @@ export class BillingService {
 
   reserveGeneration(userId: string, effort: GenerationEffort) {
     this.assertEffort(userId, effort);
+    if (this.staffUsers.has(userId)) return 0;
     const profile = this.profile(userId);
     const state = this.getState(userId);
     const cost = generationCost(effort);
@@ -176,6 +209,7 @@ export class BillingService {
   }
 
   refundGeneration(userId: string, credits: number) {
+    if (this.staffUsers.has(userId) || credits <= 0) return;
     const profile = this.profile(userId);
     profile.creditsUsed = Math.max(0, profile.creditsUsed - credits);
     this.persist();
@@ -183,6 +217,10 @@ export class BillingService {
 
   async createCheckout(userId: string, plan: BillingPlanId, email: string | undefined, baseUrl: string) {
     if (!this.stripe) throw new Error("Stripe test mode is not configured yet. Add STRIPE_SECRET_KEY to .env.");
+    if (this.staffUsers.has(userId)) throw new Error("Studio team accounts already include full access.");
+    if (this.billingMode !== "live" && process.env.ALLOW_TEST_CHECKOUT !== "true") {
+      throw new Error("Paid subscriptions are opening soon. You can use the Free plan now.");
+    }
     if (plan === "free") throw new Error("The Free plan does not need checkout.");
     const lookupKey = plan === "creator" ? "lesson_studio_creator_monthly" : "lesson_studio_pro_monthly";
     const prices = await this.stripe.prices.list({ lookup_keys: [lookupKey], active: true, limit: 1 });
