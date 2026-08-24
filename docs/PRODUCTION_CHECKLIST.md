@@ -6,10 +6,12 @@
 - Session cookies are `Secure`, host-only, `httpOnly`, and revocation-tested.
 - Cross-user project, job, artifact, review, and billing requests return `404` or `401` without leaking existence.
 - Cloud Run dispatcher rejects public callers and accepts only the Cloud Tasks OIDC service account.
+- The API `run.app` URL cannot bypass the HTTPS load balancer or Cloud Armor, and HTTP redirects to the canonical HTTPS origin.
 - E2B egress tests prove arbitrary hosts are blocked and `.env` is mode `0600`, excluded from archives, and deleted.
 - GCS public access prevention and uniform bucket-level access are enabled.
 - Secret Manager access logs show the API/dispatcher split described in the runbook.
 - Dependency audit reports no high or critical vulnerabilities; SAST and container scanning pass.
+- Only protected, reviewed release branches can invoke the privileged build/deploy identity; untrusted pull requests cannot run with it.
 
 ## Reliability
 

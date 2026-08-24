@@ -28,6 +28,7 @@ Updated: 2026-08-23
 
 - Separate `api` and `dispatcher` runtime roles with disjoint routes and Secret Manager access.
 - Terraform for private-network regional Cloud SQL PostgreSQL, PITR/backups/deletion protection, Cloud Tasks, private versioned GCS, Cloud Run, migration job, least-privilege service accounts, and alert policies.
+- External HTTPS load balancer, Google-managed certificate, TLS policy, HTTP-to-HTTPS redirect, Cloud Armor mutation rate bans, and Cloud Run ingress restricted to load-balancer/internal traffic.
 - Commit-SHA application builds, gated CI, ordered migration/deployment pipeline, deployment runbook, rollback procedure, and production certification checklist.
 - Hosted frame extraction, frame-review images, and licensed assets use owner-scoped private GCS objects instead of GCS-FUSE or local durable state.
 - Revisions restore the prior immutable source archive in a new E2B sandbox; frame-review images and licensed assets are supplied through short-lived signed reads.
@@ -36,6 +37,7 @@ Updated: 2026-08-23
 
 - Create the missing E2B Secret Manager secret and select the correct live Stripe secrets for production.
 - Apply the staging Terraform plan (a billable operation), build the pinned E2B template, and run a real end-to-end generation.
+- Point staging DNS at the load-balancer IP, wait for certificate activation, and verify direct `run.app` requests cannot bypass Cloud Armor.
 - Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.
 
 No production database or paid E2B capacity is provisioned by committing these files. Infrastructure creation remains an explicit deployment operation.

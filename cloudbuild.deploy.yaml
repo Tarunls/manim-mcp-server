@@ -17,6 +17,8 @@ steps:
         gcloud run services update "lesson-studio-${_ENVIRONMENT}-dispatcher" --region="${_REGION}" --image="$${image}"
         gcloud run services update "lesson-studio-${_ENVIRONMENT}-api" --region="${_REGION}" --image="$${image}"
 
+serviceAccount: projects/$PROJECT_ID/serviceAccounts/ls-${_ENVIRONMENT}-release@$PROJECT_ID.iam.gserviceaccount.com
+
 options:
   logging: CLOUD_LOGGING_ONLY
 

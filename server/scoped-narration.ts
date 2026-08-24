@@ -22,6 +22,7 @@ export class ScopedNarrationService {
     const requestHash = createHash("sha256").update(text).digest("hex");
     const idempotencyKey = `segment:${index}:${requestHash.slice(0, 16)}`;
     const claimed = await this.db.transaction(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`speechify:${job.id}`]);
       const count = await client.query<{ count: string }>(
         "SELECT count(*)::text AS count FROM job_provider_calls WHERE job_id = $1 AND provider = 'speechify'",
         [job.id],

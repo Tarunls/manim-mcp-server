@@ -459,10 +459,14 @@ export class HostedGenerationService {
         action.status = "done";
         action.label = number === 1 ? "First draft ready" : `Revision ${number} ready`;
       }
+      const safeAssistantMessage = String(assistantMessage || "")
+        .replaceAll(this.callbackToken(job.id), "[redacted]")
+        .replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]")
+        .slice(0, 2000);
       project.messages.push({
         id: randomUUID(),
         role: "assistant",
-        text: assistantMessage?.slice(0, 2000) || (number === 1 ? "First draft ready." : `Revision ${number} ready.`),
+        text: safeAssistantMessage || (number === 1 ? "First draft ready." : `Revision ${number} ready.`),
         createdAt: new Date().toISOString(),
       });
       await client.query(

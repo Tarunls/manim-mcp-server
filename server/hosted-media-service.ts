@@ -22,6 +22,25 @@ function plain(value: unknown) {
   return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+async function boundedResponse(response: Response, maxBytes: number) {
+  if (!response.body) throw new Error("The asset download returned no data.");
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) throw new Error("Choose an image smaller than 20 MB.");
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, size);
+}
+
 export class HostedMediaService {
   constructor(private readonly db: Database, private readonly artifacts: ArtifactService) {}
 
@@ -36,7 +55,7 @@ export class HostedMediaService {
     if (new URL(response.url).hostname !== "upload.wikimedia.org") throw new Error("The asset download redirected to an untrusted host.");
     const declaredLength = Number(response.headers.get("content-length") || 0);
     if (declaredLength > 20 * 1024 * 1024) throw new Error("Choose an image smaller than 20 MB.");
-    const contents = Buffer.from(await response.arrayBuffer());
+    const contents = await boundedResponse(response, 20 * 1024 * 1024);
     const contentType = response.headers.get("content-type")?.split(";")[0] || "";
     if (!contents.length || contents.length > 20 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(contentType)) {
       throw new Error("The selected file is not a supported image under 20 MB.");

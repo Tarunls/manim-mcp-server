@@ -32,6 +32,15 @@ variable "app_base_url" {
   }
 }
 
+variable "app_domain" {
+  type        = string
+  description = "DNS hostname served by the external HTTPS load balancer."
+  validation {
+    condition     = !strcontains(var.app_domain, "://") && !strcontains(var.app_domain, "/")
+    error_message = "app_domain must be a hostname without a scheme or path."
+  }
+}
+
 variable "e2b_template_version" {
   type        = string
   description = "Immutable E2B template tag built by npm run e2b:build-template."

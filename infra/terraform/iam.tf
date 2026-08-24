@@ -33,6 +33,29 @@ resource "google_project_iam_member" "dispatcher" {
   member   = "serviceAccount:${google_service_account.dispatcher.email}"
 }
 
+resource "google_project_iam_member" "release" {
+  for_each = toset([
+    "roles/artifactregistry.writer",
+    "roles/logging.logWriter",
+    "roles/run.admin",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.release.email}"
+}
+
+resource "google_service_account_iam_member" "release_api_identity" {
+  service_account_id = google_service_account.api.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.release.email}"
+}
+
+resource "google_service_account_iam_member" "release_dispatcher_identity" {
+  service_account_id = google_service_account.dispatcher.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.release.email}"
+}
+
 resource "google_storage_bucket_iam_member" "api_artifacts" {
   bucket = google_storage_bucket.artifacts.name
   role   = "roles/storage.objectAdmin"

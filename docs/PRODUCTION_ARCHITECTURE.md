@@ -14,7 +14,7 @@ This document is the implementation contract for the hosted SaaS. Production mus
 
 ## Trust boundaries
 
-- **Public edge:** External Application Load Balancer and Cloud Armor. Cloud Run ingress should accept only load-balancer and internal traffic after the custom domain is active.
+- **Public edge:** External Application Load Balancer, Google-managed TLS certificate, HTTPS redirect, and Cloud Armor rate bans. Terraform restricts API ingress to load-balancer and internal traffic so the public `run.app` URL cannot bypass edge policy.
 - **Web/API:** Stateless Cloud Run service. It may access Identity Platform, PostgreSQL, Cloud Tasks, and object metadata. It never executes generated code.
 - **Dispatcher:** Private Cloud Run service invoked only by the Cloud Tasks OIDC service account. It may create and terminate E2B sandboxes but does not hold end-user sessions.
 - **Sandbox:** One disposable E2B micro-VM per generation. Generated code and user prompts are untrusted. The sandbox cannot reach application secrets or another user's files.
@@ -48,7 +48,7 @@ Production starts with `REQUIRE_DATABASE=true`; this makes the service fail clos
 
 ## Sandbox secret policy
 
-Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. If a local `.env` file is required by the Codex bootstrap, the sandbox creates it with mode `0600`, never logs it, excludes it from archives, and deletes it before completion.
+Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. If a local `.env` file is required by the Codex bootstrap, the sandbox creates it with mode `0600`, never logs it, excludes it from archives, and deletes it before completion. The Codex child environment does not receive the callback credential, and archive-bound files are rejected if they contain raw sandbox credential material, links, special files, or unsafe paths.
 
 The Codex process must never inherit the web service environment. Speechify and licensed-asset operations should move behind scoped application callbacks so their provider keys are not visible to generated code.
 

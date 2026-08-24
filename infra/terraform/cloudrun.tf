@@ -124,6 +124,9 @@ resource "google_cloud_run_v2_service" "dispatcher" {
     google_secret_manager_secret_iam_member.dispatcher_generated,
     google_secret_manager_secret_iam_member.dispatcher_existing,
   ]
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "task_invoker" {
@@ -137,7 +140,7 @@ resource "google_cloud_run_v2_service_iam_member" "task_invoker" {
 resource "google_cloud_run_v2_service" "api" {
   name                = "${local.name}-api"
   location            = var.region
-  ingress             = "INGRESS_TRAFFIC_ALL"
+  ingress             = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
   deletion_protection = var.environment == "production"
   template {
     service_account                  = google_service_account.api.email
@@ -220,6 +223,9 @@ resource "google_cloud_run_v2_service" "api" {
     google_secret_manager_secret_iam_member.api_generated,
     google_secret_manager_secret_iam_member.api_existing,
   ]
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image]
+  }
 }
 
 resource "google_cloud_run_v2_service_iam_member" "public_api" {
@@ -275,5 +281,8 @@ resource "google_cloud_run_v2_job" "migrate" {
         }
       }
     }
+  }
+  lifecycle {
+    ignore_changes = [template[0].template[0].containers[0].image]
   }
 }

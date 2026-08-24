@@ -3,6 +3,7 @@ region               = "us-central1"
 environment          = "staging"
 image                = "us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:<immutable-commit-sha>"
 app_base_url         = "https://staging.example.com"
+app_domain           = "staging.example.com"
 e2b_template_version = "<immutable-release-id>"
 
 max_concurrent_sandboxes = 20

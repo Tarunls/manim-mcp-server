@@ -6,19 +6,27 @@ steps:
     entrypoint: bash
     args:
       - -c
-      - docker pull us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:latest || true
+      - docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest || true
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "--cache-from", "us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:latest", "-t", "us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:$COMMIT_SHA", "-t", "us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:latest", "."]
+    args: ["build", "--cache-from", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest", "."]
   - name: gcr.io/cloud-builders/docker
-    args: ["push", "us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:$COMMIT_SHA"]
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA"]
   - name: gcr.io/cloud-builders/docker
-    args: ["push", "us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:latest"]
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest"]
 
 images:
-  - us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:$COMMIT_SHA
-  - us-central1-docker.pkg.dev/$PROJECT_ID/lesson-studio/app:latest
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest
+
+serviceAccount: projects/$PROJECT_ID/serviceAccounts/ls-${_ENVIRONMENT}-release@$PROJECT_ID.iam.gserviceaccount.com
 
 options:
   machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _ENVIRONMENT: staging
+  _REGION: us-central1
+  _REPOSITORY: lesson-studio
 
 timeout: 1800s

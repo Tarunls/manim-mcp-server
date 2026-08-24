@@ -1,0 +1,131 @@
+resource "google_compute_region_network_endpoint_group" "api" {
+  name                  = "${local.name}-api"
+  region                = var.region
+  network_endpoint_type = "SERVERLESS"
+  cloud_run {
+    service = google_cloud_run_v2_service.api.name
+  }
+}
+
+resource "google_compute_security_policy" "edge" {
+  name        = "${local.name}-edge"
+  description = "Rate limiting for authentication and generation entry points."
+
+  rule {
+    priority = 1000
+    action   = "rate_based_ban"
+    match {
+      expr {
+        expression = "request.path.startsWith('/api/auth/') || request.path.matches('/api/projects/[^/]+/(messages|reviews)')"
+      }
+    }
+    rate_limit_options {
+      conform_action = "allow"
+      exceed_action  = "deny(429)"
+      enforce_on_key = "IP"
+      rate_limit_threshold {
+        count        = 120
+        interval_sec = 60
+      }
+      ban_duration_sec = 600
+      ban_threshold {
+        count        = 300
+        interval_sec = 300
+      }
+    }
+    description = "Bound abuse of expensive public mutations by source IP."
+  }
+
+  rule {
+    priority = 2147483647
+    action   = "allow"
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
+    description = "Allow traffic not matched by a stricter rule."
+  }
+}
+
+resource "google_compute_backend_service" "api" {
+  name                  = "${local.name}-api"
+  protocol              = "HTTP"
+  port_name             = "http"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  timeout_sec           = 300
+  security_policy       = google_compute_security_policy.edge.id
+  backend {
+    group = google_compute_region_network_endpoint_group.api.id
+  }
+  log_config {
+    enable      = true
+    sample_rate = 1
+  }
+}
+
+resource "google_compute_url_map" "https" {
+  name            = "${local.name}-https"
+  default_service = google_compute_backend_service.api.id
+}
+
+resource "google_compute_managed_ssl_certificate" "app" {
+  name = "${local.name}-certificate"
+  managed {
+    domains = [var.app_domain]
+  }
+  lifecycle {
+    precondition {
+      condition     = var.app_base_url == "https://${var.app_domain}"
+      error_message = "app_base_url must be the HTTPS origin for app_domain."
+    }
+  }
+}
+
+resource "google_compute_ssl_policy" "modern" {
+  name            = "${local.name}-modern-tls"
+  profile         = "MODERN"
+  min_tls_version = "TLS_1_2"
+}
+
+resource "google_compute_target_https_proxy" "app" {
+  name             = "${local.name}-https"
+  url_map          = google_compute_url_map.https.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.app.id]
+  ssl_policy       = google_compute_ssl_policy.modern.id
+}
+
+resource "google_compute_global_address" "app" {
+  name = "${local.name}-edge"
+}
+
+resource "google_compute_global_forwarding_rule" "https" {
+  name                  = "${local.name}-https"
+  target                = google_compute_target_https_proxy.app.id
+  ip_address            = google_compute_global_address.app.address
+  port_range            = "443"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}
+
+resource "google_compute_url_map" "http_redirect" {
+  name = "${local.name}-http-redirect"
+  default_url_redirect {
+    https_redirect         = true
+    redirect_response_code = "MOVED_PERMANENTLY_DEFAULT"
+    strip_query            = false
+  }
+}
+
+resource "google_compute_target_http_proxy" "redirect" {
+  name    = "${local.name}-http-redirect"
+  url_map = google_compute_url_map.http_redirect.id
+}
+
+resource "google_compute_global_forwarding_rule" "http" {
+  name                  = "${local.name}-http"
+  target                = google_compute_target_http_proxy.redirect.id
+  ip_address            = google_compute_global_address.app.address
+  port_range            = "80"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+}

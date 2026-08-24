@@ -56,6 +56,30 @@ async function download(url, target) {
   await fs.writeFile(target, contents);
 }
 
+async function assertNoSecretMaterial(directory, secrets) {
+  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+    if (entry.name === ".git") continue;
+    if (directory === projectRoot && entry.name === "output.mp4") continue;
+    const target = path.join(directory, entry.name);
+    if (entry.isSymbolicLink()) throw new Error("Generated source contains a symbolic link.");
+    if (entry.isDirectory()) await assertNoSecretMaterial(target, secrets);
+    else if (entry.isFile()) {
+      const stat = await fs.stat(target);
+      if (stat.size > 150 * 1024 * 1024) throw new Error("Generated source contains an oversized file.");
+      const contents = await fs.readFile(target);
+      if (secrets.some((secret) => secret && contents.includes(Buffer.from(secret)))) throw new Error("Generated source contains sandbox credential material.");
+    } else throw new Error("Generated source contains a special file.");
+  }
+}
+
+function redactSecrets(value) {
+  let safe = String(value || "");
+  for (const secret of [apiKey, callbackToken]) {
+    if (secret) safe = safe.replaceAll(secret, "[redacted]");
+  }
+  return safe.replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]");
+}
+
 try {
   required(apiKey, "OPENAI_API_KEY");
   await fs.mkdir(projectRoot, { recursive: true });
@@ -117,8 +141,6 @@ ${String(job.prompt).slice(0, 12000)}
       PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
       HOME: process.env.HOME || "/home/user",
       TMPDIR: "/tmp",
-      JOB_CALLBACK_URL: callbackUrl,
-      JOB_CALLBACK_TOKEN: callbackToken,
     },
   });
   const thread = codex.startThread({
@@ -134,6 +156,7 @@ ${String(job.prompt).slice(0, 12000)}
   for (const filename of ["output.mp4", "metadata.json"]) {
     if (!await exists(path.join(projectRoot, filename))) throw new Error(`Codex completed without ${filename}.`);
   }
+  await assertNoSecretMaterial(projectRoot, [apiKey, callbackToken]);
   await fs.rm(sandboxEnvPath, { force: true });
   await execFileAsync("tar", [
     "--exclude=.git", "--exclude=.env", "--exclude=output.mp4", "--exclude=poster.png", "--exclude=contact-sheet.png",
@@ -146,9 +169,9 @@ ${String(job.prompt).slice(0, 12000)}
   uploaded.push(await upload("source_archive", "/workspace/source.tar.gz"));
   if (await exists(path.join(projectRoot, "poster.png"))) uploaded.push(await upload("poster", path.join(projectRoot, "poster.png")));
   if (await exists(path.join(projectRoot, "contact-sheet.png"))) uploaded.push(await upload("contact_sheet", path.join(projectRoot, "contact-sheet.png")));
-  await callback("/complete", { artifacts: uploaded, assistantMessage: turn.finalResponse });
+  await callback("/complete", { artifacts: uploaded, assistantMessage: redactSecrets(turn.finalResponse) });
 } catch (error) {
   await fs.rm(sandboxEnvPath, { force: true }).catch(() => undefined);
-  await callback("/failure", { error: error instanceof Error ? error.message : "Sandbox generation failed." }).catch(() => undefined);
+  await callback("/failure", { error: redactSecrets(error instanceof Error ? error.message : "Sandbox generation failed.") }).catch(() => undefined);
   process.exitCode = 1;
 }

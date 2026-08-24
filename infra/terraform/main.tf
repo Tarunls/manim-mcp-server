@@ -6,6 +6,7 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "compute.googleapis.com",
     "iamcredentials.googleapis.com",
     "identitytoolkit.googleapis.com",
     "monitoring.googleapis.com",
@@ -41,6 +42,11 @@ resource "google_service_account" "dispatcher" {
 resource "google_service_account" "task_invoker" {
   account_id   = "ls-${var.environment}-tasks"
   display_name = "Lesson Studio ${var.environment} Cloud Tasks invoker"
+}
+
+resource "google_service_account" "release" {
+  account_id   = "ls-${var.environment}-release"
+  display_name = "Lesson Studio ${var.environment} Cloud Build release identity"
 }
 
 resource "google_compute_network" "private" {
