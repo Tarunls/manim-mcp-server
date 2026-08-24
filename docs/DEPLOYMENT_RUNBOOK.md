@@ -14,6 +14,24 @@ Read-only inventory on 2026-08-23 found project `educationalvideo-506219` in `us
 
 Do not convert the existing singleton in place. Build staging beside it, validate end to end, and cut traffic only after data migration and rollback rehearsal.
 
+## Staging apply status (2026-08-24)
+
+Release `c50b97a` is published as both an immutable application image and E2B template, and the E2B smoke passed. The remote-state-backed Terraform apply created the staging network, subnet, private-service address, Cloud Tasks queue, artifact bucket, runtime/release service accounts, secret containers/versions, and required APIs. It then stopped before Cloud SQL and Cloud Run because the active account `abhinav.malkoochi@gmail.com` has Editor and Service Account User, but cannot administer project IAM, service-account IAM, Secret Manager IAM, or private service networking.
+
+The project owner must grant the deployer the missing authority before resuming. The simplest temporary grant is project Owner, removed after deployment in favor of a dedicated least-privilege release identity. Creating the project budget also requires Billing Account Costs Manager on billing account `0181BB-902BC6-5D4673`. A budget is an alert, not a spending lock.
+
+```sh
+gcloud projects add-iam-policy-binding educationalvideo-506219 \
+  --member=user:abhinav.malkoochi@gmail.com \
+  --role=roles/owner
+
+gcloud billing accounts add-iam-policy-binding 0181BB-902BC6-5D4673 \
+  --member=user:abhinav.malkoochi@gmail.com \
+  --role=roles/billing.costsManager
+```
+
+These commands must be run by an identity already authorized to change the corresponding policies. Do not destroy the partial resources: a fresh `terraform plan` and `terraform apply` will resume from the protected GCS state.
+
 ## Release sequence
 
 1. Create or verify the E2B and environment-appropriate Stripe secrets. Never print secret payloads into a terminal log.
@@ -54,4 +72,4 @@ npm run test:e2e
 
 `smoke:identity` creates and deletes a uniquely named temporary Identity Platform user. `smoke:stripe` creates a hosted sandbox Checkout session and deletes its temporary database user. `smoke:e2b` disables internet access, checks the pinned runtime, and always kills the disposable sandbox.
 
-The 2026-08-23 release-candidate certification passed on `lesson-studio-renderer:d13958f-r4`. This certifies the worker runtime, not the callback-to-artifact path; rerun the full silent and narrated generation checks after staging exists.
+The 2026-08-24 release-candidate certification passed on `lesson-studio-renderer:c50b97a`. This certifies the worker runtime, not the callback-to-artifact path; rerun the full silent and narrated generation checks after staging exists.

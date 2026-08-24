@@ -45,12 +45,15 @@ Updated: 2026-08-24
 - Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
 - Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
 - Terraform now supports a domainless, scale-to-zero staging profile with a shared-core database, two E2B workers, three API instances, and a $20 GCP alerting budget while retaining strict production safety checks.
+- Immutable release `c50b97a` was published as application image `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:c50b97a` and E2B template `lesson-studio-renderer:c50b97a`; the E2B runtime smoke passed.
+- The protected remote Terraform state bucket and the first non-billable/low-cost staging resources were created. The apply stopped safely before Cloud SQL and Cloud Run when the active deployer lacked IAM-policy and private-service-networking administration permissions.
 
 ## Remaining before production launch
 
 - Select and store a distinct live restricted Stripe key for production; the current isolated Stripe key is staging-only.
-- Apply the staging Terraform plan (a billable operation) and run a real callback-to-artifact generation through Cloud Tasks, Cloud Run, E2B, the scoped Codex proxy, and private GCS.
+- Have a project owner grant the deployer temporary project Owner access (or the equivalent granular IAM/service-account/secret/network administration roles) and Billing Account Costs Manager on the linked billing account, then resume the remote-state-backed staging apply.
+- After the apply completes, run the migration and a real callback-to-artifact generation through Cloud Tasks, Cloud Run, E2B, the scoped Codex proxy, and private GCS.
 - Point staging DNS at the load-balancer IP, wait for certificate activation, and verify direct `run.app` requests cannot bypass Cloud Armor.
 - Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.
 
-The E2B API key and staging Stripe sandbox key exist in Secret Manager, and a release-candidate E2B template has been built for smoke testing. No production database or reserved E2B capacity is provisioned by committing these files. Infrastructure creation remains an explicit deployment operation.
+The E2B API key and staging Stripe sandbox key exist in Secret Manager. No production database or reserved E2B capacity is provisioned. The partial staging apply currently has no Cloud SQL instance or Cloud Run service, so the main recurring staging cost has not started; resume it only after the documented IAM grant.

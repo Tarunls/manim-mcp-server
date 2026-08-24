@@ -15,6 +15,8 @@ The checked-in staging example is deliberately budget constrained: `db-f1-micro`
 
 The project-scoped $20 budget sends threshold and forecast alerts to billing recipients. It is not a hard cap. OpenAI, E2B, Speechify, and Stripe charges are outside the GCP billing account and need separate provider controls.
 
+The identity applying this stack must be able to update project, service-account, and Secret Manager IAM policies and create private service networking connections. It must also have `roles/billing.costsManager` on `billing_account_id` to create the budget. An interrupted apply is resumable from the protected GCS backend; review a new plan and do not destroy already-tracked resources.
+
 Review before applying:
 
 ```sh

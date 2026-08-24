@@ -21,7 +21,7 @@ locals {
 }
 
 resource "google_billing_budget" "project" {
-  billing_account = "billingAccounts/${var.billing_account_id}"
+  billing_account = var.billing_account_id
   display_name    = "${local.name} monthly budget"
 
   budget_filter {
