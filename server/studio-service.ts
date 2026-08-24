@@ -196,15 +196,17 @@ export class StudioService extends EventEmitter {
   private agentMessagePhaseByItem = new Map<string, string | null>();
   private authState: AuthState = { connected: false };
   private runtimeState: RuntimeState = { codex: false, manim: false, remotion: false, ffmpeg: false };
+  private readonly localPersistence: boolean;
 
   constructor(root: string, dataRoot = root) {
     super();
     this.root = root;
     this.dataRoot = dataRoot;
     this.projectRoot = path.join(dataRoot, "studio", "projects");
+    this.localPersistence = process.env.EXECUTION_MODE !== "e2b";
     this.bridge = new CodexBridge(root);
     fs.mkdirSync(this.projectRoot, { recursive: true });
-    this.loadProjects();
+    if (this.localPersistence) this.loadProjects();
     this.bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
     this.bridge.on("ready", () => {
       this.runtimeState.codex = true;
@@ -280,6 +282,7 @@ export class StudioService extends EventEmitter {
   }
 
   private persist() {
+    if (!this.localPersistence) return;
     fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
     fs.writeFileSync(this.storePath, JSON.stringify(this.listProjects(), null, 2));
   }
@@ -305,6 +308,15 @@ export class StudioService extends EventEmitter {
   getProject(id: string, ownerId?: string) {
     const project = this.projects.get(id);
     return project && (!ownerId || project.ownerId === ownerId) ? project : undefined;
+  }
+
+  restoreProject(project: StudioProject) {
+    this.projects.set(project.id, project);
+    fs.mkdirSync(path.join(this.projectRoot, project.id), { recursive: true });
+    this.writeReviewConfig(project);
+    this.writeDesignConfig(project);
+    this.writeNarrationConfig(project);
+    return project;
   }
 
   getAuthState() {

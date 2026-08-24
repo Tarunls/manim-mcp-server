@@ -65,6 +65,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       ...(!["GET", "HEAD", "OPTIONS"].includes(method) && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...(method === "POST" && /\/api\/projects\/[^/]+\/messages$/.test(url) ? { "Idempotency-Key": crypto.randomUUID() } : {}),
       ...init?.headers,
     },
   });

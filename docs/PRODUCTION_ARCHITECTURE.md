@@ -50,6 +50,22 @@ Production secrets remain in Secret Manager. The dispatcher supplies a minimal e
 
 The Codex process must never inherit the web service environment. Speechify and licensed-asset operations should move behind scoped application callbacks so their provider keys are not visible to generated code.
 
+The current hosted worker implements this rule for Speechify. Each active job can request at most twelve narration segments through its one-time callback credential. The application calls Speechify; the provider key never crosses the sandbox boundary.
+
+## Hosted execution configuration
+
+Hosted Cloud Run instances must set `EXECUTION_MODE=e2b`. Production startup fails closed unless PostgreSQL, Identity Platform, Stripe, Cloud Tasks, E2B, GCS, callback secrets, and HTTPS base URLs are all present.
+
+Build a pinned worker template after changing renderer dependencies or bootstrap code:
+
+```sh
+E2B_TEMPLATE=lesson-studio-renderer \
+E2B_TEMPLATE_VERSION=<immutable-release-id> \
+npm run e2b:build-template
+```
+
+Never deploy the mutable `dev` tag to production. Set Cloud Tasks maximum concurrent dispatches no higher than `E2B_MAX_CONCURRENT_SANDBOXES`; the database gate is a second line of defense, not a replacement for queue throttling.
+
 ## Capacity model
 
 Submitting a generation is fast and asynchronous. Cloud Tasks `maxConcurrentDispatches` must be at or below purchased E2B concurrency. Per-user and per-plan active-job limits prevent a single account from monopolizing the queue. E2B and OpenAI quota errors leave the job queued with exponential backoff instead of losing it.

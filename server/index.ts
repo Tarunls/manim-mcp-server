@@ -6,12 +6,20 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { isWindows, manimPath } from "./platform.js";
-import { StudioService } from "./studio-service.js";
+import { StudioService, looksLikeIndependentVideoRequest } from "./studio-service.js";
 import { BillingService } from "./billing-service.js";
 import { IdentityAuthService, type AuthUser } from "./auth-service.js";
 import { database } from "./database.js";
 import { ensureCsrfToken, requestContext, verifyMutationRequest } from "./security.js";
 import { UserRepository } from "./user-repository.js";
+import { ProjectRepository } from "./project-repository.js";
+import { HostedGenerationService } from "./hosted-generation-service.js";
+import { GenerationQueue } from "./cloud-tasks.js";
+import { ArtifactService, type ArtifactKind } from "./artifact-service.js";
+import { E2BDispatcher } from "./e2b-dispatcher.js";
+import { verifyCloudTask } from "./internal-auth.js";
+import { HostedBillingService } from "./hosted-billing-service.js";
+import { ScopedNarrationService } from "./scoped-narration.js";
 import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
@@ -31,8 +39,35 @@ const studio = new StudioService(root, dataRoot);
 const billing = new BillingService(dataRoot);
 const auth = new IdentityAuthService();
 const users = new UserRepository(database);
+const projects = new ProjectRepository(database);
+const generations = new HostedGenerationService(database);
+const generationQueue = new GenerationQueue(database);
+const artifacts = new ArtifactService();
+const dispatcher = new E2BDispatcher(generations, artifacts);
+const hostedBilling = new HostedBillingService(database);
+const scopedNarration = new ScopedNarrationService(database);
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+
+function validateProductionConfiguration() {
+  if (process.env.NODE_ENV !== "production") return;
+  const missing: string[] = [];
+  if (!database.configured) missing.push("DATABASE_URL");
+  if (process.env.EXECUTION_MODE !== "e2b") missing.push("EXECUTION_MODE=e2b");
+  if (!auth.configured) missing.push("IDENTITY_PLATFORM_API_KEY");
+  if (!dispatcher.configured) missing.push("E2B/OpenAI/artifact configuration");
+  if (!generationQueue.configured) missing.push("Cloud Tasks configuration");
+  if (!hostedBilling.configured) missing.push("Stripe configuration");
+  if ((process.env.JOB_CALLBACK_SECRET?.length || 0) < 32) missing.push("JOB_CALLBACK_SECRET (32+ characters)");
+  if ((process.env.AUDIT_HASH_SECRET?.length || 0) < 32) missing.push("AUDIT_HASH_SECRET (32+ characters)");
+  for (const name of ["APP_BASE_URL", "JOB_CALLBACK_BASE_URL"] as const) {
+    const value = process.env[name];
+    if (!value || !value.startsWith("https://")) missing.push(`${name} (HTTPS URL)`);
+  }
+  if (missing.length) throw new Error(`Production configuration is incomplete: ${missing.join(", ")}`);
+}
+
+validateProductionConfiguration();
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
@@ -72,13 +107,41 @@ function userId(request: express.Request) {
   return authUser(request)?.uid || "";
 }
 
-function billingState(request: express.Request) {
-  return billing.getState(userId(request), authUser(request)?.email);
+async function billingState(request: express.Request) {
+  return database.configured
+    ? hostedBilling.getState(userId(request))
+    : billing.getState(userId(request), authUser(request)?.email);
 }
 
-function ownedProject(request: express.Request) {
-  const project = studio.getProject(String(request.params.id), userId(request));
+async function assertEffort(request: express.Request, effort: GenerationEffort) {
+  if (database.configured) return hostedBilling.assertEffort(userId(request), effort);
+  billing.assertEffort(userId(request), effort);
+}
+
+async function assertNarration(request: express.Request) {
+  if (database.configured) return hostedBilling.assertNarration(userId(request));
+  billing.assertNarration(userId(request));
+}
+
+async function assertLicensedAssets(request: express.Request) {
+  if (database.configured) return hostedBilling.assertLicensedAssets(userId(request));
+  billing.assertLicensedAssets(userId(request));
+}
+
+function hostedRuntime() {
+  return { codex: dispatcher.configured, manim: dispatcher.configured, remotion: dispatcher.configured, ffmpeg: dispatcher.configured };
+}
+
+async function ownedProject(request: express.Request) {
+  const project = generations.configured
+    ? await projects.get(String(request.params.id), userId(request))
+    : studio.getProject(String(request.params.id), userId(request));
   if (!project) throw new Error("Project not found.");
+  return generations.configured ? studio.restoreProject(project) : project;
+}
+
+async function persistHostedProject(project: ReturnType<typeof studio.getProject>) {
+  if (generations.configured && project) await projects.save(project, project.ownerId);
   return project;
 }
 
@@ -114,12 +177,15 @@ function colorPaletteFrom(value: unknown): ColorPalette | undefined {
   return ["cinematic", "studio", "ocean", "forest", "sunset", "monochrome", "high-contrast"].includes(String(value)) ? value as ColorPalette : undefined;
 }
 
-app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), (request, response) => {
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (request, response) => {
   try {
     const signature = request.header("stripe-signature");
     if (!signature) return response.status(400).send("Missing Stripe signature.");
-    const event = billing.constructWebhook(request.body as Buffer, signature);
-    billing.handleWebhook(event);
+    const event = database.configured
+      ? hostedBilling.constructWebhook(request.body as Buffer, signature)
+      : billing.constructWebhook(request.body as Buffer, signature);
+    if (database.configured) await hostedBilling.handleWebhook(event);
+    else billing.handleWebhook(event);
     response.json({ received: true });
   } catch (error) {
     response.status(400).send(error instanceof Error ? error.message : "Stripe webhook failed.");
@@ -132,6 +198,55 @@ app.use((request, response, next) => request.path.startsWith("/api/internal/") ?
 const authLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
 const generationLimiter = rateLimit({ windowMs: 60_000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false });
 app.use("/api/auth", authLimiter);
+
+app.post("/api/internal/generation/dispatch", verifyCloudTask, async (request, response) => {
+  const jobId = typeof request.body?.jobId === "string" ? request.body.jobId : "";
+  if (!/^[0-9a-f-]{36}$/i.test(jobId)) return response.status(400).json({ error: "Invalid job ID." });
+  try {
+    response.status(202).json(await dispatcher.dispatch(jobId));
+  } catch (error) {
+    console.error("E2B dispatch failed", { jobId, message: error instanceof Error ? error.message : "unknown" });
+    response.status(503).json({ error: "Generation dispatch will be retried." });
+  }
+});
+
+app.post("/api/internal/generation/:jobId/complete", async (request, response) => {
+  const token = (request.header("authorization") || "").replace(/^Bearer\s+/i, "");
+  const job = await generations.verifyCallback(String(request.params.jobId), token);
+  if (!job || !["running", "uploading", "complete"].includes(job.status)) return response.status(401).json({ error: "Invalid or expired job callback." });
+  if (job.status === "complete") return response.json({ received: true, duplicate: true });
+  try {
+    const reported = Array.isArray(request.body?.artifacts) ? request.body.artifacts.filter((kind: unknown): kind is ArtifactKind =>
+      ["video", "poster", "contact_sheet", "source_archive", "metadata"].includes(String(kind))) : [];
+    await generations.markUploading(job.id);
+    const verified = await artifacts.verify(job, reported);
+    const render = await artifacts.readRenderMetadata(job.id);
+    await generations.complete(job.id, verified, render, typeof request.body?.assistantMessage === "string" ? request.body.assistantMessage : undefined);
+    response.json({ received: true });
+  } catch (error) {
+    await generations.fail(job.id, error, true);
+    response.status(409).json({ error: "Artifact validation failed." });
+  }
+});
+
+app.post("/api/internal/generation/:jobId/failure", async (request, response) => {
+  const token = (request.header("authorization") || "").replace(/^Bearer\s+/i, "");
+  const job = await generations.verifyCallback(String(request.params.jobId), token);
+  if (!job) return response.status(401).json({ error: "Invalid job callback." });
+  await generations.fail(job.id, new Error(typeof request.body?.error === "string" ? request.body.error : "Sandbox generation failed."), true);
+  response.json({ received: true });
+});
+
+app.post("/api/internal/generation/:jobId/narration", async (request, response) => {
+  const token = (request.header("authorization") || "").replace(/^Bearer\s+/i, "");
+  const job = await generations.verifyCallback(String(request.params.jobId), token);
+  if (!job || !["running", "uploading"].includes(job.status)) return response.status(401).json({ error: "Invalid job callback." });
+  try {
+    response.json(await scopedNarration.speak(job, request.body || {}));
+  } catch (error) {
+    response.status(409).json({ error: error instanceof Error ? error.message : "Narration failed." });
+  }
+});
 
 function setAuthCookie(response: express.Response, sessionCookie: string) {
   response.cookie(auth.cookieName, sessionCookie, {
@@ -200,16 +315,27 @@ app.use(async (request, response, next) => {
   next();
 });
 
-app.get("/api/state", (request, response) => response.json(studio.getSnapshot(userId(request), billingState(request))));
-app.get("/api/pricing", (_request, response) => response.json({ plans: billing.listPlans(), billingMode: billing.billingMode, contactEmail: "tarun.l.sankar@gmail.com" }));
-app.get("/api/billing", (request, response) => response.json(billingState(request)));
+app.get("/api/state", async (request, response) => {
+  const snapshot = studio.getSnapshot(userId(request), await billingState(request));
+  if (generations.configured) {
+    snapshot.projects = (await projects.list(userId(request))).map((project) => studio.restoreProject(project));
+    snapshot.runtime = hostedRuntime();
+    snapshot.auth = { connected: dispatcher.configured, mode: "hosted-e2b" };
+  }
+  response.json(snapshot);
+});
+app.get("/api/pricing", (_request, response) => response.json({ plans: billing.listPlans(), billingMode: database.configured ? hostedBilling.billingMode : billing.billingMode, contactEmail: "tarun.l.sankar@gmail.com" }));
+app.get("/api/billing", async (request, response) => response.json(await billingState(request)));
 
 app.post("/api/billing/checkout", async (request, response) => {
   try {
     const plan = request.body?.plan as BillingPlanId;
     if (plan !== "creator" && plan !== "pro") return response.status(400).json({ error: "Choose Creator or Pro." });
     const email = authUser(request)?.email;
-    response.json({ url: await billing.createCheckout(userId(request), plan, email, baseUrl(request)) });
+    const url = database.configured
+      ? await hostedBilling.createCheckout(userId(request), plan, email, baseUrl(request))
+      : await billing.createCheckout(userId(request), plan, email, baseUrl(request));
+    response.json({ url });
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not start Stripe Checkout." });
   }
@@ -217,13 +343,16 @@ app.post("/api/billing/checkout", async (request, response) => {
 
 app.post("/api/billing/portal", async (request, response) => {
   try {
-    response.json({ url: await billing.createPortal(userId(request), baseUrl(request)) });
+    const url = database.configured
+      ? await hostedBilling.createPortal(userId(request), baseUrl(request))
+      : await billing.createPortal(userId(request), baseUrl(request));
+    response.json({ url });
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not open billing." });
   }
 });
 
-app.get("/api/events", (request, response) => {
+app.get("/api/events", async (request, response) => {
   response.setHeader("Content-Type", "text/event-stream");
   response.setHeader("Cache-Control", "no-cache, no-transform");
   response.setHeader("Connection", "keep-alive");
@@ -234,26 +363,52 @@ app.get("/api/events", (request, response) => {
     if (event.type === "project" && event.project.ownerId !== currentUserId) return;
     response.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  send(studio.getSnapshot(currentUserId, billingState(request)));
-  studio.on("event", send);
+  const initial = studio.getSnapshot(currentUserId, await billingState(request));
+  if (generations.configured) {
+    initial.projects = (await projects.list(currentUserId)).map((project) => studio.restoreProject(project));
+    initial.runtime = hostedRuntime();
+    initial.auth = { connected: dispatcher.configured, mode: "hosted-e2b" };
+  }
+  send(initial);
+  if (!generations.configured) studio.on("event", send);
   const heartbeat = setInterval(() => response.write(": keepalive\n\n"), 20_000);
+  let knownRevisions = new Map<string, number>();
+  const projectPoll = generations.configured ? setInterval(() => {
+    void projects.list(currentUserId).then((items) => {
+      for (const item of items) {
+        const revision = Number((item as typeof item & { storageRevision?: number }).storageRevision || 0);
+        if (knownRevisions.get(item.id) !== revision) send({ type: "project", project: item });
+        knownRevisions.set(item.id, revision);
+      }
+    }).catch(() => undefined);
+  }, 2_000) : undefined;
   request.on("close", () => {
     clearInterval(heartbeat);
-    studio.off("event", send);
+    if (projectPoll) clearInterval(projectPoll);
+    if (!generations.configured) studio.off("event", send);
   });
 });
 
-app.post("/api/projects", (request, response) => {
+app.post("/api/projects", async (request, response) => {
   const prompt = typeof request.body?.prompt === "string" ? request.body.prompt.trim() : "";
-  const state = billingState(request);
-  const project = studio.createProject(prompt, "composite", { narrationPreferences: { enabled: state.entitlements.narration } }, userId(request));
-  response.status(201).json(studio.updateGenerationPreferences(project.id, state.plan === "free" ? "quick" : "balanced"));
+  const state = await billingState(request);
+  const project = studio.createProject(generations.configured ? "" : prompt, "composite", { narrationPreferences: { enabled: state.entitlements.narration } }, userId(request));
+  if (generations.configured && prompt) {
+    project.prompt = prompt;
+    project.title = prompt.replace(/[^a-zA-Z0-9\s-]/g, " ").trim().split(/\s+/).slice(0, 5).join(" ") || "Untitled video";
+  }
+  const updated = studio.updateGenerationPreferences(project.id, state.plan === "free" ? "quick" : "balanced");
+  await persistHostedProject(updated);
+  response.status(201).json(updated);
 });
 
-app.patch("/api/projects/:id/favorite", (request, response) => {
+app.patch("/api/projects/:id/favorite", async (request, response) => {
   if (typeof request.body?.favorite !== "boolean") return response.status(400).json({ error: "Choose whether this video is a favorite." });
   try {
-    response.json(studio.updateFavorite(request.params.id, userId(request), request.body.favorite));
+    await ownedProject(request);
+    const project = studio.updateFavorite(String(request.params.id), userId(request), request.body.favorite);
+    await persistHostedProject(project);
+    response.json(project);
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : "Project not found." });
   }
@@ -263,12 +418,35 @@ app.post("/api/projects/:id/messages", generationLimiter, async (request, respon
   const text = typeof request.body?.text === "string" ? request.body.text.trim() : "";
   if (!text) return response.status(400).json({ error: "Write a prompt first." });
   try {
-    const project = ownedProject(request);
+    let project = await ownedProject(request);
     const effort = request.body?.effort === undefined ? undefined : generationEffortFrom(request.body.effort);
     const intent = request.body?.intent === undefined ? "auto" : generationIntentFrom(request.body.intent);
-    if (!intent || (request.body?.effort !== undefined && !effort)) return response.status(400).json({ error: "Choose a valid generation mode and thinking setting." });
+    const requestedRenderer = request.body?.renderer === undefined ? undefined : rendererFrom(request.body.renderer);
+    if (!intent || (request.body?.effort !== undefined && !effort) || (request.body?.renderer !== undefined && !requestedRenderer)) return response.status(400).json({ error: "Choose a valid generation mode, renderer, and thinking setting." });
+    const hasPriorWork = Boolean(project.messages.length || project.versions.length);
+    const startFresh = generations.configured && hasPriorWork && (intent === "new" || (intent === "auto" && looksLikeIndependentVideoRequest(text, project)));
+    if (startFresh) {
+      project = studio.createProject("", requestedRenderer || project.renderer, {
+        reviewPreferences: project.reviewPreferences,
+        designPreferences: project.designPreferences,
+        narrationPreferences: project.narrationPreferences,
+        generationPreferences: project.generationPreferences,
+      }, userId(request));
+      await projects.save(project, userId(request));
+    } else if (requestedRenderer && !hasPriorWork) {
+      project.renderer = requestedRenderer;
+      await persistHostedProject(project);
+    } else if (requestedRenderer && requestedRenderer !== project.renderer) {
+      throw new Error("A project's renderer is fixed after generation starts. Create a new video to switch renderers.");
+    }
     const selectedEffort = effort || project.generationPreferences.effort;
-    if (project.narrationPreferences.enabled) billing.assertNarration(userId(request));
+    if (project.narrationPreferences.enabled) await assertNarration(request);
+    if (generations.configured) {
+      const idempotencyKey = request.header("idempotency-key") || "";
+      const result = await generations.submit({ ownerId: userId(request), project, prompt: text, effort: selectedEffort, idempotencyKey });
+      void generationQueue.flush().catch((error) => console.error("Outbox flush failed", { message: error instanceof Error ? error.message : "unknown" }));
+      return response.status(202).json({ project: result.project, startedFresh: startFresh, mode: project.versions.length ? "revision" : "first-draft", jobId: result.jobId });
+    }
     const credits = billing.reserveGeneration(userId(request), selectedEffort);
     try {
       response.status(202).json(await studio.sendMessage(String(request.params.id), text, undefined, { intent, requestedEffort: effort }));
@@ -281,48 +459,56 @@ app.post("/api/projects/:id/messages", generationLimiter, async (request, respon
   }
 });
 
-app.patch("/api/projects/:id/generation-preferences", (request, response) => {
+app.patch("/api/projects/:id/generation-preferences", async (request, response) => {
   const effort = generationEffortFrom(request.body?.effort);
   if (!effort) return response.status(400).json({ error: "Choose how hard the studio should think." });
   try {
-    ownedProject(request);
-    billing.assertEffort(userId(request), effort);
-    response.json(studio.updateGenerationPreferences(request.params.id, effort));
+    await ownedProject(request);
+    await assertEffort(request, effort);
+    const project = studio.updateGenerationPreferences(String(request.params.id), effort);
+    await persistHostedProject(project);
+    response.json(project);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not update generation settings." });
   }
 });
 
-app.patch("/api/projects/:id/review-preferences", (request, response) => {
+app.patch("/api/projects/:id/review-preferences", async (request, response) => {
   const focus = reviewFocusFrom(request.body?.focus);
   const strictness = reviewStrictnessFrom(request.body?.strictness);
   if (!focus || !strictness) return response.status(400).json({ error: "Choose a valid review focus and strictness." });
   try {
-    ownedProject(request);
-    response.json(studio.updateReviewPreferences(request.params.id, focus, strictness));
+    await ownedProject(request);
+    const project = studio.updateReviewPreferences(String(request.params.id), focus, strictness);
+    await persistHostedProject(project);
+    response.json(project);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not update review settings." });
   }
 });
 
-app.patch("/api/projects/:id/design-preferences", (request, response) => {
+app.patch("/api/projects/:id/design-preferences", async (request, response) => {
   const fontCategory = request.body?.fontCategory === undefined ? undefined : fontCategoryFrom(request.body.fontCategory);
   const colorPalette = request.body?.colorPalette === undefined ? undefined : colorPaletteFrom(request.body.colorPalette);
   if ((!fontCategory && request.body?.fontCategory !== undefined) || (!colorPalette && request.body?.colorPalette !== undefined) || (!fontCategory && !colorPalette)) return response.status(400).json({ error: "Choose a valid font category or color palette." });
   try {
-    ownedProject(request);
-    response.json(studio.updateDesignPreferences(request.params.id, { fontCategory, colorPalette }));
+    await ownedProject(request);
+    const project = studio.updateDesignPreferences(String(request.params.id), { fontCategory, colorPalette });
+    await persistHostedProject(project);
+    response.json(project);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not update design settings." });
   }
 });
 
-app.patch("/api/projects/:id/narration-preferences", (request, response) => {
+app.patch("/api/projects/:id/narration-preferences", async (request, response) => {
   if (typeof request.body?.enabled !== "boolean") return response.status(400).json({ error: "Choose whether AI voice is on or off." });
   try {
-    ownedProject(request);
-    if (request.body.enabled) billing.assertNarration(userId(request));
-    response.json(studio.updateNarrationPreferences(request.params.id, request.body.enabled));
+    await ownedProject(request);
+    if (request.body.enabled) await assertNarration(request);
+    const project = studio.updateNarrationPreferences(String(request.params.id), request.body.enabled);
+    await persistHostedProject(project);
+    response.json(project);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not update voice settings." });
   }
@@ -332,7 +518,7 @@ app.get("/api/projects/:id/frames", async (request, response) => {
   const versionId = typeof request.query.version === "string" ? request.query.version : "";
   const time = Number(request.query.time || 0);
   try {
-    ownedProject(request);
+    await ownedProject(request);
     const frame = await studio.extractFrame(request.params.id, versionId, time);
     response.setHeader("X-Video-Frame", String(frame.frame));
     response.setHeader("X-Video-Time", frame.time.toFixed(6));
@@ -345,13 +531,14 @@ app.get("/api/projects/:id/frames", async (request, response) => {
 
 app.post("/api/projects/:id/reviews", async (request, response) => {
   try {
-    ownedProject(request);
+    await ownedProject(request);
     const review = await studio.createFrameReview(request.params.id, {
       versionId: String(request.body?.versionId || ""),
       time: Number(request.body?.time || 0),
       note: String(request.body?.note || ""),
       annotatedImageData: String(request.body?.annotatedImageData || ""),
     });
+    await persistHostedProject(studio.getProject(String(request.params.id), userId(request)));
     response.status(202).json(review);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not send frame feedback." });
@@ -362,7 +549,7 @@ app.get("/api/assets/search", async (request, response) => {
   const query = typeof request.query.q === "string" ? request.query.q.trim() : "";
   if (query.length < 2) return response.status(400).json({ error: "Search with at least two characters." });
   try {
-    billing.assertLicensedAssets(userId(request));
+    await assertLicensedAssets(request);
     response.json({ results: await studio.searchAssets(query) });
   } catch (error) {
     response.status(502).json({ error: error instanceof Error ? error.message : "Asset search failed." });
@@ -371,9 +558,11 @@ app.get("/api/assets/search", async (request, response) => {
 
 app.post("/api/projects/:id/assets", async (request, response) => {
   try {
-    ownedProject(request);
-    billing.assertLicensedAssets(userId(request));
-    response.status(201).json(await studio.importAsset(request.params.id, request.body));
+    await ownedProject(request);
+    await assertLicensedAssets(request);
+    const asset = await studio.importAsset(String(request.params.id), request.body);
+    await persistHostedProject(studio.getProject(String(request.params.id), userId(request)));
+    response.status(201).json(asset);
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Could not import asset." });
   }
@@ -381,12 +570,30 @@ app.post("/api/projects/:id/assets", async (request, response) => {
 
 app.post("/api/projects/:id/cancel", async (request, response) => {
   try {
-    ownedProject(request);
-    await studio.cancel(request.params.id);
+    await ownedProject(request);
+    if (generations.configured) {
+      const job = await generations.cancelProject(String(request.params.id), userId(request));
+      await dispatcher.terminate(job?.sandboxId).catch(() => undefined);
+    } else {
+      await studio.cancel(String(request.params.id));
+    }
     response.status(204).end();
   } catch (error) {
     response.status(500).json({ error: error instanceof Error ? error.message : "Could not cancel generation." });
   }
+});
+
+app.get("/api/artifacts/:artifactId", async (request, response) => {
+  const result = await database.query<{ bucket: string; object_name: string; generation: string }>(
+    `SELECT bucket, object_name, generation::text
+       FROM artifacts
+      WHERE id = $1 AND owner_id = $2`,
+    [String(request.params.artifactId), userId(request)],
+  );
+  const artifact = result.rows[0];
+  if (!artifact) return response.status(404).json({ error: "Artifact not found." });
+  response.setHeader("Cache-Control", "private, no-store");
+  response.redirect(303, await artifacts.signedReadUrl(artifact.bucket, artifact.object_name, Number(artifact.generation)));
 });
 
 app.use("/media/:projectId", (request, response, next) => {
@@ -419,16 +626,21 @@ const server = app.listen(port, host, () => {
   console.log(`Lesson Studio is running at http://${host}:${port}`);
 });
 
-void studio.initialize();
+if (!generations.configured) void studio.initialize();
+
+const outboxTimer = generationQueue.configured ? setInterval(() => {
+  void generationQueue.flush().catch((error) => console.error("Outbox flush failed", { message: error instanceof Error ? error.message : "unknown" }));
+}, Number(process.env.OUTBOX_POLL_INTERVAL_MS || 5_000)) : undefined;
 
 function shutdown() {
+  if (outboxTimer) clearInterval(outboxTimer);
   studio.bridge.stop();
-  server.close(() => process.exit(0));
+  server.close(() => void database.close().finally(() => process.exit(0)));
 }
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-if (!fs.existsSync(manimPath(root))) {
+if (!generations.configured && !fs.existsSync(manimPath(root))) {
   console.warn("Manim is not installed yet. Run: npm run setup:manim");
 }

@@ -36,9 +36,9 @@ async function main() {
   }
 
   const apiKey = process.env.SPEECHIFY_API_KEY?.trim();
-  if (!apiKey) {
-    fail("SPEECHIFY_API_KEY is required. Narration will not use a fallback voice.");
-  }
+  const callbackUrl = process.env.JOB_CALLBACK_URL?.trim();
+  const callbackToken = process.env.JOB_CALLBACK_TOKEN?.trim();
+  if (!apiKey && (!callbackUrl || !callbackToken)) fail("A server-scoped Speechify provider is required. Narration will not use a fallback voice.");
 
   let segments;
   try {
@@ -69,7 +69,7 @@ async function main() {
   fs.mkdirSync(audioDir, { recursive: true });
   const voice = process.env.SPEECHIFY_VOICE_ID?.trim() || "geffen_32";
   const model = "simba-3.2";
-  const client = new SpeechifyClient({ token: apiKey });
+  const client = apiKey ? new SpeechifyClient({ token: apiKey }) : undefined;
   const audioFiles = [];
   const audioDurations = [];
 
@@ -88,14 +88,25 @@ async function main() {
     if (!fs.existsSync(target)) {
       let response;
       try {
-        response = await client.audio.speech({
-          input: ssml,
-          voice_id: voice,
-          model,
-          audio_format: "mp3",
-          output_format: "mp3_24000_160",
-          language: "en-US",
-        });
+        if (client) {
+          response = await client.audio.speech({
+            input: ssml,
+            voice_id: voice,
+            model,
+            audio_format: "mp3",
+            output_format: "mp3_24000_160",
+            language: "en-US",
+          });
+        } else {
+          const providerResponse = await fetch(`${callbackUrl}/narration`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${callbackToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ index, text: segment.text }),
+          });
+          if (!providerResponse.ok) throw new Error(`Scoped narration failed with HTTP ${providerResponse.status}.`);
+          const providerBody = await providerResponse.json();
+          response = { audio_data: providerBody.audioData };
+        }
       } catch (error) {
         const code = typeof error?.statusCode === "number" ? ` (${error.statusCode})` : "";
         fail(`Speechify speech request failed${code}. Check the server key, voice, and account limits.`);
