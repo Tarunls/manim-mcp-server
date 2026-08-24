@@ -44,6 +44,12 @@ resource "google_project_iam_member" "release" {
   member  = "serviceAccount:${google_service_account.release.email}"
 }
 
+resource "google_storage_bucket_iam_member" "release_cloud_build_source" {
+  bucket = "${var.project_id}_cloudbuild"
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.release.email}"
+}
+
 resource "google_service_account_iam_member" "release_api_identity" {
   service_account_id = google_service_account.api.name
   role               = "roles/iam.serviceAccountUser"
