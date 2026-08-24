@@ -2,6 +2,8 @@
 
 ## Lesson Studio MVP
 
+Production hardening is being implemented incrementally. The target trust boundaries, data flow, and security requirements are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), with current progress in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+
 This repository includes a local prompt-to-video studio with an explicit per-project renderer choice. Choose Manim for equations and geometry, Remotion for editorial motion, or Composite when a Remotion-directed video should contain self-contained Manim inserts. Composite does not let two layout engines compete: Remotion always owns the final canvas.
 
 Rendered revisions include a seven-frame filmstrip. Pause anywhere, select **Review frame**, draw with the default pen or choose a circle, arrow, or rectangle, add a note, and send the clean plus annotated frame to the model as direct high-detail image inputs. The reviewer isolates the smallest marked target and records nearby objects that must remain unchanged.

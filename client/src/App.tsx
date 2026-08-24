@@ -54,9 +54,19 @@ type AccountUser = { uid: string; email: string; emailVerified: boolean; isStaff
 type AccountState = { checked: boolean; configured: boolean; authenticated: boolean; user?: AccountUser };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || "GET").toUpperCase();
+  const csrfToken = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("lesson_studio_csrf="))
+    ?.slice("lesson_studio_csrf=".length);
   const response = await fetch(url, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(!["GET", "HEAD", "OPTIONS"].includes(method) && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...init?.headers,
+    },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

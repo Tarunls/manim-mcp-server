@@ -1,4 +1,6 @@
 import express from "express";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -7,6 +9,9 @@ import { isWindows, manimPath } from "./platform.js";
 import { StudioService } from "./studio-service.js";
 import { BillingService } from "./billing-service.js";
 import { IdentityAuthService, type AuthUser } from "./auth-service.js";
+import { database } from "./database.js";
+import { ensureCsrfToken, requestContext, verifyMutationRequest } from "./security.js";
+import { UserRepository } from "./user-repository.js";
 import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
@@ -25,10 +30,39 @@ const app = express();
 const studio = new StudioService(root, dataRoot);
 const billing = new BillingService(dataRoot);
 const auth = new IdentityAuthService();
+const users = new UserRepository(database);
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use(requestContext);
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      mediaSrc: ["'self'", "blob:", "https:"],
+      connectSrc: ["'self'", "https:"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'", "https://checkout.stripe.com"],
+    },
+  } : false,
+  crossOriginResourcePolicy: { policy: "same-site" },
+}));
+
 app.get(["/healthz", "/api/health"], (_request, response) => response.status(200).send("ok"));
+app.get("/api/health/ready", async (_request, response) => {
+  try {
+    response.status(200).json(await database.healthcheck());
+  } catch {
+    response.status(503).json({ configured: database.configured, ready: false });
+  }
+});
 
 function authUser(request: express.Request) {
   return request.res?.locals.authUser as AuthUser | undefined;
@@ -93,19 +127,26 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), (requ
 });
 
 app.use(express.json({ limit: "16mb" }));
+app.use((request, response, next) => request.path.startsWith("/api/internal/") ? next() : verifyMutationRequest(request, response, next));
 
-function setAuthCookie(response: express.Response, user: AuthUser) {
-  response.cookie(auth.cookieName, auth.createSession(user), {
+const authLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
+const generationLimiter = rateLimit({ windowMs: 60_000, limit: 12, standardHeaders: "draft-8", legacyHeaders: false });
+app.use("/api/auth", authLimiter);
+
+function setAuthCookie(response: express.Response, sessionCookie: string) {
+  response.cookie(auth.cookieName, sessionCookie, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 60 * 60 * 1_000,
+    path: "/",
+    maxAge: auth.sessionDurationMs,
   });
 }
 
-app.get("/api/auth/status", (request, response) => {
-  const user = auth.authenticate(request.header("cookie"));
-  response.json({ configured: auth.configured, authenticated: Boolean(user), user });
+app.get("/api/auth/status", async (request, response) => {
+  const csrfToken = ensureCsrfToken(request, response);
+  const user = await auth.authenticate(request.header("cookie"));
+  response.json({ configured: auth.configured, authenticated: Boolean(user), user, csrfToken });
 });
 
 app.post("/api/auth/signup", async (request, response) => {
@@ -119,8 +160,9 @@ app.post("/api/auth/signup", async (request, response) => {
 
 app.post("/api/auth/login", async (request, response) => {
   try {
-    const user = await auth.signIn(request.body?.email, request.body?.password);
-    setAuthCookie(response, user);
+    const { user, sessionCookie } = await auth.signIn(request.body?.email, request.body?.password);
+    await users.syncIdentity(user);
+    setAuthCookie(response, sessionCookie);
     response.json({ authenticated: true, user });
   } catch (error) {
     response.status(401).json({ error: error instanceof Error ? error.message : "Could not sign in." });
@@ -136,24 +178,25 @@ app.post("/api/auth/password-reset", async (request, response) => {
   }
 });
 
-app.post("/api/auth/logout", (_request, response) => {
+app.post("/api/auth/logout", async (request, response) => {
+  await auth.revoke(request.header("cookie"));
   response.clearCookie(auth.cookieName, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
+    path: "/",
   });
   response.status(204).end();
 });
 
-app.use((request, response, next) => {
+app.use(async (request, response, next) => {
   const protectedPath = request.path.startsWith("/api/") || request.path.startsWith("/media/");
-  const publicPath = request.path === "/api/pricing" || request.path === "/api/health";
+  const publicPath = request.path === "/api/pricing" || request.path.startsWith("/api/health");
   if (!protectedPath || publicPath) return next();
-  const user = auth.authenticate(request.header("cookie"));
+  const user = await auth.authenticate(request.header("cookie"));
   if (!user) return response.status(401).json({ error: "Sign in to continue." });
   response.locals.authUser = user;
   billing.setStaffAccess(user.uid, user.isStaff);
-  studio.claimLegacyProjects(user.uid);
   next();
 });
 
@@ -216,7 +259,7 @@ app.patch("/api/projects/:id/favorite", (request, response) => {
   }
 });
 
-app.post("/api/projects/:id/messages", async (request, response) => {
+app.post("/api/projects/:id/messages", generationLimiter, async (request, response) => {
   const text = typeof request.body?.text === "string" ? request.body.text.trim() : "";
   if (!text) return response.status(400).json({ error: "Write a prompt first." });
   try {
@@ -228,7 +271,7 @@ app.post("/api/projects/:id/messages", async (request, response) => {
     if (project.narrationPreferences.enabled) billing.assertNarration(userId(request));
     const credits = billing.reserveGeneration(userId(request), selectedEffort);
     try {
-      response.status(202).json(await studio.sendMessage(request.params.id, text, undefined, { intent, requestedEffort: effort }));
+      response.status(202).json(await studio.sendMessage(String(request.params.id), text, undefined, { intent, requestedEffort: effort }));
     } catch (error) {
       billing.refundGeneration(userId(request), credits);
       throw error;

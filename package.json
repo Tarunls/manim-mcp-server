@@ -11,7 +11,8 @@
     "build": "vite build && tsc --noEmit",
     "start": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs server/index.ts",
     "check": "tsc --noEmit",
-    "test": "node --import tsx --test tests/generation-intent.test.ts tests/generation-freshness.test.mjs tests/billing.test.ts",
+    "db:migrate": "node --env-file-if-exists=.env ./node_modules/tsx/dist/cli.mjs scripts/migrate_database.ts",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
     "setup:manim": "node scripts/setup_manim.mjs",
     "stripe:setup": "node scripts/setup_stripe.mjs",
     "stripe:listen": "stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to http://127.0.0.1:4321/api/stripe/webhook",
@@ -23,12 +24,20 @@
   "dependencies": {
     "@fontsource-variable/caveat": "^5.3.0",
     "@fontsource-variable/manrope": "^5.2.7",
+    "@google-cloud/storage": "^8.0.1",
+    "@google-cloud/tasks": "^7.0.0",
     "@openai/codex": "^0.147.0",
+    "@openai/codex-sdk": "^0.149.1",
     "@phosphor-icons/react": "^2.1.10",
     "@remotion/bundler": "^4.0.514",
     "@remotion/renderer": "^4.0.514",
     "@speechify/api": "^4.0.1",
+    "e2b": "^2.45.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.6.2",
+    "firebase-admin": "^14.3.0",
+    "helmet": "^8.3.0",
+    "pg": "^8.23.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "remotion": "^4.0.514",
@@ -38,11 +47,18 @@
     "@remotion/cli": "^4.0.514",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vite": "^7.1.3"
+  },
+  "overrides": {
+    "firebase-admin": {
+      "@google-cloud/storage": "8.0.1"
+    },
+    "uuid": "11.1.1"
   }
 }

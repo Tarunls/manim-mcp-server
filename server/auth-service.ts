@@ -1,6 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
-const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1_000;
+const SESSION_DURATION_MS = 5 * 24 * 60 * 60 * 1_000;
 
 export type AuthUser = {
   uid: string;
@@ -15,17 +16,6 @@ type IdentityResponse = {
   idToken: string;
   emailVerified?: boolean;
 };
-
-type SessionPayload = AuthUser & {
-  version: 1;
-  expiresAt: number;
-};
-
-function safeEqual(actual: string, expected: string) {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
-}
 
 function cookieValue(header: string | undefined, name: string) {
   return header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
@@ -47,9 +37,8 @@ function friendlyIdentityError(code: string) {
 }
 
 export class IdentityAuthService {
-  readonly cookieName = "lesson_studio_session";
+  readonly cookieName = process.env.NODE_ENV === "production" ? "__Host-lesson_studio_session" : "lesson_studio_session";
   private readonly apiKey = process.env.IDENTITY_PLATFORM_API_KEY?.trim() || "";
-  private readonly sessionSecret = process.env.SESSION_SECRET?.trim() || "";
   private readonly staffEmails = new Set(
     (process.env.STAFF_EMAILS || "")
       .split(",")
@@ -58,11 +47,24 @@ export class IdentityAuthService {
   );
 
   constructor() {
-    if (this.apiKey && this.sessionSecret.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters when Identity Platform is enabled.");
+    if (getApps().length === 0) {
+      const projectId = process.env.IDENTITY_PLATFORM_PROJECT_ID?.trim()
+        || process.env.GOOGLE_CLOUD_PROJECT?.trim()
+        || process.env.GCLOUD_PROJECT?.trim();
+      initializeApp({ credential: applicationDefault(), ...(projectId ? { projectId } : {}) });
+    }
   }
 
   get configured() {
-    return Boolean(this.apiKey && this.sessionSecret);
+    return Boolean(this.apiKey);
+  }
+
+  get sessionDurationMs() {
+    return SESSION_DURATION_MS;
+  }
+
+  sessionFromCookie(cookieHeader: string | undefined) {
+    return cookieValue(cookieHeader, this.cookieName);
   }
 
   private async identityRequest<T>(action: string, body: Record<string, unknown>): Promise<T> {
@@ -87,7 +89,7 @@ export class IdentityAuthService {
   async signUp(emailValue: unknown, passwordValue: unknown) {
     const email = normalizedEmail(emailValue);
     const password = typeof passwordValue === "string" ? passwordValue : "";
-    if (password.length < 10) throw new Error("Use a password with at least 10 characters.");
+    if (password.length < 10 || password.length > 128) throw new Error("Use a password between 10 and 128 characters.");
     const result = await this.identityRequest<IdentityResponse>("signUp", { email, password, returnSecureToken: true });
     await this.identityRequest("sendOobCode", { requestType: "VERIFY_EMAIL", idToken: result.idToken });
     return { user: this.userFromIdentity(result), verificationRequired: true as const };
@@ -103,38 +105,41 @@ export class IdentityAuthService {
       await this.identityRequest("sendOobCode", { requestType: "VERIFY_EMAIL", idToken: result.idToken });
       throw new Error("Verify your email using the link we sent, then sign in again.");
     }
-    return user;
+    const sessionCookie = await getAuth().createSessionCookie(result.idToken, { expiresIn: SESSION_DURATION_MS });
+    return { user, sessionCookie };
   }
 
   async sendPasswordReset(emailValue: unknown) {
     const email = normalizedEmail(emailValue);
-    await this.identityRequest("sendOobCode", { requestType: "PASSWORD_RESET", email });
-  }
-
-  createSession(user: AuthUser) {
-    const payload: SessionPayload = { ...user, version: 1, expiresAt: Date.now() + SESSION_DURATION_MS };
-    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-    const signature = createHmac("sha256", this.sessionSecret).update(encoded).digest("base64url");
-    return `${encoded}.${signature}`;
-  }
-
-  authenticate(cookieHeader: string | undefined): AuthUser | undefined {
-    if (!this.configured) return undefined;
-    const token = cookieValue(cookieHeader, this.cookieName);
-    if (!token) return undefined;
-    const separator = token.lastIndexOf(".");
-    if (separator < 1) return undefined;
-    const encoded = token.slice(0, separator);
-    const signature = token.slice(separator + 1);
-    const expected = createHmac("sha256", this.sessionSecret).update(encoded).digest("base64url");
-    if (!safeEqual(signature, expected)) return undefined;
     try {
-      const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
-      if (payload.version !== 1 || payload.expiresAt <= Date.now() || !payload.uid || !payload.email) return undefined;
-      const isStaff = this.staffEmails.has(payload.email.toLowerCase());
-      return { uid: payload.uid, email: payload.email, emailVerified: Boolean(payload.emailVerified) || isStaff, isStaff };
+      await this.identityRequest("sendOobCode", { requestType: "PASSWORD_RESET", email });
+    } catch {
+      // Password reset is deliberately enumeration-safe.
+    }
+  }
+
+  async authenticate(cookieHeader: string | undefined): Promise<AuthUser | undefined> {
+    if (!this.configured) return undefined;
+    const token = this.sessionFromCookie(cookieHeader);
+    if (!token) return undefined;
+    try {
+      const claims = await getAuth().verifySessionCookie(token, process.env.AUTH_CHECK_REVOKED !== "false");
+      const email = typeof claims.email === "string" ? claims.email.toLowerCase() : "";
+      if (!claims.uid || !email || claims.email_verified !== true) return undefined;
+      return { uid: claims.uid, email, emailVerified: true, isStaff: this.staffEmails.has(email) };
     } catch {
       return undefined;
+    }
+  }
+
+  async revoke(cookieHeader: string | undefined) {
+    const token = this.sessionFromCookie(cookieHeader);
+    if (!token) return;
+    try {
+      const claims = await getAuth().verifySessionCookie(token, false);
+      await getAuth().revokeRefreshTokens(claims.uid);
+    } catch {
+      // Clearing a missing, expired, or already-revoked cookie is still successful.
     }
   }
 }
