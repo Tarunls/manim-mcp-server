@@ -46,3 +46,16 @@ test("signed-event handling provisions and removes a paid plan", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("Stripe CLI sandbox restricted keys are recognized as test mode", () => {
+  const root = temporaryStudio();
+  const previousKey = process.env.STRIPE_SECRET_KEY;
+  try {
+    process.env.STRIPE_SECRET_KEY = "rkcs_test_placeholder";
+    assert.equal(new BillingService(root).billingMode, "test");
+  } finally {
+    if (previousKey === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousKey;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

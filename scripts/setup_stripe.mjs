@@ -12,7 +12,10 @@ function stripeExecutable() {
 }
 
 function stripe(args) {
-  return JSON.parse(execFileSync(stripeExecutable(), args, { encoding: "utf8" }));
+  const profileArgs = process.env.STRIPE_CLI_PROJECT
+    ? ["--project-name", process.env.STRIPE_CLI_PROJECT]
+    : [];
+  return JSON.parse(execFileSync(stripeExecutable(), [...profileArgs, ...args], { encoding: "utf8" }));
 }
 
 const plans = [

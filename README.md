@@ -74,7 +74,15 @@ stripe login
 npm run stripe:setup
 ```
 
-Copy `.env.example` to `.env`, set `STRIPE_SECRET_KEY` to a Stripe test secret, set `ALLOW_TEST_CHECKOUT=true` only for local billing tests, and start the local webhook forwarder in a second terminal:
+Copy `.env.example` to `.env`, set `STRIPE_SECRET_KEY` to a Stripe sandbox or test secret, set `ALLOW_TEST_CHECKOUT=true` only for local or staging billing tests, and start the local webhook forwarder in a second terminal. Stripe CLI sandboxes can be kept separate from another Stripe account by naming the profile:
+
+```bash
+stripe sandbox create --non-interactive --from-git --project-name lesson-studio
+STRIPE_CLI_PROJECT=lesson-studio npm run stripe:setup
+stripe --project-name lesson-studio listen --events checkout.session.completed,checkout.session.async_payment_succeeded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to http://127.0.0.1:4321/api/stripe/webhook
+```
+
+Never commit the sandbox key. Put it in Secret Manager as `stripe_sandbox_api_key` for staging. Production must use a distinct live restricted key and keep `ALLOW_TEST_CHECKOUT=false`.
 
 ```sh
 npm run stripe:listen
@@ -90,7 +98,7 @@ The scalable Terraform deployment expects these existing Secret Manager names:
 
 - `openai_api_key` -> `OPENAI_API_KEY`
 - `e2b_api_key` -> `E2B_API_KEY`
-- `stripe_test_api_key` -> `STRIPE_SECRET_KEY`
+- `stripe_sandbox_api_key` -> `STRIPE_SECRET_KEY` in staging; use a separate live-key secret in production
 - `stripe_webhook_secret` -> `STRIPE_WEBHOOK_SECRET`
 - `speechify_key` -> `SPEECHIFY_API_KEY`
 - `identity_platform_api_key` -> `IDENTITY_PLATFORM_API_KEY`

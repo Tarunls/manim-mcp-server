@@ -72,7 +72,7 @@ variable "secret_ids" {
     openai_api_key    = "openai_api_key"
     e2b_api_key       = "e2b_api_key"
     speechify_api_key = "speechify_key"
-    stripe_api_key    = "stripe_test_api_key"
+    stripe_api_key    = "stripe_sandbox_api_key"
     stripe_webhook    = "stripe_webhook_secret"
     staff_emails      = "staff_emails"
   }
