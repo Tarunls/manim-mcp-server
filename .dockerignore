@@ -6,6 +6,9 @@ dist
 .env
 .env.*
 !.env.example
+infra/terraform/.terraform
+infra/terraform/*.auto.tfvars
+infra/terraform/*.tfplan
 studio/projects.json
 studio/billing.json
 studio/projects/*

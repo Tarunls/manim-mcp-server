@@ -2,7 +2,9 @@ FROM node:22-bookworm-slim
 
 ENV NODE_ENV=production \
     PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential ca-certificates ffmpeg git fonts-dejavu-core fonts-noto-color-emoji \
@@ -17,7 +19,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev \
     && npx remotion browser ensure \
     && python3 -m venv /opt/lesson-studio/venv \
-    && /opt/lesson-studio/venv/bin/pip install --no-cache-dir "manim>=0.19,<0.20"
+    && /opt/lesson-studio/venv/bin/pip install --no-cache-dir --retries 10 --timeout 120 "manim>=0.19,<0.20"
 
 WORKDIR /opt/lesson-studio/app
 COPY . .
