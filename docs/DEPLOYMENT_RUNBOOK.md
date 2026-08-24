@@ -16,21 +16,11 @@ Do not convert the existing singleton in place. Build staging beside it, validat
 
 ## Staging apply status (2026-08-24)
 
-Release `c50b97a` is published as both an immutable application image and E2B template, and the E2B smoke passed. The remote-state-backed Terraform apply created the staging network, subnet, private-service address, Cloud Tasks queue, artifact bucket, runtime/release service accounts, secret containers/versions, and required APIs. It then stopped before Cloud SQL and Cloud Run because the active account `abhinav.malkoochi@gmail.com` has Editor and Service Account User, but cannot administer project IAM, service-account IAM, Secret Manager IAM, or private service networking.
+Release `df535ac` is deployed as immutable application image `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:df535ac` and E2B template `lesson-studio-renderer:df535ac`. The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service was not modified.
 
-The project owner must grant the deployer the missing authority before resuming. The simplest temporary grant is project Owner, removed after deployment in favor of a dedicated least-privilege release identity. Creating the project budget also requires Billing Account Costs Manager on billing account `0181BB-902BC6-5D4673`. A budget is an alert, not a spending lock.
+The remote-state-backed Terraform stack is fully applied for domainless staging and a fresh plan reports no changes. It includes the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, and the $20 monthly GCP budget alert. The budget is an alert, not a spending lock.
 
-```sh
-gcloud projects add-iam-policy-binding educationalvideo-506219 \
-  --member=user:abhinav.malkoochi@gmail.com \
-  --role=roles/owner
-
-gcloud billing accounts add-iam-policy-binding 0181BB-902BC6-5D4673 \
-  --member=user:abhinav.malkoochi@gmail.com \
-  --role=roles/billing.costsManager
-```
-
-These commands must be run by an identity already authorized to change the corresponding policies. Do not destroy the partial resources: a fresh `terraform plan` and `terraform apply` will resume from the protected GCS state.
+The migration, Identity Platform smoke, Stripe hosted-Checkout smoke, E2B runtime smoke, signed-out security checks, automated tests, and application build pass. The remaining staging acceptance work is a signed-in silent generation and narrated generation through the full callback-to-artifact path, notification-channel ownership, and the custom domain/managed edge after the owner supplies a hostname and DNS access.
 
 ## Release sequence
 
@@ -72,4 +62,4 @@ npm run test:e2e
 
 `smoke:identity` creates and deletes a uniquely named temporary Identity Platform user. `smoke:stripe` creates a hosted sandbox Checkout session and deletes its temporary database user. `smoke:e2b` disables internet access, checks the pinned runtime, and always kills the disposable sandbox.
 
-The 2026-08-24 release-candidate certification passed on `lesson-studio-renderer:c50b97a`. This certifies the worker runtime, not the callback-to-artifact path; rerun the full silent and narrated generation checks after staging exists.
+The 2026-08-24 runtime certification passed on `lesson-studio-renderer:df535ac`. This certifies the worker runtime, not the callback-to-artifact path; complete the signed-in silent and narrated generation checks before treating staging as fully accepted.

@@ -28,3 +28,8 @@ output "release_service_account" {
   value       = google_service_account.release.email
   description = "Use this identity for Cloud Build application and deployment configs."
 }
+
+output "operations_dashboard" {
+  value       = google_monitoring_dashboard.operations.id
+  description = "Cloud Monitoring dashboard for the staging application and generation pipeline."
+}

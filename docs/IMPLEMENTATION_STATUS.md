@@ -45,15 +45,16 @@ Updated: 2026-08-24
 - Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
 - Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
 - Terraform now supports a domainless, scale-to-zero staging profile with a shared-core database, two E2B workers, three API instances, and a $20 GCP alerting budget while retaining strict production safety checks.
-- Immutable release `c50b97a` was published as application image `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:c50b97a` and E2B template `lesson-studio-renderer:c50b97a`; the E2B runtime smoke passed.
-- The protected remote Terraform state bucket and the first non-billable/low-cost staging resources were created. The apply stopped safely before Cloud SQL and Cloud Run when the active deployer lacked IAM-policy and private-service-networking administration permissions.
+- Immutable release `df535ac` is deployed as application image `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:df535ac` and E2B template `lesson-studio-renderer:df535ac`; migration, E2B, Identity Platform, Stripe Checkout, health, build, automated, and signed-out security checks pass.
+- The domainless staging stack is fully applied from protected remote Terraform state. It includes private Cloud SQL, API/dispatcher/migration Cloud Run resources, Cloud Tasks, a private versioned artifact bucket, least-privilege identities, alert policies, an 11-chart operations dashboard, and a $20 monthly GCP budget alert. A fresh plan reports no drift.
+- The canonical public staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`. The pre-existing `lesson-studio` singleton remains unchanged.
 
 ## Remaining before production launch
 
 - Select and store a distinct live restricted Stripe key for production; the current isolated Stripe key is staging-only.
-- Have a project owner grant the deployer temporary project Owner access (or the equivalent granular IAM/service-account/secret/network administration roles) and Billing Account Costs Manager on the linked billing account, then resume the remote-state-backed staging apply.
-- After the apply completes, run the migration and a real callback-to-artifact generation through Cloud Tasks, Cloud Run, E2B, the scoped Codex proxy, and private GCS.
+- Run a silent and a narrated callback-to-artifact generation through the signed-in website, Cloud Tasks, Cloud Run, E2B, the scoped Codex proxy, Speechify, and private GCS.
 - Point staging DNS at the load-balancer IP, wait for certificate activation, and verify direct `run.app` requests cannot bypass Cloud Armor.
+- Choose and verify monitoring notification recipients, review Identity Platform email templates/sender identity, and assign a named support/on-call owner.
 - Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.
 
-The E2B API key and staging Stripe sandbox key exist in Secret Manager. No production database or reserved E2B capacity is provisioned. The partial staging apply currently has no Cloud SQL instance or Cloud Run service, so the main recurring staging cost has not started; resume it only after the documented IAM grant.
+The OpenAI, E2B, Speechify, Identity Platform, staff-email, Stripe sandbox, and Stripe webhook credentials are bound from Secret Manager without committing their values. No production database, live Stripe credential, or reserved E2B capacity is provisioned. Domainless staging now incurs the documented shared-core Cloud SQL and usage-based service costs; the $20 GCP budget is alerting only and excludes OpenAI, E2B, Speechify, and Stripe.
