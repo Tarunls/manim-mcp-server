@@ -12,16 +12,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 pkg-config python3 python3-dev python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/lesson-studio/app
+WORKDIR /opt/lesson-studio/deps
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev \
     && npx remotion browser ensure \
-    && python3 -m venv .venv \
-    && .venv/bin/pip install --no-cache-dir "manim>=0.19,<0.20"
+    && python3 -m venv /opt/lesson-studio/venv \
+    && /opt/lesson-studio/venv/bin/pip install --no-cache-dir "manim>=0.19,<0.20"
 
+WORKDIR /opt/lesson-studio/app
 COPY . .
 RUN mkdir -p /opt/lesson-studio /workspace studio/projects \
+    && mv /opt/lesson-studio/deps/node_modules node_modules \
+    && mv /opt/lesson-studio/venv venv \
     && chmod 0555 e2b/bootstrap.mjs \
+    && chown -R node:node /workspace studio/projects \
     && chmod 0770 /workspace studio/projects
 
 WORKDIR /workspace
+USER node

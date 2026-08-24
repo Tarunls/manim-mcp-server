@@ -119,10 +119,11 @@ def main() -> None:
         fail("Panel-based scenes must call assert_inside for every panel's content.")
 
     # A virtualenv puts executables in Scripts/ on Windows and bin/ elsewhere.
-    manim = (root / ".venv" / "Scripts" / "manim.exe" if os.name == "nt"
-             else root / ".venv" / "bin" / "manim")
+    venv = root / (".venv" if (root / ".venv").exists() else "venv")
+    manim = (venv / "Scripts" / "manim.exe" if os.name == "nt"
+             else venv / "bin" / "manim")
     if not manim.exists():
-        fail("Manim is not installed in .venv. Run: npm run setup:manim")
+        fail("Manim is not installed in the project virtual environment. Run: npm run setup:manim")
 
     media_dir = project_dir / ".media"
     command = [

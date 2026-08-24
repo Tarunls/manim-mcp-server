@@ -35,9 +35,10 @@ def main() -> None:
     if project_dir not in output_dir.parents:
         fail("Insert output must stay inside the project.")
     transparent = sys.argv[5].lower() == "true"
-    manim = root / ".venv" / ("Scripts/manim.exe" if os.name == "nt" else "bin/manim")
+    venv = root / (".venv" if (root / ".venv").exists() else "venv")
+    manim = venv / ("Scripts/manim.exe" if os.name == "nt" else "bin/manim")
     if not manim.exists():
-        fail("Manim is not installed in .venv.")
+        fail("Manim is not installed in the project virtual environment.")
     media_dir = project_dir / ".composite-media" / output_dir.name
     if media_dir.exists():
         shutil.rmtree(media_dir)

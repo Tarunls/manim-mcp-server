@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 /**
@@ -10,9 +11,10 @@ import path from "node:path";
 export const isWindows = process.platform === "win32";
 
 export function venvBin(root: string, name: string): string {
+  const directory = fs.existsSync(path.join(root, ".venv")) ? ".venv" : "venv";
   return isWindows
-    ? path.join(root, ".venv", "Scripts", `${name}.exe`)
-    : path.join(root, ".venv", "bin", name);
+    ? path.join(root, directory, "Scripts", `${name}.exe`)
+    : path.join(root, directory, "bin", name);
 }
 
 export const manimPath = (root: string) => venvBin(root, "manim");
