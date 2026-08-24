@@ -2,7 +2,7 @@
 
 ## Lesson Studio MVP
 
-Production hardening is being implemented incrementally. The target trust boundaries, data flow, and security requirements are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), with current progress in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+The production foundation is implemented; staging and launch certification remain. The trust boundaries, data flow, and security requirements are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), with current progress in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 Hosted mode uses `EXECUTION_MODE=e2b`, PostgreSQL, Cloud Tasks, private GCS artifacts, and a pinned E2B template. Build that template with `npm run e2b:build-template`; production startup intentionally fails if any required hosted dependency is missing.
 
@@ -61,7 +61,7 @@ Never put the key in a `VITE_*` variable. Vite exposes those values to browser c
 
 Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
 
-The app starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Internally, Faster uses a cost-conscious configuration, Balanced preserves the studio's established high-quality default, and Try harder adds deeper reasoning for difficult generations.
+Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. Hosted E2B workers instead receive an active-job-scoped proxy token in `.env`; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Internally, Faster uses a cost-conscious configuration, Balanced preserves the studio's established high-quality default, and Try harder adds deeper reasoning for difficult generations.
 
 ### Billing
 
@@ -86,54 +86,17 @@ Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`,
 
 The included `Dockerfile` packages Node, FFmpeg, Manim, and Remotion's browser dependencies for Cloud Run. `cloudbuild.yaml` caches the heavy rendering layers. The public homepage and pricing page require no account; the studio uses Google Cloud Identity Platform email/password accounts with mandatory email verification. Staff emails receive the full internal plan without requiring a Stripe subscription.
 
-Use these Secret Manager names:
+The scalable Terraform deployment expects these existing Secret Manager names:
 
 - `openai_api_key` -> `OPENAI_API_KEY`
+- `e2b_api_key` -> `E2B_API_KEY`
 - `stripe_test_api_key` -> `STRIPE_SECRET_KEY`
 - `stripe_webhook_secret` -> `STRIPE_WEBHOOK_SECRET`
 - `speechify_key` -> `SPEECHIFY_API_KEY`
 - `identity_platform_api_key` -> `IDENTITY_PLATFORM_API_KEY`
-- `session_secret` -> `SESSION_SECRET`
 - `staff_emails` -> `STAFF_EMAILS`
 
-Provision Identity Platform, staff accounts, private initial-password secrets, and the Cloud Run secret mappings with:
-
-```sh
-GCP_PROJECT="your-project-id" \
-APP_BASE_URL="https://your-service-url" \
-GCP_RUNTIME_SERVICE_ACCOUNT="lesson-studio-runtime@your-project-id.iam.gserviceaccount.com" \
-npm run identity:setup
-```
-
-Create a private Cloud Storage bucket, grant only the runtime service account access, mount it at `/data`, and keep Cloud Run in a single-writer configuration with:
-
-```sh
-GCP_PROJECT="your-project-id" \
-GCP_RUNTIME_SERVICE_ACCOUNT="lesson-studio-runtime@your-project-id.iam.gserviceaccount.com" \
-npm run gcp:storage
-```
-
-After the first service deployment gives you a URL, the authenticated Stripe CLI can create the test webhook without printing its signing secret. The script stores that secret, grants only the runtime service account access, and updates the Cloud Run service:
-
-```sh
-GCP_PROJECT="your-project-id" \
-APP_BASE_URL="https://your-service-url" \
-GCP_RUNTIME_SERVICE_ACCOUNT="lesson-studio-runtime@your-project-id.iam.gserviceaccount.com" \
-npm run stripe:cloud-webhook
-```
-
-On Windows, set the same values with PowerShell's `$env:` syntax. If the Google Cloud CLI is not on `PATH`, also set `GCLOUD_BIN` to the absolute path of `gcloud.cmd`.
-
-To activate generation, add a value to `openai_api_key` in Secret Manager, then attach it without exposing the key in source or deployment history:
-
-```sh
-gcloud run services update lesson-studio \
-  --project="your-project-id" \
-  --region="us-central1" \
-  --update-secrets="OPENAI_API_KEY=openai_api_key:latest"
-```
-
-Projects, billing state, and rendered outputs live on the mounted bucket rather than Cloud Run's temporary filesystem. The service intentionally stays at one instance because its JSON metadata stores have single-writer semantics. Before horizontally scaling, move metadata to a transactional database while keeping large media in object storage.
+Terraform generates the database URL, job callback secret, and audit secret, and grants each Cloud Run identity access only to its required secrets. The API stores metadata in regional Cloud SQL and media in private GCS; E2B generation is asynchronous through Cloud Tasks, so Cloud Run remains stateless and horizontally scalable. The older `identity:setup`, `gcp:storage`, and `stripe:cloud-webhook` scripts exist for the legacy singleton only and must not be used to mutate a Terraform-managed staging or production environment.
 
 Public deployments must use a live Stripe secret before paid buttons are enabled. Keep `ALLOW_TEST_CHECKOUT=false` in production. Before collecting live payments, configure the appropriate tax registrations and decide whether Stripe Tax should be enabled; do not turn on automatic tax collection without those business decisions.
 

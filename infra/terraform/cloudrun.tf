@@ -13,6 +13,8 @@ locals {
     GENERATION_DISPATCH_SERVICE_ACCOUNT = google_service_account.task_invoker.email
     STUDIO_ARTIFACT_BUCKET              = google_storage_bucket.artifacts.name
     E2B_MAX_CONCURRENT_SANDBOXES        = tostring(var.max_concurrent_sandboxes)
+    CODEX_MAX_API_CALLS_PER_JOB         = "64"
+    CODEX_UPSTREAM_TIMEOUT_MS           = "2700000"
     REQUIRE_DATABASE                    = "true"
     DATABASE_SSL                        = "disable"
   }
@@ -32,13 +34,13 @@ locals {
     DATABASE_URL        = google_secret_manager_secret.database_url.secret_id
     JOB_CALLBACK_SECRET = google_secret_manager_secret.job_callback.secret_id
     E2B_API_KEY         = var.secret_ids.e2b_api_key
-    OPENAI_API_KEY      = var.secret_ids.openai_api_key
   }
   api_secret_env = {
     DATABASE_URL              = google_secret_manager_secret.database_url.secret_id
     JOB_CALLBACK_SECRET       = google_secret_manager_secret.job_callback.secret_id
     AUDIT_HASH_SECRET         = google_secret_manager_secret.audit_hash.secret_id
     IDENTITY_PLATFORM_API_KEY = var.secret_ids.identity_api_key
+    OPENAI_API_KEY            = var.secret_ids.openai_api_key
     SPEECHIFY_API_KEY         = var.secret_ids.speechify_api_key
     STRIPE_SECRET_KEY         = var.secret_ids.stripe_api_key
     STRIPE_WEBHOOK_SECRET     = var.secret_ids.stripe_webhook
@@ -144,7 +146,7 @@ resource "google_cloud_run_v2_service" "api" {
   deletion_protection = var.environment == "production"
   template {
     service_account                  = google_service_account.api.email
-    timeout                          = "300s"
+    timeout                          = "3600s"
     max_instance_request_concurrency = 80
     scaling {
       min_instance_count = var.environment == "production" ? 1 : 0

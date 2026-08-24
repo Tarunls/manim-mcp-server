@@ -12,6 +12,7 @@ const sandboxEnvPath = "/workspace/.env";
 const callbackUrl = process.env.JOB_CALLBACK_URL;
 const callbackToken = process.env.JOB_CALLBACK_TOKEN;
 const apiKey = process.env.OPENAI_API_KEY;
+const openaiBaseUrl = process.env.OPENAI_BASE_URL;
 
 function required(value, name) {
   if (!value) throw new Error(`${name} is missing from the sandbox environment.`);
@@ -82,6 +83,7 @@ function redactSecrets(value) {
 
 try {
   required(apiKey, "OPENAI_API_KEY");
+  required(openaiBaseUrl, "OPENAI_BASE_URL");
   await fs.mkdir(projectRoot, { recursive: true });
   if (job.revisionSourceUrl) {
     await download(job.revisionSourceUrl, "/workspace/revision-source.tar.gz");
@@ -109,7 +111,7 @@ try {
     localAttachments.push({ type: "local_image", path: target });
   }
   await Promise.all([
-    fs.writeFile(sandboxEnvPath, `OPENAI_API_KEY=${apiKey}\n`, { mode: 0o600 }),
+    fs.writeFile(sandboxEnvPath, `OPENAI_API_KEY=${apiKey}\nOPENAI_BASE_URL=${openaiBaseUrl}\n`, { mode: 0o600 }),
     fs.writeFile(path.join(projectRoot, "generation-request.json"), JSON.stringify({
       id: job.id,
       mode: "hosted-generation",
@@ -137,6 +139,8 @@ ${String(job.prompt).slice(0, 12000)}
 </lesson_brief>`;
   const codex = new Codex({
     apiKey,
+    baseUrl: openaiBaseUrl,
+    config: { features: { responses_websockets: false } },
     env: {
       PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
       HOME: process.env.HOME || "/home/user",

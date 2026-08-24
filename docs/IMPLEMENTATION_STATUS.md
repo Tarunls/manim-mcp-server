@@ -18,7 +18,8 @@ Updated: 2026-08-23
 - Idempotent Cloud Tasks publication with a named task per generation and OIDC-authenticated delivery.
 - Global E2B concurrency gating, crash-recoverable dispatch claims, one sandbox per generation, and sandbox termination on cancellation.
 - Versioned E2B renderer template, official Codex SDK bootstrap, an ephemeral mode-`0600` `.env`, and automatic secret deletion.
-- E2B egress restricted to OpenAI, signed GCS uploads, and the job callback host. The sandbox receives no GCP, database, Identity Platform, Stripe, or Speechify credential.
+- E2B egress restricted to signed GCS uploads and the application callback/proxy host. The sandbox receives no upstream OpenAI, GCP, database, Identity Platform, Stripe, or Speechify credential.
+- Job-scoped OpenAI proxy tokens, active-job checks, and a concurrent-safe per-job call budget keep the upstream API key outside untrusted sandboxes.
 - Private GCS artifacts validated by content type, size, generation, and storage checksum before completion; browser reads use ownership checks and ten-minute signed URLs.
 - Job-scoped Speechify proxy capped at 12 segments so narration can render without exposing the provider key to generated code.
 - PostgreSQL-backed Stripe profiles and idempotent webhook processing.

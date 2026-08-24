@@ -9,19 +9,19 @@ This document is the implementation contract for the hosted SaaS. Production mus
 3. The API writes user, project, billing, credit-ledger, and generation-job changes to PostgreSQL in transactions.
 4. A generation request commits a job, credit reservation, and outbox event atomically. The dispatcher publishes that job to Cloud Tasks.
 5. The private dispatch endpoint starts one E2B sandbox from the pinned renderer template, records the sandbox ID, starts the Codex/render bootstrap, and acknowledges the task.
-6. The sandbox has no GCP, database, Identity Platform, or Stripe credential. It receives only its OpenAI API key, a one-time callback token, and narrowly scoped artifact upload URLs.
+6. The sandbox has no upstream OpenAI, GCP, database, Identity Platform, or Stripe credential. Its `.env` contains a job-scoped OpenAI proxy token, and the bootstrap separately holds a callback token and narrowly scoped artifact upload URLs.
 7. The API validates completion callbacks, verifies uploaded artifacts, commits the final version, and exposes short-lived signed read URLs after checking ownership.
 
 ## Trust boundaries
 
 - **Public edge:** External Application Load Balancer, Google-managed TLS certificate, HTTPS redirect, and Cloud Armor rate bans. Terraform restricts API ingress to load-balancer and internal traffic so the public `run.app` URL cannot bypass edge policy.
-- **Web/API:** Stateless Cloud Run service. It may access Identity Platform, PostgreSQL, Cloud Tasks, and object metadata. It never executes generated code.
+- **Web/API:** Stateless Cloud Run service. It may access Identity Platform, PostgreSQL, Cloud Tasks, object metadata, and the upstream OpenAI key used only by the scoped proxy. It never executes generated code.
 - **Dispatcher:** Private Cloud Run service invoked only by the Cloud Tasks OIDC service account. It may create and terminate E2B sandboxes but does not hold end-user sessions.
 - **Sandbox:** One disposable E2B micro-VM per generation. Generated code and user prompts are untrusted. The sandbox cannot reach application secrets or another user's files.
 - **Database:** Private-IP Cloud SQL PostgreSQL with regional HA, PITR, deletion protection, and bounded connection pools.
 - **Artifacts:** Private Cloud Storage with uniform bucket-level access and public access prevention. Browsers use expiring signed URLs after application authorization.
 
-The same immutable container image runs with `SERVICE_ROLE=api` or `SERVICE_ROLE=dispatcher`. Route guards fail closed across roles, and Terraform gives each role a different service account and different Secret Manager grants. The API cannot read OpenAI or E2B credentials; the dispatcher cannot read Identity Platform, Stripe, Speechify, or staff configuration.
+The same immutable container image runs with `SERVICE_ROLE=api` or `SERVICE_ROLE=dispatcher`. Route guards fail closed across roles, and Terraform gives each role a different service account and different Secret Manager grants. The API cannot read the E2B credential; the dispatcher cannot read OpenAI, Identity Platform, Stripe, Speechify, or staff configuration.
 
 ## Database ownership model
 
@@ -48,7 +48,7 @@ Production starts with `REQUIRE_DATABASE=true`; this makes the service fail clos
 
 ## Sandbox secret policy
 
-Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. If a local `.env` file is required by the Codex bootstrap, the sandbox creates it with mode `0600`, never logs it, excludes it from archives, and deletes it before completion. The Codex child environment does not receive the callback credential, and archive-bound files are rejected if they contain raw sandbox credential material, links, special files, or unsafe paths.
+Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. The sandbox creates `.env` with a job-scoped proxy token and proxy base URL, mode `0600`; it never receives the upstream OpenAI key, never logs the file, excludes it from archives, and deletes it before completion. The proxy token is accepted only while its job is active and is capped at 64 upstream calls by default. The Codex child environment does not receive the callback credential, and archive-bound files are rejected if they contain raw sandbox credential material, links, special files, or unsafe paths.
 
 The Codex process must never inherit the web service environment. Speechify and licensed-asset operations should move behind scoped application callbacks so their provider keys are not visible to generated code.
 

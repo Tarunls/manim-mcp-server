@@ -76,7 +76,11 @@ export class HostedGenerationService {
   }
 
   callbackToken(jobId: string) {
-    return createHmac("sha256", this.callbackSecret()).update(`lesson-studio-job:${jobId}`).digest("base64url");
+    return createHmac("sha256", this.callbackSecret()).update(`lesson-studio-callback:${jobId}`).digest("base64url");
+  }
+
+  codexToken(jobId: string) {
+    return createHmac("sha256", this.callbackSecret()).update(`lesson-studio-codex:${jobId}`).digest("base64url");
   }
 
   private callbackHash(jobId: string) {
@@ -341,6 +345,16 @@ export class HostedGenerationService {
     if (!row || !token) return undefined;
     const actual = Buffer.from(createHash("sha256").update(token).digest("hex"));
     const expected = Buffer.from(row.callback_token_hash);
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return undefined;
+    return this.fromRow(row);
+  }
+
+  async verifyCodexAccess(jobId: string, token: string) {
+    const result = await this.db.query<JobRow>("SELECT * FROM generation_jobs WHERE id = $1", [jobId]);
+    const row = result.rows[0];
+    if (!row || !token || !["dispatching", "running", "uploading"].includes(row.status)) return undefined;
+    const actual = Buffer.from(token);
+    const expected = Buffer.from(this.codexToken(jobId));
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return undefined;
     return this.fromRow(row);
   }

@@ -10,7 +10,7 @@ export class E2BDispatcher {
   ) {}
 
   get configured() {
-    return Boolean(this.generations.configured && this.artifacts.configured && process.env.E2B_API_KEY && process.env.OPENAI_API_KEY);
+    return Boolean(this.generations.configured && this.artifacts.configured && process.env.E2B_API_KEY);
   }
 
   async dispatch(jobId: string) {
@@ -59,13 +59,14 @@ export class E2BDispatcher {
         timeoutMs: Number(process.env.E2B_SANDBOX_TIMEOUT_MS || 45 * 60_000),
         metadata: { app: "lesson-studio", jobId: job.id, ownerHash: createHash("sha256").update(job.ownerId).digest("hex").slice(0, 16) },
         envs: {
-          OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+          OPENAI_API_KEY: this.generations.codexToken(job.id),
+          OPENAI_BASE_URL: `${callbackBaseUrl.replace(/\/$/, "")}/api/internal/codex/${job.id}/v1`,
           JOB_CALLBACK_TOKEN: this.generations.callbackToken(job.id),
           JOB_CALLBACK_URL: `${callbackBaseUrl.replace(/\/$/, "")}/api/internal/generation/${job.id}`,
         },
         allowInternetAccess: true,
         network: {
-          allowOut: ["api.openai.com", "storage.googleapis.com", callbackHost],
+          allowOut: ["storage.googleapis.com", callbackHost],
           denyOut: ({ allTraffic }) => [allTraffic],
           allowPublicTraffic: false,
         },

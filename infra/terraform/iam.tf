@@ -102,14 +102,14 @@ resource "google_secret_manager_secret_iam_member" "dispatcher_generated" {
 }
 
 resource "google_secret_manager_secret_iam_member" "api_existing" {
-  for_each  = toset([var.secret_ids.identity_api_key, var.secret_ids.speechify_api_key, var.secret_ids.stripe_api_key, var.secret_ids.stripe_webhook, var.secret_ids.staff_emails])
+  for_each  = toset([var.secret_ids.identity_api_key, var.secret_ids.openai_api_key, var.secret_ids.speechify_api_key, var.secret_ids.stripe_api_key, var.secret_ids.stripe_webhook, var.secret_ids.staff_emails])
   secret_id = each.value
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.api.email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "dispatcher_existing" {
-  for_each  = toset([var.secret_ids.openai_api_key, var.secret_ids.e2b_api_key])
+  for_each  = toset([var.secret_ids.e2b_api_key])
   secret_id = each.value
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.dispatcher.email}"

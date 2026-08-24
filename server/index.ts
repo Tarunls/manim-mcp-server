@@ -3,6 +3,8 @@ import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import path from "node:path";
 import fs from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
@@ -22,6 +24,7 @@ import { verifyCloudTask } from "./internal-auth.js";
 import { HostedBillingService } from "./hosted-billing-service.js";
 import { ScopedNarrationService } from "./scoped-narration.js";
 import { HostedMediaService } from "./hosted-media-service.js";
+import { ScopedCodexProxy } from "./scoped-codex-proxy.js";
 import type { BillingPlanId, ColorPalette, FontCategory, GenerationEffort, GenerationIntent, RendererKind, ReviewFocus, ReviewStrictness, StudioEvent } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
@@ -49,6 +52,7 @@ const dispatcher = new E2BDispatcher(generations, artifacts);
 const hostedBilling = new HostedBillingService(database);
 const scopedNarration = new ScopedNarrationService(database);
 const hostedMedia = new HostedMediaService(database, artifacts);
+const scopedCodex = new ScopedCodexProxy(database);
 const port = Number(process.env.PORT || 4321);
 const host = process.env.HOST || (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
 const serviceRole = process.env.SERVICE_ROLE === "api" || process.env.SERVICE_ROLE === "dispatcher" ? process.env.SERVICE_ROLE : "all";
@@ -59,9 +63,10 @@ function validateProductionConfiguration() {
   if (!database.configured) missing.push("DATABASE_URL");
   if (process.env.EXECUTION_MODE !== "e2b") missing.push("EXECUTION_MODE=e2b");
   if (serviceRole !== "dispatcher" && !auth.configured) missing.push("IDENTITY_PLATFORM_API_KEY");
-  if (serviceRole !== "api" && !dispatcher.configured) missing.push("E2B/OpenAI/artifact configuration");
+  if (serviceRole !== "api" && !dispatcher.configured) missing.push("E2B/artifact configuration");
   if (!generationQueue.configured) missing.push("Cloud Tasks identity and URL configuration");
   if (serviceRole !== "dispatcher" && !hostedBilling.configured) missing.push("Stripe configuration");
+  if (serviceRole !== "dispatcher" && !scopedCodex.configured) missing.push("OpenAI proxy configuration");
   if (serviceRole !== "dispatcher" && process.env.BILLING_MODE_REQUIRED && hostedBilling.billingMode !== process.env.BILLING_MODE_REQUIRED) {
     missing.push(`STRIPE_SECRET_KEY (${process.env.BILLING_MODE_REQUIRED} mode)`);
   }
@@ -262,6 +267,29 @@ app.post("/api/internal/generation/:jobId/narration", async (request, response) 
     response.json(await scopedNarration.speak(job, request.body || {}));
   } catch (error) {
     response.status(409).json({ error: error instanceof Error ? error.message : "Narration failed." });
+  }
+});
+
+app.post(["/api/internal/codex/:jobId/v1/responses", "/api/internal/codex/:jobId/v1/responses/compact"], async (request, response) => {
+  const token = (request.header("authorization") || "").replace(/^Bearer\s+/i, "");
+  const job = await generations.verifyCodexAccess(String(request.params.jobId), token);
+  if (!job) return response.status(401).json({ error: "Invalid or expired Codex credential." });
+  try {
+    const upstream = await scopedCodex.responses(job, request.body, {
+      headers: Object.fromEntries(["accept", "openai-beta", "x-client-request-id", "x-codex-installation-id", "x-codex-routing-hint", "x-codex-turn-state", "x-oai-attestation", "x-openai-subagent"]
+        .map((name) => [name, request.header(name)])),
+      compact: request.path.endsWith("/compact"),
+    });
+    response.status(upstream.status);
+    for (const header of ["content-type", "openai-processing-ms", "retry-after", "x-codex-turn-state", "x-request-id"]) {
+      const value = upstream.headers.get(header);
+      if (value) response.setHeader(header, value);
+    }
+    if (!upstream.body) return response.end();
+    await pipeline(Readable.fromWeb(upstream.body as import("node:stream/web").ReadableStream), response);
+  } catch (error) {
+    if (response.headersSent) return response.destroy(error instanceof Error ? error : undefined);
+    response.status(502).json({ error: error instanceof Error ? error.message : "OpenAI request failed." });
   }
 });
 

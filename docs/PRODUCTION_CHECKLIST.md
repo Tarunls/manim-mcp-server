@@ -7,7 +7,8 @@
 - Cross-user project, job, artifact, review, and billing requests return `404` or `401` without leaking existence.
 - Cloud Run dispatcher rejects public callers and accepts only the Cloud Tasks OIDC service account.
 - The API `run.app` URL cannot bypass the HTTPS load balancer or Cloud Armor, and HTTP redirects to the canonical HTTPS origin.
-- E2B egress tests prove arbitrary hosts are blocked and `.env` is mode `0600`, excluded from archives, and deleted.
+- E2B egress tests prove arbitrary hosts and direct OpenAI access are blocked; `.env` contains only a job-scoped proxy token, is mode `0600`, excluded from archives, and deleted.
+- A completed/cancelled job and another job's proxy token cannot call the OpenAI proxy; the per-job request budget remains enforced under concurrency.
 - GCS public access prevention and uniform bucket-level access are enabled.
 - Secret Manager access logs show the API/dispatcher split described in the runbook.
 - Dependency audit reports no high or critical vulnerabilities; SAST and container scanning pass.

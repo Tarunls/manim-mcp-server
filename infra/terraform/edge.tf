@@ -54,7 +54,7 @@ resource "google_compute_backend_service" "api" {
   protocol              = "HTTP"
   port_name             = "http"
   load_balancing_scheme = "EXTERNAL_MANAGED"
-  timeout_sec           = 300
+  timeout_sec           = 3600
   security_policy       = google_compute_security_policy.edge.id
   backend {
     group = google_compute_region_network_endpoint_group.api.id

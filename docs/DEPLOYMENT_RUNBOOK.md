@@ -34,6 +34,6 @@ Do not convert the existing singleton in place. Build staging beside it, validat
 
 ## Secrets and logs
 
-API and dispatcher service accounts have disjoint secret access. The API cannot read the E2B or OpenAI key; the dispatcher cannot read Stripe, Identity Platform, Speechify, or staff secrets. Generated code receives only OpenAI, a job-scoped callback credential, and expiring upload URLs inside the disposable E2B boundary.
+API and dispatcher service accounts have disjoint secret access. The API owns the upstream OpenAI key for its job-scoped proxy but cannot read the E2B key; the dispatcher cannot read OpenAI, Stripe, Identity Platform, Speechify, or staff secrets. Generated code receives only a job-scoped proxy token in `.env`; the bootstrap separately holds a callback credential and expiring upload URLs inside the disposable E2B boundary.
 
 Application logs must contain IDs, state transitions, latency, and safe error codes—not prompts, emails, cookies, provider responses, signed URLs, or secret values.

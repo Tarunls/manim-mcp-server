@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Database } from "../server/database.js";
 import { HostedGenerationService } from "../server/hosted-generation-service.js";
 import { ProjectRepository } from "../server/project-repository.js";
+import { ScopedCodexProxy } from "../server/scoped-codex-proxy.js";
 import type { StudioProject } from "../server/types.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -13,8 +14,13 @@ const connectionString = process.env.TEST_DATABASE_URL;
 test("hosted generation reserves credits and jobs atomically", { skip: !connectionString }, async () => {
   const previousMode = process.env.EXECUTION_MODE;
   const previousSecret = process.env.JOB_CALLBACK_SECRET;
+  const previousOpenAiKey = process.env.OPENAI_API_KEY;
+  const previousCodexLimit = process.env.CODEX_MAX_API_CALLS_PER_JOB;
+  const originalFetch = globalThis.fetch;
   process.env.EXECUTION_MODE = "e2b";
   process.env.JOB_CALLBACK_SECRET = "integration-test-callback-secret-32-characters";
+  process.env.OPENAI_API_KEY = "integration-upstream-key";
+  process.env.CODEX_MAX_API_CALLS_PER_JOB = "1";
   const db = new Database(connectionString);
   let testOwnerId: string | undefined;
   try {
@@ -60,7 +66,29 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
       [ownerId],
     );
     assert.deepEqual(ledger.rows[0], { count: "1", balance: "-1" });
+    await service.claimDispatch(first.jobId);
+    const callbackToken = service.callbackToken(first.jobId);
+    const codexToken = service.codexToken(first.jobId);
+    assert.notEqual(callbackToken, codexToken);
+    assert.equal((await service.verifyCallback(first.jobId, callbackToken))?.id, first.jobId);
+    assert.equal((await service.verifyCodexAccess(first.jobId, codexToken))?.id, first.jobId);
+    assert.equal(await service.verifyCodexAccess(first.jobId, callbackToken), undefined);
+    globalThis.fetch = async (url, init) => {
+      assert.equal(String(url), "https://api.openai.com/v1/responses/compact");
+      assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer integration-upstream-key");
+      assert.equal((init?.headers as Record<string, string>)["openai-beta"], "responses=test");
+      return new Response(JSON.stringify({ id: "response_test" }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const proxy = new ScopedCodexProxy(db);
+    const activeJob = (await service.getForDispatch(first.jobId))!;
+    const calls = await Promise.allSettled([
+      proxy.responses(activeJob, { model: "test", input: "hello" }, { compact: true, headers: { "openai-beta": "responses=test" } }),
+      proxy.responses(activeJob, { model: "test", input: "duplicate" }, { compact: true, headers: { "openai-beta": "responses=test" } }),
+    ]);
+    assert.equal(calls.filter((result) => result.status === "fulfilled").length, 1);
+    assert.equal(calls.filter((result) => result.status === "rejected").length, 1);
     await service.fail(first.jobId, new Error("test failure"), true);
+    assert.equal(await service.verifyCodexAccess(first.jobId, codexToken), undefined);
     const refunded = await db.query<{ balance: string }>(
       "SELECT COALESCE(sum(amount), 0)::text AS balance FROM credit_ledger WHERE user_id = $1",
       [ownerId],
@@ -73,5 +101,10 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     else process.env.EXECUTION_MODE = previousMode;
     if (previousSecret === undefined) delete process.env.JOB_CALLBACK_SECRET;
     else process.env.JOB_CALLBACK_SECRET = previousSecret;
+    if (previousOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousOpenAiKey;
+    if (previousCodexLimit === undefined) delete process.env.CODEX_MAX_API_CALLS_PER_JOB;
+    else process.env.CODEX_MAX_API_CALLS_PER_JOB = previousCodexLimit;
+    globalThis.fetch = originalFetch;
   }
 });
