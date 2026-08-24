@@ -114,6 +114,8 @@ Public deployments must use a live Stripe secret before paid buttons are enabled
 npm run dev          # local server with reload
 npm run check        # TypeScript validation
 npm run build        # production client build + validation
+npm run test         # unit and database-gated integration tests
+npm run test:e2e     # desktop/mobile route, accessibility, and CSRF tests
 npm start            # serve the production build
 npm run setup:manim  # create/update the local Manim environment
 npm run stripe:setup # create missing test products and monthly prices
@@ -121,6 +123,9 @@ npm run stripe:listen # forward selected test webhooks to the local app
 npm run stripe:cloud-webhook # create and securely attach a Cloud Run test webhook
 npm run identity:setup # provision Identity Platform and staff access
 npm run gcp:storage # attach persistent Cloud Storage data
+npm run smoke:identity # temporary real Identity Platform account/session test
+npm run smoke:stripe # real sandbox Checkout creation against a disposable DB user
+npm run smoke:e2b # pinned no-internet E2B runtime test with guaranteed teardown
 ```
 
 If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.

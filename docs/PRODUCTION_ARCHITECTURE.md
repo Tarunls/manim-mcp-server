@@ -66,6 +66,16 @@ E2B_TEMPLATE_VERSION=<immutable-release-id> \
 npm run e2b:build-template
 ```
 
+Certify the built image before updating Terraform:
+
+```sh
+E2B_TEMPLATE=lesson-studio-renderer \
+E2B_TEMPLATE_VERSION=<immutable-release-id> \
+npm run smoke:e2b
+```
+
+The template builds dependency layers outside the application source-copy target and moves them into the final source tree after that copy. The non-root `node` user owns only the writable workspace and generated-project directory.
+
 Never deploy the mutable `dev` tag to production. Set Cloud Tasks maximum concurrent dispatches no higher than `E2B_MAX_CONCURRENT_SANDBOXES`; the database gate is a second line of defense, not a replacement for queue throttling.
 
 ## Capacity model

@@ -24,6 +24,9 @@ Updated: 2026-08-23
 - Job-scoped Speechify proxy capped at 12 segments so narration can render without exposing the provider key to generated code.
 - PostgreSQL-backed Stripe profiles and idempotent webhook processing.
 - A PostgreSQL integration test verifies migrations, generation idempotency, one-time credit reservation, failure, and refund behavior.
+- Hosted billing integration tests verify signed webhook construction, replay idempotency, paid entitlement activation, cancellation, and project isolation against real PostgreSQL.
+- Identity tests cover email normalization, verification gating, safe provider errors, reset enumeration safety, production cookie naming, and exact cookie parsing.
+- Desktop and mobile Playwright coverage verifies public routes, pricing, auth states, CSRF fail-closed behavior, responsive overflow, and serious/critical accessibility findings.
 
 ## Completed deployment layer
 
@@ -33,12 +36,16 @@ Updated: 2026-08-23
 - Commit-SHA application builds, gated CI, ordered migration/deployment pipeline, deployment runbook, rollback procedure, and production certification checklist.
 - Hosted frame extraction, frame-review images, and licensed assets use owner-scoped private GCS objects instead of GCS-FUSE or local durable state.
 - Revisions restore the prior immutable source archive in a new E2B sandbox; frame-review images and licensed assets are supplied through short-lived signed reads.
+- An isolated Stripe CLI sandbox contains stable Creator and Pro lookup-key prices; real hosted Checkout creation was smoke-tested without provisioning access before a webhook.
+- Identity Platform sign-up, verification gating, sign-in, Firebase session creation, session verification, and cleanup passed against the configured GCP project.
+- A reusable release-smoke harness now verifies Identity Platform, Stripe Checkout, and the pinned E2B runtime without committing provider credentials.
+- `lesson-studio-renderer:d13958f-r4` passed the E2B runtime smoke with a non-root user, Node 22, Manim, FFmpeg, Codex SDK resolution, workspace I/O, outbound-network denial, and sandbox teardown.
 
 ## Remaining before production launch
 
-- Create the missing E2B Secret Manager secret and select the correct live Stripe secrets for production.
-- Apply the staging Terraform plan (a billable operation), build the pinned E2B template, and run a real end-to-end generation.
+- Select and store a distinct live restricted Stripe key for production; the current isolated Stripe key is staging-only.
+- Apply the staging Terraform plan (a billable operation) and run a real callback-to-artifact generation through Cloud Tasks, Cloud Run, E2B, the scoped Codex proxy, and private GCS.
 - Point staging DNS at the load-balancer IP, wait for certificate activation, and verify direct `run.app` requests cannot bypass Cloud Armor.
 - Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.
 
-No production database or paid E2B capacity is provisioned by committing these files. Infrastructure creation remains an explicit deployment operation.
+The E2B API key and staging Stripe sandbox key exist in Secret Manager, and a release-candidate E2B template has been built for smoke testing. No production database or reserved E2B capacity is provisioned by committing these files. Infrastructure creation remains an explicit deployment operation.
