@@ -45,6 +45,44 @@ const definitions: Record<
   },
 };
 
+export function validateRenderMetadata(value: unknown): RenderInfo {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Render metadata is invalid.");
+  const metadata = value as Record<string, unknown>;
+  if (metadata.renderer !== undefined && !["manim", "remotion", "composite"].includes(String(metadata.renderer)))
+    throw new Error("Render metadata has an invalid renderer.");
+  const ranges: Array<[string, number, number, boolean]> = [
+    ["duration", 0.01, 3_600, true],
+    ["width", 16, 8_192, false],
+    ["height", 16, 8_192, false],
+    ["fps", 1, 120, false],
+    ["bitRate", 0, 1_000_000_000, false],
+  ];
+  for (const [name, minimum, maximum, required] of ranges) {
+    const candidate = metadata[name];
+    if (candidate === undefined && !required) continue;
+    if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate < minimum || candidate > maximum)
+      throw new Error(`Render metadata has an invalid ${name}.`);
+  }
+  return value as RenderInfo;
+}
+
+export function hasExpectedSignature(kind: ArtifactKind, contents: Buffer) {
+  if (kind === "video") return contents.length >= 8 && contents.subarray(4, 8).toString("ascii") === "ftyp";
+  if (kind === "poster" || kind === "contact_sheet")
+    return contents.length >= 8 && contents.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (kind === "source_archive") return contents.length >= 2 && contents[0] === 0x1f && contents[1] === 0x8b;
+  if (kind === "metadata") {
+    try {
+      validateRenderMetadata(JSON.parse(contents.toString("utf8")));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 export type VerifiedArtifact = {
   kind: ArtifactKind;
   bucket: string;
@@ -136,6 +174,9 @@ export class ArtifactService {
         throw new Error(
           `The ${kind} artifact is missing immutable storage metadata.`,
         );
+      const [signature] = await file.download({ start: 0, end: kind === "metadata" ? definitions.metadata.maxBytes : 31 });
+      if (!hasExpectedSignature(kind, signature))
+        throw new Error(`The ${kind} artifact content is invalid.`);
       verified.push({
         kind,
         bucket: bucket.name,
@@ -156,10 +197,7 @@ export class ArtifactService {
       .download();
     if (contents.length > definitions.metadata.maxBytes)
       throw new Error("Render metadata is too large.");
-    const parsed = JSON.parse(contents.toString("utf8")) as RenderInfo;
-    if (!parsed || typeof parsed !== "object")
-      throw new Error("Render metadata is invalid.");
-    return parsed;
+    return validateRenderMetadata(JSON.parse(contents.toString("utf8")));
   }
 
   async signedReadUrl(

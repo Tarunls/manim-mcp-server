@@ -377,6 +377,21 @@ app.post(
 );
 
 app.post(
+  "/api/internal/generation/reconcile",
+  verifyCloudTask,
+  async (_request, response) => {
+    try {
+      response.json(await dispatcher.reconcile());
+    } catch (error) {
+      console.error("Generation reconciliation failed", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
+      response.status(503).json({ error: "Generation reconciliation will be retried." });
+    }
+  },
+);
+
+app.post(
   "/api/internal/generation/:jobId/complete",
   async (request, response) => {
     const token = (request.header("authorization") || "").replace(
@@ -418,6 +433,10 @@ app.post(
       );
       response.json({ received: true });
     } catch (error) {
+      console.error("Generation artifact validation failed", {
+        jobId: job.id,
+        message: error instanceof Error ? error.message : "unknown",
+      });
       await generations.fail(job.id, error, true);
       response.status(409).json({ error: "Artifact validation failed." });
     }

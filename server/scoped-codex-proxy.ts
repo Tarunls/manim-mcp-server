@@ -97,6 +97,29 @@ function usageFromResponseBody(body: string): Usage | undefined {
   return undefined;
 }
 
+async function boundedResponseBody(response: Response, maximumBytes: number) {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const decoder = new TextDecoder();
+  let body = "";
+  let received = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > maximumBytes) {
+        await reader.cancel("Usage accounting body exceeded its bound.");
+        return "";
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    return body + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function estimatedCostMicrousd(model: string, usage: Usage) {
   const prices =
     model === "gpt-5.6-sol"
@@ -208,8 +231,7 @@ export class ScopedCodexProxy {
         },
       );
       const copy = upstream.clone();
-      void copy
-        .text()
+      void boundedResponseBody(copy, 2 * 1024 * 1024)
         .then(async (responseBody) => {
           const usage = usageFromResponseBody(responseBody);
           await this.db.query(

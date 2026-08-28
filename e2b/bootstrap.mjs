@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { Codex } from "@openai/codex-sdk";
 
@@ -20,28 +23,55 @@ function required(value, name) {
 }
 
 async function callback(suffix, body) {
-  const response = await fetch(`${required(callbackUrl, "JOB_CALLBACK_URL")}${suffix}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${required(callbackToken, "JOB_CALLBACK_TOKEN")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`Job callback failed with HTTP ${response.status}.`);
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetch(`${required(callbackUrl, "JOB_CALLBACK_URL")}${suffix}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${required(callbackToken, "JOB_CALLBACK_TOKEN")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (response.ok) return;
+      if (response.status < 500 && response.status !== 429)
+        throw new Error(`Job callback was rejected with HTTP ${response.status}.`);
+      lastError = new Error(`Job callback failed with HTTP ${response.status}.`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+  }
+  throw lastError || new Error("Job callback failed.");
 }
 
 async function upload(kind, filePath) {
   const target = job.uploads.uploads.find((candidate) => candidate.kind === kind);
   if (!target) throw new Error(`Upload target ${kind} is missing.`);
-  const contents = await fs.readFile(filePath);
-  const response = await fetch(target.url, {
-    method: "PUT",
-    headers: { "Content-Type": target.contentType },
-    body: contents,
-  });
-  if (!response.ok) throw new Error(`Artifact upload ${kind} failed with HTTP ${response.status}.`);
-  return kind;
+  const stat = await fs.stat(filePath);
+  if (!stat.isFile() || !stat.size || stat.size > 750 * 1024 * 1024)
+    throw new Error(`Artifact ${kind} has an invalid size.`);
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(target.url, {
+        method: "PUT",
+        headers: { "Content-Type": target.contentType, "Content-Length": String(stat.size) },
+        body: createReadStream(filePath),
+        duplex: "half",
+        signal: AbortSignal.timeout(10 * 60_000),
+      });
+      if (response.ok) return kind;
+      lastError = new Error(`Artifact upload ${kind} failed with HTTP ${response.status}.`);
+      if (response.status < 500 && response.status !== 429) break;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+  }
+  throw lastError || new Error(`Artifact upload ${kind} failed.`);
 }
 
 async function exists(filePath) {
@@ -49,23 +79,34 @@ async function exists(filePath) {
 }
 
 async function download(url, target) {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(5 * 60_000) });
   if (!response.ok) throw new Error(`Input download failed with HTTP ${response.status}.`);
-  const contents = Buffer.from(await response.arrayBuffer());
-  if (!contents.length || contents.length > 150 * 1024 * 1024) throw new Error("Input download has an invalid size.");
+  if (!response.body) throw new Error("Input download returned no body.");
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > 150 * 1024 * 1024) throw new Error("Input download has an invalid size.");
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, contents);
+  let received = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, done) {
+      received += chunk.length;
+      done(received > 150 * 1024 * 1024 ? new Error("Input download has an invalid size.") : undefined, chunk);
+    },
+  });
+  await pipeline(Readable.fromWeb(response.body), limiter, createWriteStream(target, { mode: 0o600 }));
+  if (!received) throw new Error("Input download has an invalid size.");
 }
 
-async function assertNoSecretMaterial(directory, secrets) {
+async function assertNoSecretMaterial(directory, secrets, accounting = { totalBytes: 0 }) {
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
     if (entry.name === ".git") continue;
     if (directory === projectRoot && entry.name === "output.mp4") continue;
     const target = path.join(directory, entry.name);
     if (entry.isSymbolicLink()) throw new Error("Generated source contains a symbolic link.");
-    if (entry.isDirectory()) await assertNoSecretMaterial(target, secrets);
+    if (entry.isDirectory()) await assertNoSecretMaterial(target, secrets, accounting);
     else if (entry.isFile()) {
       const stat = await fs.stat(target);
+      accounting.totalBytes += stat.size;
+      if (accounting.totalBytes > 300 * 1024 * 1024) throw new Error("Generated source exceeds the allowed total size.");
       if (stat.size > 150 * 1024 * 1024) throw new Error("Generated source contains an oversized file.");
       const contents = await fs.readFile(target);
       if (secrets.some((secret) => secret && contents.includes(Buffer.from(secret)))) throw new Error("Generated source contains sandbox credential material.");
@@ -73,12 +114,12 @@ async function assertNoSecretMaterial(directory, secrets) {
   }
 }
 
-function redactSecrets(value) {
+function redactSecrets(value, maximumLength = 4_000) {
   let safe = String(value || "");
   for (const secret of [apiKey, callbackToken]) {
     if (secret) safe = safe.replaceAll(secret, "[redacted]");
   }
-  return safe.replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]");
+  return safe.replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]").slice(0, maximumLength);
 }
 
 try {
@@ -88,13 +129,18 @@ try {
   if (job.revisionSourceUrl) {
     await download(job.revisionSourceUrl, "/workspace/revision-source.tar.gz");
     const listing = await execFileAsync("tar", ["-tzf", "/workspace/revision-source.tar.gz"]);
-    if (listing.stdout.split("\n").some((entry) => entry.startsWith("/") || entry.split("/").includes(".."))) {
+    const entries = listing.stdout.split("\n").filter(Boolean);
+    if (entries.length > 10_000) throw new Error("Revision source archive has too many entries.");
+    if (entries.some((entry) => entry.startsWith("/") || entry.split("/").includes(".."))) {
       throw new Error("Revision source archive contains an unsafe path.");
     }
     const verboseListing = await execFileAsync("tar", ["-tvzf", "/workspace/revision-source.tar.gz"]);
-    if (verboseListing.stdout.split("\n").filter(Boolean).some((entry) => !["-", "d"].includes(entry[0]))) {
+    const archiveRows = verboseListing.stdout.split("\n").filter(Boolean);
+    if (archiveRows.some((entry) => !["-", "d"].includes(entry[0]))) {
       throw new Error("Revision source archive contains a link or special file.");
     }
+    const expandedBytes = archiveRows.reduce((sum, entry) => sum + (Number(entry.trim().split(/\s+/)[2]) || 0), 0);
+    if (expandedBytes > 300 * 1024 * 1024) throw new Error("Revision source archive expands beyond the allowed size.");
     await execFileAsync("tar", ["-xzf", "/workspace/revision-source.tar.gz", "-C", projectRoot]);
   }
   for (const asset of job.projectAssets || []) {

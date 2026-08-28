@@ -6,7 +6,7 @@ variable "notification_channel_ids" {
 
 resource "google_logging_metric" "generation_failures" {
   name   = "${local.name}/generation_failures"
-  filter = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${google_cloud_run_v2_service.api.name}\" AND textPayload:\"Generation failed\""
+  filter = "resource.type=\"cloud_run_revision\" AND (resource.labels.service_name=\"${google_cloud_run_v2_service.api.name}\" OR resource.labels.service_name=\"${google_cloud_run_v2_service.dispatcher.name}\") AND severity>=ERROR AND (textPayload:\"generation\" OR jsonPayload.message:\"generation\" OR textPayload:\"E2B\" OR jsonPayload.message:\"E2B\")"
   metric_descriptor {
     metric_kind = "DELTA"
     value_type  = "INT64"

@@ -17,6 +17,7 @@ locals {
     "sqladmin.googleapis.com",
     "storage.googleapis.com",
     "cloudtasks.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ])
 }
 
@@ -278,4 +279,35 @@ resource "google_cloud_tasks_queue" "generation" {
   }
 
   depends_on = [google_project_service.required]
+}
+
+resource "google_cloud_scheduler_job" "generation_reconciliation" {
+  name             = "${local.name}-generation-reconciliation"
+  description      = "Reconcile expired generation leases and terminate leaked E2B sandboxes."
+  schedule         = "*/5 * * * *"
+  time_zone        = "Etc/UTC"
+  attempt_deadline = "180s"
+  region           = var.region
+
+  retry_config {
+    retry_count          = 3
+    min_backoff_duration = "10s"
+    max_backoff_duration = "60s"
+    max_doublings        = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${trimsuffix(local.dispatcher_url, "/dispatch")}/reconcile"
+    headers = {
+      "Content-Type" = "application/json"
+    }
+    body = base64encode("{}")
+    oidc_token {
+      service_account_email = google_service_account.task_invoker.email
+      audience              = local.dispatcher_url
+    }
+  }
+
+  depends_on = [google_project_service.required, google_cloud_run_v2_service_iam_member.task_invoker]
 }
