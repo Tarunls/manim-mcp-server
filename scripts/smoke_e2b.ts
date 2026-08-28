@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     await sandbox.files.write("/workspace/smoke.txt", "isolated");
     assert.equal(await sandbox.files.read("/workspace/smoke.txt"), "isolated");
     const result = await sandbox.commands.run(
-      "set -eu; node --version; /opt/lesson-studio/app/venv/bin/python -c 'import manim'; cd /opt/lesson-studio/app && node -e \"import('@openai/codex-sdk')\"; ffmpeg -version >/dev/null; test -x e2b/bootstrap.mjs; test -f studio/AGENTS.md; if curl -fsS --max-time 5 https://example.com >/dev/null 2>&1; then exit 42; fi",
+      "set -eu; node --version; test -x /opt/lesson-studio/app/.venv/bin/manim; PATH=/opt/lesson-studio/app/venv/bin:$PATH manim --version >/dev/null; /opt/lesson-studio/app/venv/bin/python -c 'import manim'; cd /opt/lesson-studio/app && node -e \"import('@openai/codex-sdk')\"; ffmpeg -version >/dev/null; test -x e2b/bootstrap.mjs; test -f studio/AGENTS.md; if curl -fsS --max-time 5 https://example.com >/dev/null 2>&1; then exit 42; fi",
       { cwd: "/workspace", timeoutMs: 60_000 },
     );
     assert.equal(result.exitCode, 0);

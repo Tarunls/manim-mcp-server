@@ -26,6 +26,7 @@ COPY . .
 RUN mkdir -p /opt/lesson-studio /workspace studio/projects \
     && mv /opt/lesson-studio/deps/node_modules node_modules \
     && mv /opt/lesson-studio/venv venv \
+    && ln -s venv .venv \
     && chmod 0555 e2b/bootstrap.mjs \
     && chown -R node:node /workspace studio/projects \
     && chmod 0770 /workspace studio/projects

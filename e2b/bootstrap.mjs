@@ -201,7 +201,7 @@ ${String(job.prompt).slice(0, 12000)}
     apiKey,
     baseUrl: openaiBaseUrl,
     env: {
-      PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+      PATH: `${appRoot}/venv/bin:${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`,
       HOME: process.env.HOME || "/home/user",
       TMPDIR: "/tmp",
     },
