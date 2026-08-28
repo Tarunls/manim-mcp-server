@@ -14,9 +14,9 @@ Read-only inventory on 2026-08-23 found project `educationalvideo-506219` in `us
 
 Do not convert the existing singleton in place. Build staging beside it, validate end to end, and cut traffic only after data migration and rollback rehearsal.
 
-## Staging apply status (2026-08-24)
+## Staging apply status (2026-08-28)
 
-Release `df535ac` is deployed as immutable application image `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:df535ac` and E2B template `lesson-studio-renderer:df535ac`. The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service was not modified.
+The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service is not modified. Before the 2026-08-28 reliability release is promoted, staging still runs application image `84a9428996994c5e299c045ceab1664b97d4c561` and does not have `E2B_TEMPLATE_VERSION` on the API service. Run the full release sequence below; do not test generation against that stale revision.
 
 The remote-state-backed Terraform stack is fully applied for domainless staging and a fresh plan reports no changes. It includes the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, and the $20 monthly GCP budget alert. The budget is an alert, not a spending lock.
 
@@ -25,13 +25,14 @@ The migration, Identity Platform smoke, Stripe hosted-Checkout smoke, E2B runtim
 ## Release sequence
 
 1. Create or verify the E2B and environment-appropriate Stripe secrets. Never print secret payloads into a terminal log.
-2. Build an immutable E2B template with the same release identifier used in Terraform.
+2. Verify that the E2B secret resolves to the team that owns `lesson-studio-renderer`. Build an immutable E2B template with the same release identifier used in Terraform.
    Run `npm run smoke:e2b` against that exact tag before deploying it.
 3. Submit `cloudbuild.yaml`; it runs typecheck, tests, build, and audit before publishing both commit-SHA and convenience `latest` image tags.
 4. Review and apply `infra/terraform` for `staging`. The initial domainless configuration uses the canonical `run.app` origin and omits the global edge until DNS is supplied. Terraform application is intentionally manual because it creates billable resources.
 5. Run the Cloud Run migration job. It uses a PostgreSQL advisory lock and can be invoked again safely.
 6. Deploy the commit-SHA image with `cloudbuild.deploy.yaml`.
 7. Verify readiness, sign-up/email verification/login/logout, ownership isolation, checkout/webhook idempotency, one silent and one narrated E2B generation, cancellation/refund, artifact access expiry, and a failed-job retry.
+   Also wait at least one reconciliation interval and prove that an intentionally expired job is failed, its sandbox is terminated, and its credit refund appears exactly once.
 8. Run the load and security gates in `docs/PRODUCTION_CHECKLIST.md` before creating production traffic.
 
 The $20 project budget is an alerting threshold, not a guaranteed stop. The initial staging database is a zonal shared-core instance without an SLA; production validation rejects that tier and requires regional availability, a non-shared-core database, the managed HTTPS edge, and a real domain.
@@ -47,7 +48,7 @@ The $20 project budget is an alerting threshold, not a guaranteed stop. The init
 
 API and dispatcher service accounts have disjoint secret access. The API owns the upstream OpenAI key for its job-scoped proxy but cannot read the E2B key; the dispatcher cannot read OpenAI, Stripe, Identity Platform, Speechify, or staff secrets. Generated code receives only a job-scoped proxy token in `.env`; the bootstrap separately holds a callback credential and expiring upload URLs inside the disposable E2B boundary.
 
-Application logs must contain IDs, state transitions, latency, and safe error codes—not prompts, emails, cookies, provider responses, signed URLs, or secret values.
+Application logs must contain IDs, state transitions, latency, and safe error codes—not prompts, emails, cookies, provider responses, signed URLs, or secret values. `generation_jobs.error_message` is user-facing; `error_detail` is private operational data and must never be returned by user APIs or exports.
 
 ## Release smoke commands
 

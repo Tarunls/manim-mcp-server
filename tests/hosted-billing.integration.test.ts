@@ -37,6 +37,8 @@ function project(id: string, ownerId: string): StudioProject {
 }
 
 test("hosted billing verifies webhooks, ignores replays, cancels access, and isolates projects", { skip: !connectionString }, async () => {
+  const previousDatabaseSsl = process.env.DATABASE_SSL;
+  process.env.DATABASE_SSL = "disable";
   const previousKey = process.env.STRIPE_SECRET_KEY;
   const previousWebhook = process.env.STRIPE_WEBHOOK_SECRET;
   process.env.STRIPE_SECRET_KEY = "rkcs_test_placeholder";
@@ -128,6 +130,8 @@ test("hosted billing verifies webhooks, ignores replays, cancels access, and iso
   } finally {
     await db.query("DELETE FROM app_users WHERE id = ANY($1::text[])", [[ownerId, otherId]]).catch(() => undefined);
     await db.close();
+    if (previousDatabaseSsl === undefined) delete process.env.DATABASE_SSL;
+    else process.env.DATABASE_SSL = previousDatabaseSsl;
     if (previousKey === undefined) delete process.env.STRIPE_SECRET_KEY;
     else process.env.STRIPE_SECRET_KEY = previousKey;
     if (previousWebhook === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;

@@ -20,6 +20,9 @@
 - Duplicate browser requests, Stripe webhooks, Cloud Tasks deliveries, and sandbox callbacks do not double-charge or create duplicate versions.
 - Queue pause/resume, E2B quota exhaustion, OpenAI throttling, sandbox timeout, callback timeout, and invalid artifact paths are exercised.
 - Failed or cancelled generations refund credits exactly once.
+- A failure at every pre-sandbox dispatch step leaves no job in `dispatching`; retryable failures release the lease and terminal failures store only a generic user message.
+- The scheduled reconciler is invoked with its OIDC identity, expires stale dispatch/running/upload leases, terminates the recorded sandbox, and remains idempotent on replay.
+- MP4, PNG, gzip, and metadata validation reject content-type spoofing, malformed metadata, oversized input, unsafe archives, links, special files, and secret material.
 - A prior API image and prior E2B template can be restored independently.
 
 ## Scale gate

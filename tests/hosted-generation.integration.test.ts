@@ -16,11 +16,15 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
   const previousSecret = process.env.JOB_CALLBACK_SECRET;
   const previousOpenAiKey = process.env.OPENAI_API_KEY;
   const previousCodexLimit = process.env.CODEX_MAX_API_CALLS_PER_JOB;
+  const previousDatabaseSsl = process.env.DATABASE_SSL;
+  const previousTemplateVersion = process.env.E2B_TEMPLATE_VERSION;
   const originalFetch = globalThis.fetch;
   process.env.EXECUTION_MODE = "e2b";
   process.env.JOB_CALLBACK_SECRET = "integration-test-callback-secret-32-characters";
   process.env.OPENAI_API_KEY = "integration-upstream-key";
   process.env.CODEX_MAX_API_CALLS_PER_JOB = "1";
+  process.env.DATABASE_SSL = "disable";
+  process.env.E2B_TEMPLATE_VERSION = "integration-test-release";
   const db = new Database(connectionString);
   let testOwnerId: string | undefined;
   try {
@@ -66,7 +70,15 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
       [ownerId],
     );
     assert.deepEqual(ledger.rows[0], { count: "1", balance: "-1" });
-    await service.claimDispatch(first.jobId);
+    const firstClaim = await service.claimDispatch(first.jobId);
+    assert.equal(firstClaim?.templateVersion, "integration-test-release");
+    assert.ok(firstClaim?.dispatchLeaseId);
+    assert.equal(await service.retryDispatch(first.jobId, firstClaim.dispatchLeaseId, new Error("provider busy")), true);
+    const secondClaim = await service.claimDispatch(first.jobId);
+    assert.ok(secondClaim?.dispatchLeaseId);
+    assert.notEqual(secondClaim?.dispatchLeaseId, firstClaim.dispatchLeaseId);
+    assert.equal(await service.markSandboxStarted(first.jobId, firstClaim.dispatchLeaseId, "stale-sandbox"), undefined);
+    assert.equal((await service.markSandboxStarted(first.jobId, secondClaim.dispatchLeaseId!, "sandbox-1"))?.status, "running");
     const callbackToken = service.callbackToken(first.jobId);
     const codexToken = service.codexToken(first.jobId);
     assert.notEqual(callbackToken, codexToken);
@@ -87,8 +99,17 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     ]);
     assert.equal(calls.filter((result) => result.status === "fulfilled").length, 1);
     assert.equal(calls.filter((result) => result.status === "rejected").length, 1);
-    await service.fail(first.jobId, new Error("test failure"), true);
+    await db.query("UPDATE generation_jobs SET lease_expires_at = now() - interval '1 minute' WHERE id = $1", [first.jobId]);
+    const reconciled = await service.reconcileExpiredJobs();
+    assert.deepEqual(reconciled, { reconciled: 1, sandboxIds: ["sandbox-1"] });
     assert.equal(await service.verifyCodexAccess(first.jobId, codexToken), undefined);
+    const failed = await db.query<{ error_code: string; error_message: string; error_detail: string }>(
+      "SELECT error_code, error_message, error_detail FROM generation_jobs WHERE id = $1",
+      [first.jobId],
+    );
+    assert.equal(failed.rows[0].error_code, "generation_timeout");
+    assert.doesNotMatch(failed.rows[0].error_message, /lease expired/i);
+    assert.match(failed.rows[0].error_detail, /lease expired/i);
     const refunded = await db.query<{ balance: string }>(
       "SELECT COALESCE(sum(amount), 0)::text AS balance FROM credit_ledger WHERE user_id = $1",
       [ownerId],
@@ -105,6 +126,10 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     else process.env.OPENAI_API_KEY = previousOpenAiKey;
     if (previousCodexLimit === undefined) delete process.env.CODEX_MAX_API_CALLS_PER_JOB;
     else process.env.CODEX_MAX_API_CALLS_PER_JOB = previousCodexLimit;
+    if (previousDatabaseSsl === undefined) delete process.env.DATABASE_SSL;
+    else process.env.DATABASE_SSL = previousDatabaseSsl;
+    if (previousTemplateVersion === undefined) delete process.env.E2B_TEMPLATE_VERSION;
+    else process.env.E2B_TEMPLATE_VERSION = previousTemplateVersion;
     globalThis.fetch = originalFetch;
   }
 });

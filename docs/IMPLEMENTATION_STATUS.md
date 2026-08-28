@@ -1,6 +1,6 @@
 # Production implementation status
 
-Updated: 2026-08-24
+Updated: 2026-08-28
 
 ## Completed foundation
 
@@ -16,17 +16,22 @@ Updated: 2026-08-24
 - Owner-scoped PostgreSQL project repository used by hosted API reads and mutations.
 - Serializable generation submission with advisory idempotency locks, immutable credit reservations, active-job limits, and a transactional outbox.
 - Idempotent Cloud Tasks publication with a named task per generation and OIDC-authenticated delivery.
-- Global E2B concurrency gating, crash-recoverable dispatch claims, one sandbox per generation, and sandbox termination on cancellation.
+- Global E2B concurrency gating, lease-based dispatch claims, bounded retry attempts, one sandbox per generation, and sandbox termination on cancellation.
+- The API and dispatcher now require the same immutable E2B template tag. Production startup fails closed when the tag is missing or set to `dev`; there is no implicit `default` template fallback.
+- Every operation after a job claim is inside the dispatch failure boundary. Retryable provider failures return the job to `queued`; terminal failures refund exactly once and expose a generic message while retaining private diagnostics.
+- A five-minute Cloud Scheduler reconciliation invokes the private dispatcher to expire stalled dispatch/running/upload jobs, terminate leaked sandboxes, and refund credits. An in-process reconciliation loop provides an additional best-effort pass.
 - Versioned E2B renderer template, official Codex SDK bootstrap, an ephemeral mode-`0600` `.env`, and automatic secret deletion.
 - E2B egress restricted to signed GCS uploads and the application callback/proxy host. The sandbox receives no upstream OpenAI, GCP, database, Identity Platform, Stripe, or Speechify credential.
 - Job-scoped OpenAI proxy tokens, active-job checks, and a concurrent-safe per-job call budget keep the upstream API key outside untrusted sandboxes.
-- Private GCS artifacts validated by content type, size, generation, and storage checksum before completion; browser reads use ownership checks and ten-minute signed URLs.
+- Private GCS artifacts validated by content type, size, generation, checksum, file signature, and bounded render-metadata schema before completion; browser reads use ownership checks and ten-minute signed URLs.
+- Sandbox callbacks and uploads use bounded timeouts and retries. Downloads and uploads stream instead of buffering whole videos, source trees have file-count and expanded-size limits, and callback messages are redacted and length bounded.
 - Job-scoped Speechify proxy capped at 12 segments so narration can render without exposing the provider key to generated code.
 - PostgreSQL-backed Stripe profiles and idempotent webhook processing.
-- A PostgreSQL integration test verifies migrations, generation idempotency, one-time credit reservation, failure, and refund behavior.
+- PostgreSQL integration tests verify all migrations, generation idempotency, immutable template capture, lease ownership, retry release, stale-lease reconciliation, private diagnostics, one-time credit reservation, and refund behavior.
 - Hosted billing integration tests verify signed webhook construction, replay idempotency, paid entitlement activation, cancellation, and project isolation against real PostgreSQL.
 - Identity tests cover email normalization, verification gating, safe provider errors, reset enumeration safety, production cookie naming, and exact cookie parsing.
-- Desktop and mobile Playwright coverage verifies public routes, pricing, auth states, CSRF fail-closed behavior, responsive overflow, and serious/critical accessibility findings.
+- Desktop and mobile Playwright coverage verifies public routes, pricing, auth states, authenticated studio hydration, CSRF fail-closed behavior, responsive overflow, and serious/critical accessibility findings.
+- React state-reset and URL-workflow Effects, all `useMemo` calls, all `useCallback` calls, and an unused legacy chat implementation were removed. Remaining Effects are limited to external synchronization: EventSource/HTTP lifecycle, animation frames, image loading, canvas drawing, and DOM scrolling, each with cleanup where applicable.
 
 ## Completed deployment layer
 
@@ -45,14 +50,14 @@ Updated: 2026-08-24
 - Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
 - Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
 - Terraform now supports a domainless, scale-to-zero staging profile with a shared-core database, two E2B workers, three API instances, and a $20 GCP alerting budget while retaining strict production safety checks.
-- Immutable release `df535ac` is deployed as application image `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:df535ac` and E2B template `lesson-studio-renderer:df535ac`; migration, E2B, Identity Platform, Stripe Checkout, health, build, automated, and signed-out security checks pass.
+- The currently deployed staging application remains image `84a9428996994c5e299c045ceab1664b97d4c561` until the 2026-08-28 reliability release is built, migrated, and promoted. Do not describe the branch-only fixes as deployed before that release completes.
 - The domainless staging stack is fully applied from protected remote Terraform state. It includes private Cloud SQL, API/dispatcher/migration Cloud Run resources, Cloud Tasks, a private versioned artifact bucket, least-privilege identities, alert policies, an 11-chart operations dashboard, and a $20 monthly GCP budget alert. A fresh plan reports no drift.
 - The canonical public staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`. The pre-existing `lesson-studio` singleton remains unchanged.
 
 ## Remaining before production launch
 
 - Select and store a distinct live restricted Stripe key for production; the current isolated Stripe key is staging-only.
-- Run a silent and a narrated callback-to-artifact generation through the signed-in website, Cloud Tasks, Cloud Run, E2B, the scoped Codex proxy, Speechify, and private GCS.
+- Confirm the GCP `e2b_api_key` secret belongs to the same E2B team as `lesson-studio-renderer`, build the current immutable template, and run silent and narrated callback-to-artifact generations through the signed-in website.
 - Point staging DNS at the load-balancer IP, wait for certificate activation, and verify direct `run.app` requests cannot bypass Cloud Armor.
 - Choose and verify monitoring notification recipients, review Identity Platform email templates/sender identity, and assign a named support/on-call owner.
 - Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.

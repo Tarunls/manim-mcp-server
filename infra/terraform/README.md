@@ -28,6 +28,8 @@ terraform show plan.tfplan
 terraform apply plan.tfplan
 ```
 
-Applying creates billable Cloud SQL, Cloud Run, GCS, networking, Cloud Tasks, and monitoring resources. Production has deletion protection. Run the migration job before sending traffic to a new image.
+Applying creates billable Cloud SQL, Cloud Run, GCS, networking, Cloud Tasks, Cloud Scheduler, and monitoring resources. Production has deletion protection. Run the migration job before sending traffic to a new image. The scheduler invokes the private dispatcher every five minutes to reconcile expired generation leases and terminate leaked E2B sandboxes.
+
+`E2B_TEMPLATE_VERSION` is intentionally supplied to both the API and dispatcher: the API persists the immutable version on submission and the dispatcher starts exactly that version. A missing tag or `dev` value fails production startup. The E2B API key must belong to the same E2B team that owns the configured template.
 
 `cloudbuild.yaml` and `cloudbuild.deploy.yaml` select the environment's `release_service_account` explicitly and write logs only to Cloud Logging. It can publish images and update Cloud Run, but has no direct Secret Manager accessor grant. Treat it as a privileged deployment identity because it can deploy code under the runtime identities. The human or trigger that starts a build must have `iam.serviceAccounts.actAs` on this release identity.
