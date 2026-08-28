@@ -17,7 +17,10 @@ locals {
     E2B_MAX_CONCURRENT_SANDBOXES        = tostring(var.max_concurrent_sandboxes)
     E2B_TEMPLATE                        = "lesson-studio-renderer"
     E2B_TEMPLATE_VERSION                = var.e2b_template_version
-    CODEX_MAX_API_CALLS_PER_JOB         = "12"
+    # A complete video commonly needs more than twelve agent turns for planning,
+    # authoring, rendering, inspection, and repair. Keep the ceiling finite for
+    # cost containment while allowing a normal generation to finish.
+    CODEX_MAX_API_CALLS_PER_JOB         = "32"
     CODEX_MAX_OUTPUT_TOKENS_PER_CALL    = "12000"
     CODEX_UPSTREAM_TIMEOUT_MS           = "2700000"
     E2B_SANDBOX_TIMEOUT_MS              = "1800000"
