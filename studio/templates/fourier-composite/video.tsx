@@ -352,12 +352,7 @@ const Background: React.FC = () => (
 );
 
 const MountedLayoutAudit: React.FC = () => {
-  const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => {
-    const handle = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(handle);
-  }, []);
-  return mounted ? <LayoutAudit minGap={56} safePadding={48} /> : null;
+  return <LayoutAudit minGap={56} safePadding={48} />;
 };
 
 const GeneratedVideo: React.FC = () => {

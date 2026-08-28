@@ -38,7 +38,6 @@ import {
 } from "@phosphor-icons/react";
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -410,391 +409,6 @@ function AgentActivity({ project }: { project: StudioProject }) {
   );
 }
 
-function LegacyChatPanel({
-  project,
-  auth,
-  runtime,
-  onSend,
-  onCancel,
-  onReviewPreferences,
-  onDesignPreferences,
-  onNarrationPreferences,
-  onGenerationPreferences,
-}: {
-  project?: StudioProject;
-  auth: AuthState;
-  runtime: RuntimeState;
-  onSend: (
-    text: string,
-    renderer: RendererKind,
-    intent: GenerationIntent,
-    effort: GenerationEffort,
-  ) => Promise<void>;
-  onCancel: () => Promise<void>;
-  onReviewPreferences: (
-    focus: ReviewFocus,
-    strictness: ReviewStrictness,
-  ) => Promise<void>;
-  onDesignPreferences: (changes: {
-    fontCategory?: FontCategory;
-    colorPalette?: ColorPalette;
-  }) => Promise<void>;
-  onNarrationPreferences: (enabled: boolean) => Promise<void>;
-  onGenerationPreferences: (effort: GenerationEffort) => Promise<void>;
-}) {
-  const [text, setText] = useState("");
-  const [renderer, setRenderer] = useState<RendererKind>(
-    project?.renderer || "composite",
-  );
-  const [intent, setIntent] = useState<GenerationIntent>("auto");
-  const [generationEffort, setGenerationEffort] = useState<GenerationEffort>(
-    project?.generationPreferences?.effort || "balanced",
-  );
-  const [error, setError] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
-  const running = project?.status === "running";
-  const hasPriorWork = Boolean(
-    project?.threadId || project?.messages.length || project?.versions.length,
-  );
-  const rendererLocked = (hasPriorWork && intent !== "new") || running;
-  const rendererReady = rendererIsReady(renderer, runtime);
-  const suggestions = [
-    "Animate the Pythagorean theorem",
-    "Explain gradient descent visually",
-    "Show how a Fourier series builds a square wave",
-  ];
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [project?.messages.length, project?.actions.length]);
-
-  useEffect(() => {
-    setRenderer(project?.renderer || "composite");
-    setGenerationEffort(project?.generationPreferences?.effort || "balanced");
-    setIntent("auto");
-  }, [project?.id, project?.renderer]);
-
-  async function submit() {
-    const value = text.trim();
-    if (!value || running) return;
-    setError("");
-    try {
-      await onSend(value, renderer, intent, generationEffort);
-      setText("");
-      setIntent("auto");
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Could not send the prompt.",
-      );
-    }
-  }
-
-  return (
-    <section className="chat-panel" aria-label="Video chat">
-      <header className="panel-header">
-        <div>
-          <span className="panel-kicker">Create</span>
-          <h1>{project?.title || "New video"}</h1>
-        </div>
-      </header>
-
-      <div className="messages">
-        {!project?.messages.length && (
-          <div className="chat-empty">
-            <span className="empty-chat-icon">
-              <MagicWand size={21} />
-            </span>
-            <h2>What should move?</h2>
-            <p>
-              Describe the idea, then choose the renderer that best matches the
-              lesson.
-            </p>
-            <div className="suggestions">
-              {suggestions.map((suggestion) => (
-                <button key={suggestion} onClick={() => setText(suggestion)}>
-                  {suggestion}
-                  <ArrowRight size={14} />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {project?.messages.map((message) => (
-          <div className={`message message-${message.role}`} key={message.id}>
-            {message.role === "assistant" && (
-              <span className="message-avatar">
-                <Sparkle size={13} weight="fill" />
-              </span>
-            )}
-            <div className="message-bubble">
-              {message.attachment?.type === "frameReview" && (
-                <div className="message-frame">
-                  <img
-                    src={message.attachment.imageUrl}
-                    alt={`Annotated frame ${message.attachment.label}`}
-                  />
-                  <span>{message.attachment.label}</span>
-                </div>
-              )}
-              {message.text ||
-                (message.streaming ? (
-                  <span className="typing">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                ) : (
-                  ""
-                ))}
-            </div>
-          </div>
-        ))}
-
-        {project && <AgentActivity project={project} />}
-
-        {project?.error && (
-          <div className="inline-error">
-            <Warning size={16} />
-            <span>{project.error}</span>
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      <div className="composer-wrap">
-        {!auth.connected && (
-          <div className="runtime-callout">
-            <Warning size={15} /> Generation service needs an API key
-          </div>
-        )}
-        {!rendererReady && (
-          <div className="runtime-callout">
-            <Code size={15} />{" "}
-            {renderer === "composite"
-              ? "Manim and Remotion setup required"
-              : `${rendererLabel(renderer)} setup required`}
-          </div>
-        )}
-        <fieldset className="renderer-picker" disabled={rendererLocked}>
-          <legend>Renderer</legend>
-          <button
-            type="button"
-            className={renderer === "manim" ? "active" : ""}
-            onClick={() => setRenderer("manim")}
-          >
-            <strong>Manim</strong>
-            <span>Equations, graphs, geometric transformations</span>
-          </button>
-          <button
-            type="button"
-            className={renderer === "remotion" ? "active" : ""}
-            onClick={() => setRenderer("remotion")}
-          >
-            <strong>Remotion</strong>
-            <span>Typography, UI, diagrams, editorial motion</span>
-          </button>
-          <button
-            type="button"
-            className={renderer === "composite" ? "active" : ""}
-            onClick={() => setRenderer("composite")}
-          >
-            <strong>Composite</strong>
-            <span>Manim visuals inside a Remotion-directed video</span>
-          </button>
-        </fieldset>
-        {project && (
-          <div className="generation-settings" aria-label="Generation settings">
-            <label>
-              Request
-              <select
-                value={intent}
-                disabled={running || !hasPriorWork}
-                onChange={(event) =>
-                  setIntent(event.target.value as GenerationIntent)
-                }
-              >
-                <option value="auto">Smart choice</option>
-                <option value="revise">Edit this video</option>
-                <option value="new">Create a separate video</option>
-              </select>
-            </label>
-            <ThinkingControl
-              value={generationEffort}
-              disabled={running}
-              onChange={(effort) => {
-                setGenerationEffort(effort);
-                void onGenerationPreferences(effort);
-              }}
-            />
-          </div>
-        )}
-        {project && (
-          <div
-            className="review-settings"
-            aria-label="Automatic review settings"
-          >
-            <label>
-              Review
-              <select
-                value={project.reviewPreferences?.focus || "balanced"}
-                disabled={running}
-                onChange={(event) =>
-                  void onReviewPreferences(
-                    event.target.value as ReviewFocus,
-                    project.reviewPreferences?.strictness || "normal",
-                  )
-                }
-              >
-                <option value="balanced">Balanced</option>
-                <option value="layout">Layout</option>
-                <option value="motion">Motion</option>
-                <option value="pedagogy">Teaching</option>
-                <option value="accessibility">Accessibility</option>
-                <option value="polish">Polish</option>
-              </select>
-            </label>
-            <label>
-              Depth
-              <select
-                value={project.reviewPreferences?.strictness || "normal"}
-                disabled={running}
-                onChange={(event) =>
-                  void onReviewPreferences(
-                    project.reviewPreferences?.focus || "balanced",
-                    event.target.value as ReviewStrictness,
-                  )
-                }
-              >
-                <option value="quick">Quick</option>
-                <option value="normal">Normal</option>
-                <option value="obsessive">Frame-heavy</option>
-              </select>
-            </label>
-          </div>
-        )}
-        {project && (
-          <div className="design-settings" aria-label="Video style settings">
-            <label>
-              Font
-              <select
-                value={project.designPreferences?.fontCategory || "modern"}
-                disabled={running}
-                onChange={(event) =>
-                  void onDesignPreferences({
-                    fontCategory: event.target.value as FontCategory,
-                  })
-                }
-              >
-                <option value="modern">Modern</option>
-                <option value="editorial">Editorial</option>
-                <option value="technical">Technical</option>
-                <option value="friendly">Friendly</option>
-                <option value="classic">Classic</option>
-              </select>
-            </label>
-            <label>
-              Colors
-              <select
-                value={project.designPreferences?.colorPalette || "studio"}
-                disabled={running}
-                onChange={(event) =>
-                  void onDesignPreferences({
-                    colorPalette: event.target.value as ColorPalette,
-                  })
-                }
-              >
-                <option value="cinematic">Cinematic · Default</option>
-                <option value="studio">Studio warm</option>
-                <option value="ocean">Ocean</option>
-                <option value="forest">Forest</option>
-                <option value="sunset">Sunset</option>
-                <option value="monochrome">Monochrome</option>
-                <option value="high-contrast">High contrast</option>
-              </select>
-            </label>
-          </div>
-        )}
-        {project && (
-          <div className="narration-settings" aria-label="Narration settings">
-            <label>
-              AI voice
-              <select
-                value={
-                  project.narrationPreferences?.enabled === false ? "off" : "on"
-                }
-                disabled={running}
-                onChange={(event) =>
-                  void onNarrationPreferences(event.target.value === "on")
-                }
-              >
-                <option value="on">Speechify narration</option>
-                <option value="off">Off · silent video</option>
-              </select>
-            </label>
-            <span>
-              {project.narrationPreferences?.enabled === false
-                ? "No voice generation or Speechify usage"
-                : "Narration is generated during the final render"}
-            </span>
-          </div>
-        )}
-        <label className="sr-only" htmlFor="prompt">
-          Video prompt
-        </label>
-        <div className={`composer ${error ? "composer-error" : ""}`}>
-          <textarea
-            id="prompt"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void submit();
-              }
-            }}
-            placeholder={
-              intent === "new"
-                ? "Describe a new video built with the default cinematic style..."
-                : project?.videoUrl
-                  ? "Ask for a change, or describe a new video..."
-                  : "Describe a video..."
-            }
-            rows={2}
-            disabled={running}
-          />
-          {running ? (
-            <button
-              className="send-button stop-button"
-              onClick={() => void onCancel()}
-              aria-label="Stop generation"
-            >
-              <Stop size={15} weight="fill" />
-            </button>
-          ) : (
-            <button
-              className="send-button"
-              onClick={() => void submit()}
-              disabled={!text.trim() || !auth.connected || !rendererReady}
-              aria-label="Send prompt"
-            >
-              <ArrowUpIcon />
-            </button>
-          )}
-        </div>
-        {error && <span className="form-error">{error}</span>}
-        <span className="composer-hint">
-          {intent === "new"
-            ? "Creates a separate project"
-            : rendererLocked
-              ? `${rendererLabel(project?.renderer)} project · Smart choice handles edits and new ideas`
-              : "Cinematic Composite is the default · Enter to send"}
-        </span>
-      </div>
-    </section>
-  );
-}
-
 function ChatPanel({
   project,
   auth,
@@ -846,7 +460,10 @@ function ChatPanel({
   const [text, setText] = useState("");
   const [intent, setIntent] = useState<GenerationIntent>("auto");
   const [generationEffort, setGenerationEffort] = useState<GenerationEffort>(
-    project?.generationPreferences?.effort || "balanced",
+    clampEffort(
+      project?.generationPreferences?.effort || "balanced",
+      billing.entitlements.maxEffort,
+    ),
   );
   const [error, setError] = useState("");
   const [assetsOpen, setAssetsOpen] = useState(false);
@@ -873,17 +490,6 @@ function ChatPanel({
     }
     messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
   }, [project?.messages.length, project?.actions.length]);
-
-  useEffect(() => {
-    setGenerationEffort(
-      clampEffort(
-        project?.generationPreferences?.effort || "balanced",
-        billing.entitlements.maxEffort,
-      ),
-    );
-    setIntent("auto");
-    setAssetsOpen(false);
-  }, [project?.id, billing.entitlements.maxEffort]);
 
   async function submit() {
     const value = text.trim();
@@ -1455,12 +1061,22 @@ function FrameReviewDialog({
 
   useEffect(() => {
     const image = new Image();
+    let cancelled = false;
     image.onload = () => {
+      if (cancelled) return;
       imageRef.current = image;
       setLoaded(true);
     };
-    image.onerror = () => setError("Could not load this frame.");
+    image.onerror = () => {
+      if (!cancelled) setError("Could not load this frame.");
+    };
     image.src = frameUrl;
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+      imageRef.current = null;
+    };
   }, [frameUrl]);
 
   useEffect(() => {
@@ -1861,15 +1477,12 @@ function VideoWorkspace({
       ? Array.from({ length: 7 }, (_, index) => (lastSafeFrame * index) / 6)
       : [];
 
-  useEffect(() => {
+  function selectVersion(versionId: string) {
+    setSelectedVersionId(versionId);
     setHasStarted(false);
     setCurrentTime(0);
     setDuration(0);
-  }, [videoUrl]);
-
-  useEffect(() => {
-    setSelectedVersionId(project?.versions?.at(-1)?.id);
-  }, [project?.id, project?.versions?.length]);
+  }
 
   function togglePlayback() {
     const video = videoRef.current;
@@ -1891,7 +1504,7 @@ function VideoWorkspace({
                 <button
                   key={version.id}
                   className={selectedVersion?.id === version.id ? "active" : ""}
-                  onClick={() => setSelectedVersionId(version.id)}
+                  onClick={() => selectVersion(version.id)}
                   title={version.prompt}
                 >
                   v{version.number}
@@ -2319,20 +1932,13 @@ function MarketingSite() {
   );
 }
 
-function PricingSite() {
-  const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
-
-  useEffect(() => {
-    void request<{
-      plans: PricingPlan[];
-      billingMode: BillingState["billingMode"];
-      checkoutEnabled: boolean;
-    }>("/api/pricing").then((result) => {
-      setPlans(result.plans);
-      setCheckoutEnabled(result.checkoutEnabled);
-    });
-  }, []);
+function PricingSite({
+  plans,
+  checkoutEnabled,
+}: {
+  plans: PricingPlan[];
+  checkoutEnabled: boolean;
+}) {
 
   function choose(plan: BillingPlanId) {
     if (plan === "free") {
@@ -2938,27 +2544,32 @@ export function App() {
   const privacyRoute = window.location.pathname.startsWith("/privacy");
   const termsRoute = window.location.pathname.startsWith("/terms");
 
-  const activeProject = useMemo(
-    () => projects.find((project) => project.id === activeId),
-    [projects, activeId],
-  );
+  const activeProject = projects.find((project) => project.id === activeId);
 
   useEffect(() => {
+    const controller = new AbortController();
     void request<{
       configured: boolean;
       authenticated: boolean;
       user?: AccountUser;
-    }>("/api/auth/status")
+    }>("/api/auth/status", { signal: controller.signal })
       .then((status) => setAccess({ checked: true, ...status }))
-      .catch(() =>
-        setAccess({ checked: true, configured: false, authenticated: false }),
-      );
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setAccess({ checked: true, configured: false, authenticated: false });
+      });
     void request<{ plans: PricingPlan[]; checkoutEnabled: boolean }>(
       "/api/pricing",
+      { signal: controller.signal },
     ).then((result) => {
       setPricingPlans(result.plans);
       setPricingCheckoutEnabled(result.checkoutEnabled);
+    }).catch((error) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setPricingPlans([]);
+      setPricingCheckoutEnabled(false);
     });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -2971,6 +2582,7 @@ export function App() {
         setRuntime(event.runtime);
         setActiveId((current) => current || event.projects[0]?.id);
         setLoaded(true);
+        handleStudioArrival();
       } else if (event.type === "project") {
         setProjects((current) => mergeProject(current, event.project));
       } else if (event.type === "assistant_delta") {
@@ -3006,54 +2618,54 @@ export function App() {
     };
 
     setLoaded(false);
-    void fetch("/api/state")
-      .then((response) => response.json())
-      .then((event: StudioEvent) => applyEvent(event));
+    const controller = new AbortController();
+    void request<StudioEvent>("/api/state", { signal: controller.signal })
+      .then(applyEvent)
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setLoaded(true);
+      });
     const events = new EventSource("/api/events");
     events.onmessage = (message) => {
-      const event = JSON.parse(message.data) as StudioEvent;
-      applyEvent(event);
+      try {
+        applyEvent(JSON.parse(message.data) as StudioEvent);
+      } catch {
+        // Ignore a malformed event; EventSource will continue with the next snapshot.
+      }
     };
-    return () => events.close();
+    return () => {
+      controller.abort();
+      events.close();
+    };
   }, [access.authenticated]);
 
-  useEffect(() => {
-    if (
-      !studioRoute ||
-      new URLSearchParams(window.location.search).get("checkout") !== "success"
-    )
+  function handleStudioArrival() {
+    if (!studioRoute || checkoutStarted.current) return;
+    const parameters = new URLSearchParams(window.location.search);
+    if (parameters.get("checkout") === "success") {
+      checkoutStarted.current = true;
+      void refreshBillingAfterCheckout();
       return;
-    let attempts = 0;
-    const refresh = async () => {
-      const next = await request<BillingState>("/api/billing");
-      setBilling(next);
-      attempts += 1;
-      if (next.plan === "free" && attempts < 5)
-        window.setTimeout(() => void refresh(), 1_000);
-    };
-    void refresh();
-  }, [studioRoute]);
+    }
+    const requestedPlan = parameters.get("plan");
+    if (requestedPlan === "creator" || requestedPlan === "pro" || requestedPlan === "studio") {
+      checkoutStarted.current = true;
+      void startCheckout(requestedPlan);
+    }
+  }
 
-  useEffect(() => {
-    if (
-      !studioRoute ||
-      !access.authenticated ||
-      !loaded ||
-      checkoutStarted.current
-    )
-      return;
-    const requestedPlan = new URLSearchParams(window.location.search).get(
-      "plan",
-    );
-    if (
-      requestedPlan !== "creator" &&
-      requestedPlan !== "pro" &&
-      requestedPlan !== "studio"
-    )
-      return;
-    checkoutStarted.current = true;
-    void startCheckout(requestedPlan);
-  }, [studioRoute, access.authenticated, loaded]);
+  async function refreshBillingAfterCheckout() {
+    try {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const next = await request<BillingState>("/api/billing");
+        setBilling(next);
+        if (next.plan !== "free") break;
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+      }
+    } finally {
+      window.history.replaceState({}, "", "/studio");
+    }
+  }
 
   async function createProject() {
     const project = await request<StudioProject>("/api/projects", {
@@ -3186,7 +2798,13 @@ export function App() {
 
   if (privacyRoute) return <PolicySite kind="privacy" />;
   if (termsRoute) return <PolicySite kind="terms" />;
-  if (pricingRoute) return <PricingSite />;
+  if (pricingRoute)
+    return (
+      <PricingSite
+        plans={pricingPlans}
+        checkoutEnabled={pricingCheckoutEnabled}
+      />
+    );
   if (!studioRoute) return <MarketingSite />;
 
   if (access.checked && !access.authenticated) {
@@ -3333,6 +2951,7 @@ export function App() {
           className={`studio-grid chat-side-${chatSide} ${chatMode === "floating" ? "chat-is-floating" : ""} ${chatCollapsed ? "chat-is-collapsed" : ""} ${previewCollapsed ? "preview-is-collapsed" : ""}`}
         >
           <ChatPanel
+            key={`${activeProject?.id || "new"}:${billing.entitlements.maxEffort}`}
             project={activeProject}
             auth={auth}
             billing={billing}
@@ -3364,7 +2983,11 @@ export function App() {
             onClose={() => setChatCollapsed(true)}
             onFloatingPosition={setFloatingPosition}
           />
-          <VideoWorkspace project={activeProject} runtime={runtime} />
+          <VideoWorkspace
+            key={`${activeProject?.id || "new"}:${activeProject?.versions.at(-1)?.id || "empty"}`}
+            project={activeProject}
+            runtime={runtime}
+          />
         </div>
 
         <nav className="mobile-tabs mobile-only" aria-label="Workspace view">

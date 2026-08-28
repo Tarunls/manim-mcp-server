@@ -2,6 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 const port = process.env.PLAYWRIGHT_PORT || "4321";
 const baseURL = `http://127.0.0.1:${port}`;
+const temporaryDirectory =
+  process.platform === "win32"
+    ? process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp"
+    : "/tmp";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -24,7 +28,12 @@ export default defineConfig({
   webServer: {
     command: "npm run start",
     url: `${baseURL}/api/health`,
-    env: { PORT: port },
+    env: {
+      PORT: port,
+      TMPDIR: temporaryDirectory,
+      TEMP: temporaryDirectory,
+      TMP: temporaryDirectory,
+    },
     reuseExistingServer: true,
     timeout: 120_000,
   },
