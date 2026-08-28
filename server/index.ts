@@ -87,6 +87,8 @@ function validateProductionConfiguration() {
   const missing: string[] = [];
   if (!database.configured) missing.push("DATABASE_URL");
   if (process.env.EXECUTION_MODE !== "e2b") missing.push("EXECUTION_MODE=e2b");
+  if (!process.env.E2B_TEMPLATE_VERSION?.trim() || process.env.E2B_TEMPLATE_VERSION === "dev")
+    missing.push("E2B_TEMPLATE_VERSION (immutable tag)");
   if (serviceRole !== "dispatcher" && !auth.configured)
     missing.push("IDENTITY_PLATFORM_API_KEY");
   if (serviceRole !== "api" && !dispatcher.configured)
@@ -1473,8 +1475,22 @@ const outboxTimer = generationQueue.configured
     )
   : undefined;
 
+const reconciliationTimer = dispatcher.configured
+  ? setInterval(
+      () => {
+        void dispatcher.reconcile().catch((error) =>
+          console.error("Generation reconciliation failed", {
+            message: error instanceof Error ? error.message : "unknown",
+          }),
+        );
+      },
+      Number(process.env.GENERATION_RECONCILE_INTERVAL_MS || 60_000),
+    )
+  : undefined;
+
 function shutdown() {
   if (outboxTimer) clearInterval(outboxTimer);
+  if (reconciliationTimer) clearInterval(reconciliationTimer);
   studio.bridge.stop();
   server.close(() => void database.close().finally(() => process.exit(0)));
 }

@@ -15,18 +15,21 @@ locals {
     GENERATION_DISPATCH_SERVICE_ACCOUNT = google_service_account.task_invoker.email
     STUDIO_ARTIFACT_BUCKET              = google_storage_bucket.artifacts.name
     E2B_MAX_CONCURRENT_SANDBOXES        = tostring(var.max_concurrent_sandboxes)
+    E2B_TEMPLATE                        = "lesson-studio-renderer"
+    E2B_TEMPLATE_VERSION                = var.e2b_template_version
     CODEX_MAX_API_CALLS_PER_JOB         = "12"
     CODEX_MAX_OUTPUT_TOKENS_PER_CALL    = "12000"
     CODEX_UPSTREAM_TIMEOUT_MS           = "2700000"
     E2B_SANDBOX_TIMEOUT_MS              = "1800000"
+    E2B_DISPATCH_LEASE_MS               = "300000"
+    E2B_MAX_DISPATCH_ATTEMPTS           = "5"
+    GENERATION_RECONCILE_INTERVAL_MS    = "60000"
     REQUIRE_DATABASE                    = "true"
     DATABASE_SSL                        = "disable"
     DATABASE_POOL_MAX                   = var.environment == "staging" ? "5" : "10"
   }
   dispatcher_env = merge(local.common_env, {
-    SERVICE_ROLE         = "dispatcher"
-    E2B_TEMPLATE         = "lesson-studio-renderer"
-    E2B_TEMPLATE_VERSION = var.e2b_template_version
+    SERVICE_ROLE = "dispatcher"
   })
   api_env = merge(local.common_env, {
     SERVICE_ROLE                 = "api"

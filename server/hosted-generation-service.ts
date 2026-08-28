@@ -17,6 +17,7 @@ export type HostedJob = {
   effort: GenerationEffort;
   templateVersion: string;
   sandboxId?: string;
+  dispatchLeaseId?: string;
   reservedCredits: number;
   input: { attachments?: Array<{ fileId: string; label: string }> };
 };
@@ -31,6 +32,7 @@ type JobRow = {
   effort: GenerationEffort;
   template_version: string;
   e2b_sandbox_id: string | null;
+  dispatch_lease_id: string | null;
   reserved_credits: number;
   callback_token_hash: string;
   input: HostedJob["input"];
@@ -58,8 +60,8 @@ function activeJobLimit(plan: BillingRow["plan"], staff: boolean) {
   return plan === "studio" ? 10 : plan === "pro" ? 5 : plan === "creator" ? 2 : 1;
 }
 
-function safeMessage(error: unknown) {
-  return error instanceof Error ? error.message.slice(0, 1000) : "Generation failed.";
+function diagnosticMessage(error: unknown) {
+  return error instanceof Error ? error.message.slice(0, 4000) : "Generation failed.";
 }
 
 export class HostedGenerationService {
@@ -131,6 +133,9 @@ export class HostedGenerationService {
     attachments?: Array<{ fileId: string; label: string }>;
   }) {
     if (!this.configured) throw new Error("Hosted generation is not configured.");
+    const templateVersion = process.env.E2B_TEMPLATE_VERSION?.trim();
+    if (!templateVersion || templateVersion === "dev")
+      throw new Error("Hosted generation requires an immutable E2B template version.");
     if (!/^[A-Za-z0-9._:-]{16,200}$/.test(input.idempotencyKey)) throw new Error("A valid Idempotency-Key header is required.");
     const jobId = randomUUID();
     const outboxId = randomUUID();
@@ -203,7 +208,7 @@ export class HostedGenerationService {
            template_version, callback_token_hash, reserved_credits, input)
          VALUES ($1, $2, $3, 'queued', $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
         [jobId, input.ownerId, project.id, input.prompt, project.renderer, input.effort, input.idempotencyKey,
-          process.env.E2B_TEMPLATE_VERSION || "dev", this.callbackHash(jobId), credits,
+          templateVersion, this.callbackHash(jobId), credits,
           JSON.stringify({ attachments: input.attachments || [] })],
       );
       if (credits > 0) {
@@ -238,6 +243,7 @@ export class HostedGenerationService {
       effort: row.effort,
       templateVersion: row.template_version,
       sandboxId: row.e2b_sandbox_id || undefined,
+      dispatchLeaseId: row.dispatch_lease_id || undefined,
       reservedCredits: row.reserved_credits,
       input: row.input || {},
     };
@@ -249,6 +255,9 @@ export class HostedGenerationService {
   }
 
   async claimDispatch(jobId: string) {
+    const leaseId = randomUUID();
+    const leaseMs = Math.max(60_000, Number(process.env.E2B_DISPATCH_LEASE_MS || 5 * 60_000));
+    const maxAttempts = Math.max(1, Number(process.env.E2B_MAX_DISPATCH_ATTEMPTS || 5));
     return this.db.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(7812394102892)");
       const active = await client.query<{ count: string }>(
@@ -261,11 +270,14 @@ export class HostedGenerationService {
       }
       const result = await client.query<JobRow>(
         `UPDATE generation_jobs
-            SET status = 'dispatching', updated_at = now()
+            SET status = 'dispatching', dispatch_lease_id = $2,
+                lease_expires_at = now() + ($3::int * interval '1 millisecond'),
+                attempt = attempt + 1, updated_at = now()
           WHERE id = $1
-            AND (status = 'queued' OR (status = 'dispatching' AND updated_at < now() - interval '10 minutes'))
+            AND attempt < $4
+            AND (status = 'queued' OR (status = 'dispatching' AND lease_expires_at < now()))
           RETURNING *`,
-        [jobId],
+        [jobId, leaseId, leaseMs, maxAttempts],
       );
       return result.rows[0] ? this.fromRow(result.rows[0]) : undefined;
     });
@@ -320,14 +332,15 @@ export class HostedGenerationService {
     return result.rows;
   }
 
-  async markSandboxStarted(jobId: string, sandboxId: string) {
+  async markSandboxStarted(jobId: string, leaseId: string, sandboxId: string) {
+    const runtimeMs = Math.max(60_000, Number(process.env.E2B_SANDBOX_TIMEOUT_MS || 45 * 60_000));
     const result = await this.db.query<JobRow>(
       `UPDATE generation_jobs
           SET status = 'running', e2b_sandbox_id = $2, started_at = COALESCE(started_at, now()),
-              attempt = attempt + 1, updated_at = now()
-        WHERE id = $1 AND status IN ('queued', 'dispatching')
+              lease_expires_at = now() + ($4::int * interval '1 millisecond'), updated_at = now()
+        WHERE id = $1 AND status = 'dispatching' AND dispatch_lease_id = $3
         RETURNING *`,
-      [jobId, sandboxId],
+      [jobId, sandboxId, leaseId, runtimeMs + 5 * 60_000],
     );
     if (result.rows[0]) {
       await this.db.query(
@@ -337,6 +350,18 @@ export class HostedGenerationService {
       );
     }
     return result.rows[0] ? this.fromRow(result.rows[0]) : undefined;
+  }
+
+  async retryDispatch(jobId: string, leaseId: string, error: unknown) {
+    const result = await this.db.query<JobRow>(
+      `UPDATE generation_jobs
+          SET status = 'queued', dispatch_lease_id = NULL, lease_expires_at = NULL,
+              error_code = 'dispatch_retry', error_detail = $3, updated_at = now()
+        WHERE id = $1 AND status = 'dispatching' AND dispatch_lease_id = $2
+        RETURNING *`,
+      [jobId, leaseId, diagnosticMessage(error)],
+    );
+    return Boolean(result.rows[0]);
   }
 
   async verifyCallback(jobId: string, token: string) {
@@ -361,22 +386,31 @@ export class HostedGenerationService {
 
   async markUploading(jobId: string) {
     await this.db.query(
-      `UPDATE generation_jobs SET status = 'uploading', updated_at = now()
+      `UPDATE generation_jobs SET status = 'uploading', updated_at = now(),
+          lease_expires_at = now() + interval '10 minutes'
         WHERE id = $1 AND status = 'running'`,
       [jobId],
     );
   }
 
-  async fail(jobId: string, error: unknown, refund = true) {
-    const message = safeMessage(error);
+  async fail(
+    jobId: string,
+    error: unknown,
+    refund = true,
+    options: { code?: string; userMessage?: string } = {},
+  ) {
+    const detail = diagnosticMessage(error);
+    const code = (options.code || "generation_failed").replace(/[^a-z0-9_]/gi, "_").slice(0, 80);
+    const message = (options.userMessage || "The video could not be generated. Your generation credits were restored.").slice(0, 500);
     await this.db.transaction(async (client) => {
       const result = await client.query<JobRow>(
         `UPDATE generation_jobs
-            SET status = 'failed', error_code = 'generation_failed', error_message = $2,
+            SET status = 'failed', error_code = $2, error_message = $3, error_detail = $4,
+                dispatch_lease_id = NULL, lease_expires_at = NULL,
                 completed_at = now(), updated_at = now()
           WHERE id = $1 AND status NOT IN ('complete', 'failed', 'cancelled')
           RETURNING *`,
-        [jobId, message],
+        [jobId, code, message, detail],
       );
       const job = result.rows[0];
       if (!job) return;
@@ -414,11 +448,30 @@ export class HostedGenerationService {
     });
   }
 
+  async reconcileExpiredJobs() {
+    const expired = await this.db.query<JobRow>(
+      `SELECT * FROM generation_jobs
+        WHERE status IN ('dispatching', 'running', 'uploading')
+          AND lease_expires_at IS NOT NULL AND lease_expires_at < now()
+        ORDER BY lease_expires_at LIMIT 50`,
+    );
+    const sandboxIds: string[] = [];
+    for (const row of expired.rows) {
+      if (row.e2b_sandbox_id) sandboxIds.push(row.e2b_sandbox_id);
+      await this.fail(row.id, new Error(`Generation lease expired in ${row.status}.`), true, {
+        code: "generation_timeout",
+        userMessage: "The renderer timed out. Your generation credits were restored.",
+      });
+    }
+    return { reconciled: expired.rows.length, sandboxIds };
+  }
+
   async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"], assistantMessage?: string) {
     return this.db.transaction(async (client) => {
       const result = await client.query<JobRow>(
-        `UPDATE generation_jobs
-            SET status = 'complete', completed_at = now(), updated_at = now()
+      `UPDATE generation_jobs
+            SET status = 'complete', dispatch_lease_id = NULL, lease_expires_at = NULL,
+                completed_at = now(), updated_at = now()
           WHERE id = $1 AND status IN ('running', 'uploading')
           RETURNING *`,
         [jobId],
@@ -500,7 +553,8 @@ export class HostedGenerationService {
   async cancelProject(projectId: string, ownerId: string) {
     return this.db.transaction(async (client) => {
       const result = await client.query<JobRow>(
-        `UPDATE generation_jobs SET status = 'cancelled', completed_at = now(), updated_at = now()
+        `UPDATE generation_jobs SET status = 'cancelled', dispatch_lease_id = NULL,
+            lease_expires_at = NULL, completed_at = now(), updated_at = now()
           WHERE id = (
             SELECT id FROM generation_jobs
              WHERE project_id = $1 AND owner_id = $2
