@@ -16,7 +16,7 @@ Do not convert the existing singleton in place. Build staging beside it, validat
 
 ## Staging apply status (2026-08-28)
 
-The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service is not modified. Staging API revision `lesson-studio-staging-api-00008-z82` and dispatcher revision `lesson-studio-staging-dispatcher-00009-6l2` run application image `df61e03` and pin generation jobs to `lesson-studio-renderer:df61e03`.
+The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service is not modified. Staging API revision `lesson-studio-staging-api-00009-vj6` and dispatcher revision `lesson-studio-staging-dispatcher-00010-6j2` run application image `17b6766` and pin generation jobs to `lesson-studio-renderer:df61e03`.
 
 The remote-state-backed Terraform stack is fully applied for domainless staging and a fresh plan reports no changes. It includes the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, and the $20 monthly GCP budget alert. The budget is an alert, not a spending lock.
 

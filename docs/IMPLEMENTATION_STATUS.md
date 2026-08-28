@@ -50,7 +50,7 @@ Updated: 2026-08-28
 - Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
 - Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
 - Terraform now supports a domainless, scale-to-zero staging profile with a shared-core database, two E2B workers, three API instances, and a $20 GCP alerting budget while retaining strict production safety checks.
-- Staging API revision `lesson-studio-staging-api-00008-z82` and dispatcher revision `lesson-studio-staging-dispatcher-00009-6l2` serve application image `df61e03`; both pin new generation jobs to E2B template `lesson-studio-renderer:df61e03`.
+- Staging API revision `lesson-studio-staging-api-00009-vj6` and dispatcher revision `lesson-studio-staging-dispatcher-00010-6j2` serve application image `17b6766`; both pin new generation jobs to E2B template `lesson-studio-renderer:df61e03`.
 - The domainless staging stack is fully applied from protected remote Terraform state. It includes private Cloud SQL, API/dispatcher/migration Cloud Run resources, Cloud Tasks, a private versioned artifact bucket, least-privilege identities, alert policies, an 11-chart operations dashboard, and a $20 monthly GCP budget alert. A fresh plan reports no drift.
 - The canonical public staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`. The pre-existing `lesson-studio` singleton remains unchanged.
 
