@@ -16,10 +16,10 @@ Updated: 2026-08-28
 - Owner-scoped PostgreSQL project repository used by hosted API reads and mutations.
 - Serializable generation submission with advisory idempotency locks, immutable credit reservations, active-job limits, and a transactional outbox.
 - Idempotent Cloud Tasks publication with a named task per generation and OIDC-authenticated delivery.
-- Global E2B concurrency gating, lease-based dispatch claims, bounded retry attempts, one sandbox per generation, and sandbox termination on cancellation.
+- Global E2B concurrency gating, lease-based dispatch claims, bounded retry attempts, and one sandbox per generation.
 - The API and dispatcher now require the same immutable E2B template tag. Production startup fails closed when the tag is missing or set to `dev`; there is no implicit `default` template fallback.
 - Every operation after a job claim is inside the dispatch failure boundary. Retryable provider failures return the job to `queued`; terminal failures refund exactly once and expose a generic message while retaining private diagnostics.
-- A five-minute Cloud Scheduler reconciliation invokes the private dispatcher to expire stalled dispatch/running/upload jobs, terminate leaked sandboxes, and refund credits. An in-process reconciliation loop provides an additional best-effort pass.
+- A five-minute Cloud Scheduler reconciliation invokes the private dispatcher to expire stalled dispatch/running/upload jobs, terminate leaked sandboxes, and refund credits. Terminal sandbox cleanup is recorded in the durable outbox before completion, failure, or cancellation, so retries survive account deletion and database cascades. An in-process reconciliation loop provides an additional best-effort pass.
 - Versioned E2B renderer template, official Codex SDK bootstrap, an ephemeral mode-`0600` `.env`, and automatic secret deletion.
 - E2B egress restricted to signed GCS uploads and the application callback/proxy host. The sandbox receives no upstream OpenAI, GCP, database, Identity Platform, Stripe, or Speechify credential.
 - Job-scoped OpenAI proxy tokens, active-job checks, and a concurrent-safe per-job call budget keep the upstream API key outside untrusted sandboxes.
@@ -43,23 +43,24 @@ Updated: 2026-08-28
 - Revisions restore the prior immutable source archive in a new E2B sandbox; frame-review images and licensed assets are supplied through short-lived signed reads.
 - An isolated Stripe CLI sandbox contains stable Creator and Pro lookup-key prices; real hosted Checkout creation was smoke-tested without provisioning access before a webhook.
 - Identity Platform sign-up, verification gating, sign-in, Firebase session creation, session verification, and cleanup passed against the configured GCP project.
-- A reusable release-smoke harness now verifies Identity Platform, Stripe Checkout, and the pinned E2B runtime without committing provider credentials.
-- `lesson-studio-renderer:d13958f-r4` passed the E2B runtime smoke with a non-root user, Node 22, Manim, FFmpeg, Codex SDK resolution, workspace I/O, outbound-network denial, and sandbox teardown.
+- A reusable release-smoke harness now creates and verifies a disposable Identity Platform user, creates a real Stripe sandbox Checkout Session, submits a real Cloud Tasks/E2B generation, validates the private MP4 signature, and deletes all test data without committing provider credentials.
+- `lesson-studio-renderer:df61e03` passed the E2B runtime smoke with a non-root user, Node 22, Manim, FFmpeg, Codex SDK resolution, workspace I/O, outbound-network denial, and sandbox teardown.
 - Workload-based $20, $50, and $100 tiers are enforced server-side; Faster/Balanced use the cost-controlled model and Try harder is reserved for the highest-cost model.
 - OpenAI calls now enforce model, output-token, and per-job request ceilings while recording token and estimated-cost telemetry without retaining provider response bodies.
 - Authenticated users can export their data or delete their account, including subscription cancellation and private object cleanup.
 - Privacy and terms routes document current processing, provider, billing, output-review, retention, and user-control boundaries for staging review.
 - Terraform now supports a domainless, scale-to-zero staging profile with a shared-core database, two E2B workers, three API instances, and a $20 GCP alerting budget while retaining strict production safety checks.
-- The currently deployed staging application remains image `84a9428996994c5e299c045ceab1664b97d4c561` until the 2026-08-28 reliability release is built, migrated, and promoted. Do not describe the branch-only fixes as deployed before that release completes.
+- Staging API revision `lesson-studio-staging-api-00008-z82` and dispatcher revision `lesson-studio-staging-dispatcher-00009-6l2` serve application image `df61e03`; both pin new generation jobs to E2B template `lesson-studio-renderer:df61e03`.
 - The domainless staging stack is fully applied from protected remote Terraform state. It includes private Cloud SQL, API/dispatcher/migration Cloud Run resources, Cloud Tasks, a private versioned artifact bucket, least-privilege identities, alert policies, an 11-chart operations dashboard, and a $20 monthly GCP budget alert. A fresh plan reports no drift.
 - The canonical public staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`. The pre-existing `lesson-studio` singleton remains unchanged.
 
 ## Remaining before production launch
 
+- Restore billing/quota for the OpenAI API project referenced by GCP Secret Manager secret `openai_api_key`, or replace that secret with a funded API key and restart the API revision. The 2026-08-28 full staging smoke reached the scoped Codex proxy and was rejected by OpenAI with `Quota exceeded`; auth, database, Cloud Tasks, E2B dispatch, callback/refund handling, and Stripe sandbox Checkout succeeded before that external blocker.
+- After OpenAI quota is restored, rerun `APP_BASE_URL=<staging-origin> GCP_PROJECT=educationalvideo-506219 npm run smoke:staging`, then run a narrated generation and inspect the visual/audio output. Do not promote while either test is incomplete.
 - Select and store a distinct live restricted Stripe key for production; the current isolated Stripe key is staging-only.
-- Confirm the GCP `e2b_api_key` secret belongs to the same E2B team as `lesson-studio-renderer`, build the current immutable template, and run silent and narrated callback-to-artifact generations through the signed-in website.
 - Point staging DNS at the load-balancer IP, wait for certificate activation, and verify direct `run.app` requests cannot bypass Cloud Armor.
 - Choose and verify monitoring notification recipients, review Identity Platform email templates/sender identity, and assign a named support/on-call owner.
 - Complete load, restore, rollback, security, abuse, privacy/legal, and on-call certification before opening production traffic.
 
-The OpenAI, E2B, Speechify, Identity Platform, staff-email, Stripe sandbox, and Stripe webhook credentials are bound from Secret Manager without committing their values. No production database, live Stripe credential, or reserved E2B capacity is provisioned. Domainless staging now incurs the documented shared-core Cloud SQL and usage-based service costs; the $20 GCP budget is alerting only and excludes OpenAI, E2B, Speechify, and Stripe.
+The OpenAI, E2B, Speechify, Identity Platform, staff-email, Stripe sandbox, and Stripe webhook credentials are bound from Secret Manager without committing their values. The E2B credential and immutable template are confirmed working; the OpenAI credential is configured but currently quota-blocked. No production database, live Stripe credential, or reserved E2B capacity is provisioned. Domainless staging now incurs the documented shared-core Cloud SQL and usage-based service costs; the $20 GCP budget is alerting only and excludes OpenAI, E2B, Speechify, and Stripe.

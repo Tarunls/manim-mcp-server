@@ -145,13 +145,15 @@ export class E2BDispatcher {
 
   async reconcile() {
     const result = await this.generations.reconcileExpiredJobs();
-    const terminal = await this.generations.terminalSandboxes();
-    const settled = await Promise.all(terminal.map(async ({ jobId, sandboxId }) => {
+    await this.generations.queueUntrackedTerminalSandboxes();
+    const pending = await this.generations.pendingSandboxCleanups();
+    const settled = await Promise.all(pending.map(async ({ eventId, jobId, sandboxId }) => {
       try {
         await this.terminate(sandboxId);
-        await this.generations.markSandboxTerminated(jobId, sandboxId);
+        await this.generations.finishSandboxCleanup(eventId, jobId, sandboxId);
         return true;
       } catch (error) {
+        await this.generations.recordSandboxCleanupFailure(eventId, error).catch(() => undefined);
         console.error("Could not terminate terminal E2B sandbox", {
           jobId,
           sandboxId,

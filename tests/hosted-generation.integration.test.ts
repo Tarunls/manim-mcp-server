@@ -102,9 +102,9 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     await db.query("UPDATE generation_jobs SET lease_expires_at = now() - interval '1 minute' WHERE id = $1", [first.jobId]);
     const reconciled = await service.reconcileExpiredJobs();
     assert.deepEqual(reconciled, { reconciled: 1 });
-    assert.deepEqual(await service.terminalSandboxes(), [{ jobId: first.jobId, sandboxId: "sandbox-1" }]);
-    assert.equal(await service.markSandboxTerminated(first.jobId, "sandbox-1"), true);
-    assert.deepEqual(await service.terminalSandboxes(), []);
+    const cleanup = await service.pendingSandboxCleanups();
+    assert.equal(cleanup.length, 1);
+    assert.deepEqual({ jobId: cleanup[0].jobId, sandboxId: cleanup[0].sandboxId }, { jobId: first.jobId, sandboxId: "sandbox-1" });
     assert.equal(await service.verifyCodexAccess(first.jobId, codexToken), undefined);
     const failed = await db.query<{ error_code: string; error_message: string; error_detail: string }>(
       "SELECT error_code, error_message, error_detail FROM generation_jobs WHERE id = $1",
@@ -118,6 +118,11 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
       [ownerId],
     );
     assert.equal(refunded.rows[0].balance, "0");
+    await db.query("DELETE FROM app_users WHERE id = $1", [ownerId]);
+    testOwnerId = undefined;
+    assert.equal((await service.pendingSandboxCleanups())[0]?.eventId, cleanup[0].eventId);
+    await service.finishSandboxCleanup(cleanup[0].eventId, cleanup[0].jobId, cleanup[0].sandboxId);
+    assert.deepEqual(await service.pendingSandboxCleanups(), []);
   } finally {
     if (testOwnerId) await db.query("DELETE FROM app_users WHERE id = $1", [testOwnerId]);
     await db.close();

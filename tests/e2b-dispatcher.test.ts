@@ -125,14 +125,15 @@ test("reconcile terminates and clears every terminal sandbox", async () => {
   const generations = {
     configured: true,
     reconcileExpiredJobs: async () => ({ reconciled: 1 }),
-    terminalSandboxes: async () => [
-      { jobId: "job-complete", sandboxId: "sandbox-complete" },
-      { jobId: "job-failed", sandboxId: "sandbox-failed" },
+    queueUntrackedTerminalSandboxes: async () => 0,
+    pendingSandboxCleanups: async () => [
+      { eventId: "event-complete", jobId: "job-complete", sandboxId: "sandbox-complete" },
+      { eventId: "event-failed", jobId: "job-failed", sandboxId: "sandbox-failed" },
     ],
-    markSandboxTerminated: async (jobId: string, sandboxId: string) => {
-      cleared.push([jobId, sandboxId]);
-      return true;
+    finishSandboxCleanup: async (eventId: string, jobId: string, sandboxId: string) => {
+      cleared.push([eventId, jobId, sandboxId]);
     },
+    recordSandboxCleanupFailure: async () => undefined,
   } as unknown as HostedGenerationService;
   const artifacts = { configured: true } as unknown as ArtifactService;
   const sandboxApi = {
@@ -147,7 +148,7 @@ test("reconcile terminates and clears every terminal sandbox", async () => {
   assert.deepEqual(result, { reconciled: 1, terminated: 2 });
   assert.deepEqual(terminated.sort(), ["sandbox-complete", "sandbox-failed"]);
   assert.deepEqual(cleared.sort(), [
-    ["job-complete", "sandbox-complete"],
-    ["job-failed", "sandbox-failed"],
+    ["event-complete", "job-complete", "sandbox-complete"],
+    ["event-failed", "job-failed", "sandbox-failed"],
   ]);
 });

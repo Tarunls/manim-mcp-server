@@ -67,6 +67,19 @@ function diagnosticMessage(error: unknown) {
 export class HostedGenerationService {
   constructor(private readonly db: Database) {}
 
+  private async queueSandboxCleanup(client: PoolClient, jobId: string, sandboxId: string | null) {
+    if (!sandboxId) return;
+    await client.query(
+      `INSERT INTO outbox_events (id, topic, aggregate_id, payload)
+       SELECT $1, 'sandbox.cleanup', $2, $3::jsonb
+        WHERE NOT EXISTS (
+          SELECT 1 FROM outbox_events
+           WHERE topic = 'sandbox.cleanup' AND aggregate_id = $2
+        )`,
+      [randomUUID(), sandboxId, JSON.stringify({ jobId, sandboxId })],
+    );
+  }
+
   get configured() {
     return this.db.configured && process.env.EXECUTION_MODE === "e2b";
   }
@@ -414,6 +427,7 @@ export class HostedGenerationService {
       );
       const job = result.rows[0];
       if (!job) return;
+      await this.queueSandboxCleanup(client, job.id, job.e2b_sandbox_id);
       if (refund && job.reserved_credits > 0) {
         await client.query(
           `INSERT INTO credit_ledger (id, user_id, job_id, amount, reason, idempotency_key)
@@ -464,29 +478,75 @@ export class HostedGenerationService {
     return { reconciled: expired.rows.length };
   }
 
-  async terminalSandboxes(limit = 50) {
+  async queueUntrackedTerminalSandboxes(limit = 50) {
     const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
     const result = await this.db.query<{ id: string; e2b_sandbox_id: string }>(
       `SELECT id, e2b_sandbox_id
          FROM generation_jobs
         WHERE status IN ('complete', 'failed', 'cancelled')
           AND e2b_sandbox_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM outbox_events
+             WHERE topic = 'sandbox.cleanup'
+               AND aggregate_id = generation_jobs.e2b_sandbox_id
+          )
         ORDER BY completed_at NULLS FIRST, updated_at
         LIMIT $1`,
       [boundedLimit],
     );
-    return result.rows.map((row) => ({ jobId: row.id, sandboxId: row.e2b_sandbox_id }));
+    for (const row of result.rows) {
+      await this.db.transaction((client) => this.queueSandboxCleanup(client, row.id, row.e2b_sandbox_id));
+    }
+    return result.rows.length;
   }
 
-  async markSandboxTerminated(jobId: string, sandboxId: string) {
-    const result = await this.db.query(
-      `UPDATE generation_jobs
-          SET e2b_sandbox_id = NULL, updated_at = now()
-        WHERE id = $1 AND e2b_sandbox_id = $2
-          AND status IN ('complete', 'failed', 'cancelled')`,
-      [jobId, sandboxId],
+  async pendingSandboxCleanups(limit = 50) {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const result = await this.db.query<{
+      id: string;
+      aggregate_id: string;
+      payload: { jobId?: string; sandboxId?: string };
+    }>(
+      `SELECT id, aggregate_id, payload
+         FROM outbox_events
+        WHERE topic = 'sandbox.cleanup' AND published_at IS NULL
+        ORDER BY created_at
+        LIMIT $1`,
+      [boundedLimit],
     );
-    return (result.rowCount || 0) > 0;
+    return result.rows.map((row) => ({
+      eventId: row.id,
+      jobId: String(row.payload?.jobId || ""),
+      sandboxId: String(row.payload?.sandboxId || row.aggregate_id),
+    })).filter((row) => row.sandboxId.length > 0);
+  }
+
+  async finishSandboxCleanup(eventId: string, jobId: string, sandboxId: string) {
+    await this.db.transaction(async (client) => {
+      if (jobId) {
+        await client.query(
+          `UPDATE generation_jobs
+              SET e2b_sandbox_id = NULL, updated_at = now()
+            WHERE id = $1 AND e2b_sandbox_id = $2`,
+          [jobId, sandboxId],
+        );
+      }
+      await client.query(
+        `UPDATE outbox_events
+            SET published_at = now(), attempt = attempt + 1, last_error = NULL
+          WHERE id = $1 AND topic = 'sandbox.cleanup' AND published_at IS NULL`,
+        [eventId],
+      );
+    });
+  }
+
+  async recordSandboxCleanupFailure(eventId: string, error: unknown) {
+    await this.db.query(
+      `UPDATE outbox_events
+          SET attempt = attempt + 1, last_error = $2
+        WHERE id = $1 AND topic = 'sandbox.cleanup' AND published_at IS NULL`,
+      [eventId, diagnosticMessage(error).slice(0, 1000)],
+    );
   }
 
   async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"], assistantMessage?: string) {
@@ -505,6 +565,7 @@ export class HostedGenerationService {
         if (existing.rows[0]?.status === "complete") return { duplicate: true };
         throw new Error("The generation job is not accepting completion.");
       }
+      await this.queueSandboxCleanup(client, job.id, job.e2b_sandbox_id);
       const artifactIds = new Map<string, string>();
       for (const artifact of artifacts) {
         const artifactId = randomUUID();
@@ -589,6 +650,7 @@ export class HostedGenerationService {
       );
       const job = result.rows[0];
       if (!job) return undefined;
+      await this.queueSandboxCleanup(client, job.id, job.e2b_sandbox_id);
       if (job.reserved_credits > 0) {
         await client.query(
           `INSERT INTO credit_ledger (id, user_id, job_id, amount, reason, idempotency_key)

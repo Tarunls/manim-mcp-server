@@ -21,7 +21,7 @@
 - Queue pause/resume, E2B quota exhaustion, OpenAI throttling, sandbox timeout, callback timeout, and invalid artifact paths are exercised.
 - Failed or cancelled generations refund credits exactly once.
 - A failure at every pre-sandbox dispatch step leaves no job in `dispatching`; retryable failures release the lease and terminal failures store only a generic user message.
-- The scheduled reconciler is invoked with its OIDC identity, expires stale dispatch/running/upload leases, terminates the recorded sandbox, and remains idempotent on replay.
+- The scheduled reconciler is invoked with its OIDC identity, expires stale dispatch/running/upload leases, drains durable sandbox-cleanup outbox entries after complete/fail/cancel, and remains idempotent on replay and account deletion.
 - MP4, PNG, gzip, and metadata validation reject content-type spoofing, malformed metadata, oversized input, unsafe archives, links, special files, and secret material.
 - A prior API image and prior E2B template can be restored independently.
 
@@ -39,3 +39,9 @@
 - Privacy policy, terms, retention/deletion process, support contact, and abuse response are published.
 - Monitoring notification channels and on-call ownership are configured; alert tests reach a human.
 - Staging end-to-end silent and narrated videos pass visual, audio, artifact, and download checks.
+
+## Current release blocker (2026-08-28)
+
+- `npm run smoke:staging` passed disposable signup, administrator verification, login/session creation, PostgreSQL persistence, Stripe sandbox Checkout creation, Cloud Tasks dispatch, E2B creation, scoped Codex callback authentication, safe failure handling, refund, and account cleanup.
+- The same smoke could not produce an artifact because OpenAI returned `Quota exceeded. Check your plan and billing details.` for the Secret Manager `openai_api_key` project.
+- Restore OpenAI billing/quota or replace that secret, restart the API to load the new secret version, and rerun both silent and narrated staging generation before checking the final product-and-operations item.

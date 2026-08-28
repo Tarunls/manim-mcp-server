@@ -16,11 +16,11 @@ Do not convert the existing singleton in place. Build staging beside it, validat
 
 ## Staging apply status (2026-08-28)
 
-The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service is not modified. Before the 2026-08-28 reliability release is promoted, staging still runs application image `84a9428996994c5e299c045ceab1664b97d4c561` and does not have `E2B_TEMPLATE_VERSION` on the API service. Run the full release sequence below; do not test generation against that stale revision.
+The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service is not modified. Staging API revision `lesson-studio-staging-api-00008-z82` and dispatcher revision `lesson-studio-staging-dispatcher-00009-6l2` run application image `df61e03` and pin generation jobs to `lesson-studio-renderer:df61e03`.
 
 The remote-state-backed Terraform stack is fully applied for domainless staging and a fresh plan reports no changes. It includes the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, and the $20 monthly GCP budget alert. The budget is an alert, not a spending lock.
 
-The migration, Identity Platform smoke, Stripe hosted-Checkout smoke, E2B runtime smoke, signed-out security checks, automated tests, and application build pass. The remaining staging acceptance work is a signed-in silent generation and narrated generation through the full callback-to-artifact path, notification-channel ownership, and the custom domain/managed edge after the owner supplies a hostname and DNS access.
+The migration, Identity Platform smoke, Stripe hosted-Checkout smoke, E2B runtime smoke, signed-out security checks, automated tests, and application build pass. A full signed-in smoke reached E2B and the scoped Codex proxy but OpenAI rejected generation because the API project's quota/billing is exhausted. Restore or replace the `openai_api_key` secret and restart the API before retrying. The remaining staging acceptance work is a successful silent and narrated generation through the full callback-to-artifact path, notification-channel ownership, and the custom domain/managed edge after the owner supplies a hostname and DNS access.
 
 ## Release sequence
 
@@ -58,9 +58,10 @@ The commands below require their named environment variables but never need secr
 npm run smoke:identity
 npm run smoke:stripe
 E2B_TEMPLATE_VERSION=<immutable-release-id> npm run smoke:e2b
+APP_BASE_URL=<staging-origin> GCP_PROJECT=<gcp-project> npm run smoke:staging
 npm run test:e2e
 ```
 
-`smoke:identity` creates and deletes a uniquely named temporary Identity Platform user. `smoke:stripe` creates a hosted sandbox Checkout session and deletes its temporary database user. `smoke:e2b` disables internet access, checks the pinned runtime, and always kills the disposable sandbox.
+`smoke:identity` creates and deletes a uniquely named temporary Identity Platform user. `smoke:stripe` creates a hosted sandbox Checkout session and deletes its temporary database user. `smoke:e2b` disables internet access, checks the pinned runtime, and always kills the disposable sandbox. `smoke:staging` creates a disposable verified user, checks Stripe Checkout, submits a real generation, validates the private MP4 signature, and deletes the account and Identity Platform user in a `finally` block.
 
-The 2026-08-24 runtime certification passed on `lesson-studio-renderer:df535ac`. This certifies the worker runtime, not the callback-to-artifact path; complete the signed-in silent and narrated generation checks before treating staging as fully accepted.
+The 2026-08-28 runtime certification passed on `lesson-studio-renderer:df61e03`. This certifies the worker runtime, not successful provider generation; complete the signed-in silent and narrated generation checks after OpenAI quota is restored before treating staging as fully accepted.
