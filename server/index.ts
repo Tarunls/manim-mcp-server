@@ -32,6 +32,7 @@ import { HostedBillingService } from "./hosted-billing-service.js";
 import { ScopedNarrationService } from "./scoped-narration.js";
 import { HostedMediaService } from "./hosted-media-service.js";
 import { ScopedCodexProxy } from "./scoped-codex-proxy.js";
+import { routeAllowedForService, type ServiceRole } from "./service-role.js";
 import type {
   BillingPlanId,
   ColorPalette,
@@ -76,7 +77,7 @@ const port = Number(process.env.PORT || 4321);
 const host =
   process.env.HOST ||
   (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
-const serviceRole =
+const serviceRole: ServiceRole =
   process.env.SERVICE_ROLE === "api" ||
   process.env.SERVICE_ROLE === "dispatcher"
     ? process.env.SERVICE_ROLE
@@ -168,17 +169,9 @@ app.get("/api/health/ready", async (_request, response) => {
 });
 
 app.use((request, response, next) => {
-  const dispatchPath = request.path === "/api/internal/generation/dispatch";
-  if (serviceRole === "api" && dispatchPath) return response.status(404).end();
-  if (
-    serviceRole === "dispatcher" &&
-    !dispatchPath &&
-    !request.path.startsWith("/api/health") &&
-    request.path !== "/healthz"
-  ) {
-    return response.status(404).end();
-  }
-  next();
+  return routeAllowedForService(serviceRole, request.path)
+    ? next()
+    : response.status(404).end();
 });
 
 function authUser(request: express.Request) {
