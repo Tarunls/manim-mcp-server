@@ -3,6 +3,19 @@ import { createHash } from "node:crypto";
 import type { ArtifactService } from "./artifact-service.js";
 import type { HostedGenerationService } from "./hosted-generation-service.js";
 
+export function e2bExecutionTimeouts() {
+  const requested = Number(process.env.E2B_SANDBOX_TIMEOUT_MS);
+  const sandboxMs = Number.isSafeInteger(requested) && requested >= 5 * 60_000 && requested <= 60 * 60_000
+    ? requested
+    : 45 * 60_000;
+  return {
+    sandboxMs,
+    agentMs: Math.max(60_000, sandboxMs - 2 * 60_000),
+    commandMs: Math.max(2 * 60_000, sandboxMs - 60_000),
+    requestMs: 30_000,
+  };
+}
+
 export class E2BDispatcher {
   constructor(
     private readonly generations: HostedGenerationService,
@@ -75,15 +88,17 @@ export class E2BDispatcher {
       if (!job.templateVersion || job.templateVersion === "dev")
         throw new Error("Generation job does not have an immutable E2B template version.");
       const template = `${templateName}:${job.templateVersion}`;
+      const executionTimeouts = e2bExecutionTimeouts();
       sandbox = await this.sandboxApi.create(template, {
         apiKey: process.env.E2B_API_KEY,
-        timeoutMs: Number(process.env.E2B_SANDBOX_TIMEOUT_MS || 45 * 60_000),
+        timeoutMs: executionTimeouts.sandboxMs,
         metadata: { app: "lesson-studio", jobId: job.id, ownerHash: createHash("sha256").update(job.ownerId).digest("hex").slice(0, 16) },
         envs: {
           OPENAI_API_KEY: this.generations.codexToken(job.id),
           OPENAI_BASE_URL: `${callbackBaseUrl.replace(/\/$/, "")}/api/internal/codex/${job.id}/v1`,
           JOB_CALLBACK_TOKEN: this.generations.callbackToken(job.id),
           JOB_CALLBACK_URL: `${callbackBaseUrl.replace(/\/$/, "")}/api/internal/generation/${job.id}`,
+          GENERATION_AGENT_TIMEOUT_MS: String(executionTimeouts.agentMs),
         },
         allowInternetAccess: true,
         network: {
@@ -109,7 +124,8 @@ export class E2BDispatcher {
       const processHandle = await sandbox.commands.run("node /opt/lesson-studio/app/e2b/bootstrap.mjs", {
         background: true,
         cwd: "/workspace",
-        timeoutMs: 30_000,
+        timeoutMs: executionTimeouts.commandMs,
+        requestTimeoutMs: executionTimeouts.requestMs,
       });
       await processHandle.disconnect();
       const started = await this.generations.markSandboxStarted(job.id, job.dispatchLeaseId!, sandbox.sandboxId);

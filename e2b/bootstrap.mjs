@@ -22,6 +22,20 @@ function required(value, name) {
   return value;
 }
 
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function callback(suffix, body) {
   let lastError;
   for (let attempt = 1; attempt <= 4; attempt += 1) {
@@ -202,7 +216,15 @@ ${String(job.prompt).slice(0, 12000)}
     model: job.effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
     modelReasoningEffort: job.effort === "thorough" ? "xhigh" : job.effort === "balanced" ? "high" : "medium",
   });
-  const turn = await thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions);
+  const requestedAgentTimeout = Number(process.env.GENERATION_AGENT_TIMEOUT_MS);
+  const agentTimeoutMs = Number.isSafeInteger(requestedAgentTimeout) && requestedAgentTimeout >= 60_000
+    ? Math.min(requestedAgentTimeout, 58 * 60_000)
+    : 25 * 60_000;
+  const turn = await withTimeout(
+    thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions),
+    agentTimeoutMs,
+    "Codex generation exceeded its execution deadline.",
+  );
   for (const filename of ["output.mp4", "metadata.json"]) {
     if (!await exists(path.join(projectRoot, filename))) {
       throw new Error(`Codex completed without ${filename}. Agent response: ${redactSecrets(turn.finalResponse, 2_000)}`);

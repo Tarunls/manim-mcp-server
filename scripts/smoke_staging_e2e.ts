@@ -75,6 +75,7 @@ async function forceDeleteIdentity() {
 }
 
 async function main() {
+  console.log("Staging smoke: checking public auth status.");
   const status = await appRequest<{ csrfToken: string }>("/api/auth/status");
   csrfToken = status.csrfToken;
   const signup = await appRequest<{ user: { uid: string }; verificationRequired: boolean }>("/api/auth/signup", {
@@ -83,15 +84,18 @@ async function main() {
   });
   identityId = signup.user.uid;
   assert.equal(signup.verificationRequired, true);
+  console.log("Staging smoke: disposable signup created and verification required.");
   await identityRequest("update", { localId: identityId, emailVerified: true });
   await appRequest("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   authenticated = true;
+  console.log("Staging smoke: email verified and session established.");
 
   const checkout = await appRequest<{ url: string }>("/api/billing/checkout", {
     method: "POST",
     body: JSON.stringify({ plan: "creator" }),
   });
   assert.match(checkout.url, /^https:\/\/checkout\.stripe\.com\//);
+  console.log("Staging smoke: Stripe test checkout session created.");
 
   project = await appRequest<StudioProject>("/api/projects", { method: "POST", body: "{}" });
   const accepted = await appRequest<{ jobId: string }>(`/api/projects/${project.id}/messages`, {
@@ -105,13 +109,20 @@ async function main() {
     }),
   });
   assert.match(accepted.jobId, /^[0-9a-f-]{36}$/i);
+  console.log(`Staging smoke: generation accepted (${accepted.jobId}).`);
 
   const deadline = Date.now() + Number(process.env.STAGING_SMOKE_TIMEOUT_MS || 20 * 60_000);
+  let lastProgress = "";
   while (Date.now() < deadline) {
     const event = await appRequest<StudioEvent>("/api/state");
     if (event.type !== "snapshot") throw new Error("Staging state did not return a snapshot.");
     project = event.projects.find((candidate) => candidate.id === project!.id);
     if (!project) throw new Error("Smoke project disappeared.");
+    const progress = `${project.status}:${project.stage}`;
+    if (progress !== lastProgress) {
+      console.log(`Staging smoke: project ${progress}.`);
+      lastProgress = progress;
+    }
     if (project.status === "error" || project.status === "cancelled")
       throw new Error(project.error || `Generation ended as ${project.status}.`);
     if (project.status === "complete") break;
