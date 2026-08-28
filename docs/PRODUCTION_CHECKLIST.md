@@ -42,6 +42,6 @@
 
 ## Current release blocker (2026-08-28)
 
-- `npm run smoke:staging` passed disposable signup, administrator verification, login/session creation, PostgreSQL persistence, Stripe sandbox Checkout creation, Cloud Tasks dispatch, E2B creation, scoped Codex callback authentication, safe failure handling, refund, and account cleanup.
-- The same smoke could not produce an artifact because OpenAI returned `Quota exceeded. Check your plan and billing details.` for the Secret Manager `openai_api_key` project.
-- Restore OpenAI billing/quota or replace that secret, restart the API to load the new secret version, and rerun both silent and narrated staging generation before checking the final product-and-operations item.
+- DNS points `useorune.com` at the managed edge, HTTP redirects to HTTPS, Identity Platform authorizes the hostname, Cloud Run rejects direct public-origin access, and the custom Stripe sandbox webhook/three monthly prices are configured.
+- The replacement OpenAI credential passed provider authentication, and the pinned E2B template passed its isolated runtime smoke. Local build, tests, Playwright coverage, dependency audit, and Terraform validation pass.
+- Google-managed TLS is still provisioning after the cutover. Once it is `ACTIVE`, rerun both silent and narrated staging generation before checking the final product-and-operations item.

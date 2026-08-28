@@ -2,7 +2,7 @@
 
 ## Lesson Studio MVP
 
-The production foundation is implemented; staging and launch certification remain. The trust boundaries, data flow, and security requirements are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), with current progress in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+The production foundation and custom-domain staging infrastructure are implemented; final staging and launch certification remain. The trust boundaries, data flow, and security requirements are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), with current progress in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 Hosted mode uses `EXECUTION_MODE=e2b`, PostgreSQL, Cloud Tasks, private GCS artifacts, and a pinned E2B template. Build that template with `npm run e2b:build-template`; production startup intentionally fails if any required hosted dependency is missing.
 

@@ -16,11 +16,11 @@ Do not convert the existing singleton in place. Build staging beside it, validat
 
 ## Staging apply status (2026-08-28)
 
-The domainless staging origin is `https://lesson-studio-staging-api-359351998003.us-central1.run.app`; the legacy `lesson-studio` service is not modified. Staging API revision `lesson-studio-staging-api-00009-vj6` and dispatcher revision `lesson-studio-staging-dispatcher-00010-6j2` run application image `17b6766` and pin generation jobs to `lesson-studio-renderer:df61e03`.
+The canonical staging origin is `https://useorune.com`; the legacy `lesson-studio` service is not modified. Staging API revision `lesson-studio-staging-api-00013-5x2` and dispatcher revision `lesson-studio-staging-dispatcher-00011-wd4` run application image `17b6766` and pin generation jobs to `lesson-studio-renderer:df61e03`.
 
-The remote-state-backed Terraform stack is fully applied for domainless staging and a fresh plan reports no changes. It includes the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, and the $20 monthly GCP budget alert. The budget is an alert, not a spending lock.
+The remote-state-backed Terraform stack is applied with the custom edge. It includes the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, $20 monthly GCP budget alert, global IP `136.68.115.171`, Cloud Armor, HTTP redirect, modern TLS policy, and Google-managed certificate. The budget is an alert, not a spending lock.
 
-The migration, Identity Platform smoke, Stripe hosted-Checkout smoke, E2B runtime smoke, signed-out security checks, automated tests, and application build pass. A full signed-in smoke reached E2B and the scoped Codex proxy but OpenAI rejected generation because the API project's quota/billing is exhausted. Restore or replace the `openai_api_key` secret and restart the API before retrying. The remaining staging acceptance work is a successful silent and narrated generation through the full callback-to-artifact path, notification-channel ownership, and the custom domain/managed edge after the owner supplies a hostname and DNS access.
+DNS, Identity Platform authorized domains, Stripe sandbox prices, the custom webhook, secret rotation, HTTP redirect, E2B runtime smoke, signed-out security checks, automated tests, and the application build pass. The replacement OpenAI key is Secret Manager version 2 and passed a provider authentication check. Google-managed TLS is still provisioning after the DNS/edge cutover; the remaining staging acceptance work is certificate activation, a successful silent and narrated generation through the full callback-to-artifact path, and notification-channel ownership.
 
 ## Release sequence
 
@@ -64,4 +64,4 @@ npm run test:e2e
 
 `smoke:identity` creates and deletes a uniquely named temporary Identity Platform user. `smoke:stripe` creates a hosted sandbox Checkout session and deletes its temporary database user. `smoke:e2b` disables internet access, checks the pinned runtime, and always kills the disposable sandbox. `smoke:staging` creates a disposable verified user, checks Stripe Checkout, submits a real generation, validates the private MP4 signature, and deletes the account and Identity Platform user in a `finally` block.
 
-The 2026-08-28 runtime certification passed on `lesson-studio-renderer:df61e03`. This certifies the worker runtime, not successful provider generation; complete the signed-in silent and narrated generation checks after OpenAI quota is restored before treating staging as fully accepted.
+The 2026-08-28 runtime certification passed again on `lesson-studio-renderer:df61e03`. This certifies the worker runtime, not successful provider generation; complete the signed-in silent and narrated generation checks after the managed certificate activates before treating staging as fully accepted.
