@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { randomBytes, randomUUID } from "node:crypto";
+import { GoogleAuth } from "google-auth-library";
 import type { StudioEvent, StudioProject } from "../server/types.js";
 
-const execFileAsync = promisify(execFile);
 const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
 const projectId = process.env.GCP_PROJECT?.trim();
 if (!baseUrl?.startsWith("https://")) throw new Error("APP_BASE_URL must be the staging HTTPS origin.");
@@ -17,6 +15,9 @@ let csrfToken = "";
 let identityId = "";
 let project: StudioProject | undefined;
 let authenticated = false;
+const googleAuth = new GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+});
 
 function captureCookies(response: Response) {
   const values = response.headers.getSetCookie?.() || [];
@@ -45,8 +46,11 @@ async function appRequest<T>(path: string, init: RequestInit = {}) {
 }
 
 async function accessToken() {
-  const { stdout } = await execFileAsync("gcloud", ["auth", "print-access-token"]);
-  return stdout.trim();
+  const client = await googleAuth.getClient();
+  const result = await client.getAccessToken();
+  const token = typeof result === "string" ? result : result.token;
+  if (!token) throw new Error("Google application-default credentials did not return an access token.");
+  return token;
 }
 
 async function identityRequest(path: string, body: unknown) {
