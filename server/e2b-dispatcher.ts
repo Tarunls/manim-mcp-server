@@ -1,4 +1,4 @@
-import { RateLimitError, Sandbox, TimeoutError } from "e2b";
+import { RateLimitError, Sandbox, SandboxNotFoundError, TimeoutError } from "e2b";
 import { createHash } from "node:crypto";
 import type { ArtifactService } from "./artifact-service.js";
 import type { HostedGenerationService } from "./hosted-generation-service.js";
@@ -135,18 +135,31 @@ export class E2BDispatcher {
 
   async terminate(sandboxId: string | undefined) {
     if (!sandboxId) return;
-    const sandbox = await this.sandboxApi.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
-    await sandbox.kill();
+    try {
+      const sandbox = await this.sandboxApi.connect(sandboxId, { apiKey: process.env.E2B_API_KEY });
+      await sandbox.kill();
+    } catch (error) {
+      if (!(error instanceof SandboxNotFoundError)) throw error;
+    }
   }
 
   async reconcile() {
     const result = await this.generations.reconcileExpiredJobs();
-    await Promise.all(result.sandboxIds.map((sandboxId) => this.terminate(sandboxId).catch((error) => {
-      console.error("Could not terminate expired E2B sandbox", {
-        sandboxId,
-        message: error instanceof Error ? error.message : "unknown",
-      });
-    })));
-    return { reconciled: result.reconciled };
+    const terminal = await this.generations.terminalSandboxes();
+    const settled = await Promise.all(terminal.map(async ({ jobId, sandboxId }) => {
+      try {
+        await this.terminate(sandboxId);
+        await this.generations.markSandboxTerminated(jobId, sandboxId);
+        return true;
+      } catch (error) {
+        console.error("Could not terminate terminal E2B sandbox", {
+          jobId,
+          sandboxId,
+          message: error instanceof Error ? error.message : "unknown",
+        });
+        return false;
+      }
+    }));
+    return { reconciled: result.reconciled, terminated: settled.filter(Boolean).length };
   }
 }

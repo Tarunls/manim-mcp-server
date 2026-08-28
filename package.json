@@ -16,6 +16,7 @@
     "smoke:e2b": "node --env-file-if-exists=.env --import tsx scripts/smoke_e2b.ts",
     "smoke:identity": "node --env-file-if-exists=.env --import tsx scripts/smoke_identity.ts",
     "smoke:stripe": "node --env-file-if-exists=.env --import tsx scripts/smoke_stripe.ts",
+    "smoke:staging": "node --env-file-if-exists=.env --import tsx scripts/smoke_staging_e2e.ts",
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
     "test:e2e": "playwright test",
     "setup:manim": "node scripts/setup_manim.mjs",

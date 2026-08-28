@@ -117,3 +117,37 @@ test("dispatcher always starts the exact immutable template and records its leas
   assert.deepEqual(started, [job.id, job.dispatchLeaseId, "sandbox-1"]);
   assert.equal(result.status, "running");
 });
+
+test("reconcile terminates and clears every terminal sandbox", async () => {
+  configure();
+  const terminated: string[] = [];
+  const cleared: string[][] = [];
+  const generations = {
+    configured: true,
+    reconcileExpiredJobs: async () => ({ reconciled: 1 }),
+    terminalSandboxes: async () => [
+      { jobId: "job-complete", sandboxId: "sandbox-complete" },
+      { jobId: "job-failed", sandboxId: "sandbox-failed" },
+    ],
+    markSandboxTerminated: async (jobId: string, sandboxId: string) => {
+      cleared.push([jobId, sandboxId]);
+      return true;
+    },
+  } as unknown as HostedGenerationService;
+  const artifacts = { configured: true } as unknown as ArtifactService;
+  const sandboxApi = {
+    connect: async (sandboxId: string) => ({
+      kill: async () => {
+        terminated.push(sandboxId);
+      },
+    }),
+  } as unknown as typeof Sandbox;
+
+  const result = await new E2BDispatcher(generations, artifacts, sandboxApi).reconcile();
+  assert.deepEqual(result, { reconciled: 1, terminated: 2 });
+  assert.deepEqual(terminated.sort(), ["sandbox-complete", "sandbox-failed"]);
+  assert.deepEqual(cleared.sort(), [
+    ["job-complete", "sandbox-complete"],
+    ["job-failed", "sandbox-failed"],
+  ]);
+});

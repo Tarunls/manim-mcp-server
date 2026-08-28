@@ -449,13 +449,18 @@ app.post(
     );
     if (!job)
       return response.status(401).json({ error: "Invalid job callback." });
+    const diagnostic =
+      typeof request.body?.error === "string"
+        ? request.body.error.slice(0, 4000)
+        : "Sandbox generation failed.";
+    console.error("E2B sandbox generation failed", {
+      jobId: job.id,
+      sandboxId: job.sandboxId,
+      message: diagnostic,
+    });
     await generations.fail(
       job.id,
-      new Error(
-        typeof request.body?.error === "string"
-          ? request.body.error
-          : "Sandbox generation failed.",
-      ),
+      new Error(diagnostic),
       true,
     );
     response.json({ received: true });

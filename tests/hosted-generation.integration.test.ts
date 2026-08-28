@@ -101,7 +101,10 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     assert.equal(calls.filter((result) => result.status === "rejected").length, 1);
     await db.query("UPDATE generation_jobs SET lease_expires_at = now() - interval '1 minute' WHERE id = $1", [first.jobId]);
     const reconciled = await service.reconcileExpiredJobs();
-    assert.deepEqual(reconciled, { reconciled: 1, sandboxIds: ["sandbox-1"] });
+    assert.deepEqual(reconciled, { reconciled: 1 });
+    assert.deepEqual(await service.terminalSandboxes(), [{ jobId: first.jobId, sandboxId: "sandbox-1" }]);
+    assert.equal(await service.markSandboxTerminated(first.jobId, "sandbox-1"), true);
+    assert.deepEqual(await service.terminalSandboxes(), []);
     assert.equal(await service.verifyCodexAccess(first.jobId, codexToken), undefined);
     const failed = await db.query<{ error_code: string; error_message: string; error_detail: string }>(
       "SELECT error_code, error_message, error_detail FROM generation_jobs WHERE id = $1",

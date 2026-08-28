@@ -205,7 +205,9 @@ ${String(job.prompt).slice(0, 12000)}
   });
   const turn = await thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions);
   for (const filename of ["output.mp4", "metadata.json"]) {
-    if (!await exists(path.join(projectRoot, filename))) throw new Error(`Codex completed without ${filename}.`);
+    if (!await exists(path.join(projectRoot, filename))) {
+      throw new Error(`Codex completed without ${filename}. Agent response: ${redactSecrets(turn.finalResponse, 2_000)}`);
+    }
   }
   await assertNoSecretMaterial(projectRoot, [apiKey, callbackToken]);
   await fs.rm(sandboxEnvPath, { force: true });
@@ -222,7 +224,9 @@ ${String(job.prompt).slice(0, 12000)}
   if (await exists(path.join(projectRoot, "contact-sheet.png"))) uploaded.push(await upload("contact_sheet", path.join(projectRoot, "contact-sheet.png")));
   await callback("/complete", { artifacts: uploaded, assistantMessage: redactSecrets(turn.finalResponse) });
 } catch (error) {
+  const diagnostic = redactSecrets(error instanceof Error ? error.stack || error.message : "Sandbox generation failed.");
+  await fs.writeFile("/workspace/failure.log", `${diagnostic}\n`, { mode: 0o600 }).catch(() => undefined);
   await fs.rm(sandboxEnvPath, { force: true }).catch(() => undefined);
-  await callback("/failure", { error: redactSecrets(error instanceof Error ? error.message : "Sandbox generation failed.") }).catch(() => undefined);
+  await callback("/failure", { error: diagnostic }).catch(() => undefined);
   process.exitCode = 1;
 }

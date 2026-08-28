@@ -455,15 +455,38 @@ export class HostedGenerationService {
           AND lease_expires_at IS NOT NULL AND lease_expires_at < now()
         ORDER BY lease_expires_at LIMIT 50`,
     );
-    const sandboxIds: string[] = [];
     for (const row of expired.rows) {
-      if (row.e2b_sandbox_id) sandboxIds.push(row.e2b_sandbox_id);
       await this.fail(row.id, new Error(`Generation lease expired in ${row.status}.`), true, {
         code: "generation_timeout",
         userMessage: "The renderer timed out. Your generation credits were restored.",
       });
     }
-    return { reconciled: expired.rows.length, sandboxIds };
+    return { reconciled: expired.rows.length };
+  }
+
+  async terminalSandboxes(limit = 50) {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const result = await this.db.query<{ id: string; e2b_sandbox_id: string }>(
+      `SELECT id, e2b_sandbox_id
+         FROM generation_jobs
+        WHERE status IN ('complete', 'failed', 'cancelled')
+          AND e2b_sandbox_id IS NOT NULL
+        ORDER BY completed_at NULLS FIRST, updated_at
+        LIMIT $1`,
+      [boundedLimit],
+    );
+    return result.rows.map((row) => ({ jobId: row.id, sandboxId: row.e2b_sandbox_id }));
+  }
+
+  async markSandboxTerminated(jobId: string, sandboxId: string) {
+    const result = await this.db.query(
+      `UPDATE generation_jobs
+          SET e2b_sandbox_id = NULL, updated_at = now()
+        WHERE id = $1 AND e2b_sandbox_id = $2
+          AND status IN ('complete', 'failed', 'cancelled')`,
+      [jobId, sandboxId],
+    );
+    return (result.rowCount || 0) > 0;
   }
 
   async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"], assistantMessage?: string) {
