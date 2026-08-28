@@ -18,7 +18,7 @@ resource "google_compute_security_policy" "edge" {
     action   = "rate_based_ban"
     match {
       expr {
-        expression = "request.path.startsWith('/api/auth/') || request.path.matches('/api/projects/[^/]+/(messages|reviews)')"
+        expression = "request.path.startsWith('/api/auth/') || request.path.matches('/api/projects/[^/]+/messages') || request.path.matches('/api/projects/[^/]+/reviews')"
       }
     }
     rate_limit_options {
@@ -57,7 +57,6 @@ resource "google_compute_backend_service" "api" {
   protocol              = "HTTP"
   port_name             = "http"
   load_balancing_scheme = "EXTERNAL_MANAGED"
-  timeout_sec           = 3600
   security_policy       = google_compute_security_policy.edge[0].id
   backend {
     group = google_compute_region_network_endpoint_group.api[0].id
