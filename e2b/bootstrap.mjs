@@ -186,7 +186,6 @@ ${String(job.prompt).slice(0, 12000)}
   const codex = new Codex({
     apiKey,
     baseUrl: openaiBaseUrl,
-    config: { features: { responses_websockets: false } },
     env: {
       PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
       HOME: process.env.HOME || "/home/user",
