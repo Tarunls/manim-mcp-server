@@ -34,17 +34,20 @@ test("authenticated users reach a hydrated studio without the auth gate", async 
     contentType: "application/json",
     body: JSON.stringify({ plans: [], checkoutEnabled: true }),
   }));
-  await page.route("**/api/state", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({
-      type: "snapshot",
-      projects: [],
-      auth: { connected: true, email: "creator@example.test", mode: "hosted" },
-      billing,
-      runtime: { codex: true, manim: true, remotion: true, ffmpeg: true },
-    }),
+  // The studio bootstraps from the event stream: the server sends a full
+  // snapshot as the first SSE message on /api/events.
+  const snapshot = JSON.stringify({
+    type: "snapshot",
+    projects: [],
+    auth: { connected: true },
+    billing,
+    runtime: { codex: true, manim: true, remotion: true, ffmpeg: true },
+  });
+  await page.route("**/api/events", (route) => route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    body: `retry: 60000\ndata: ${snapshot}\n\n`,
   }));
-  await page.route("**/api/events", (route) => route.fulfill({ status: 204 }));
 
   await page.goto("/studio");
   await expect(page.getByRole("button", { name: /New video/ })).toBeVisible();

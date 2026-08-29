@@ -1,0 +1,575 @@
+import {
+  ArrowRight,
+  ArrowUp,
+  ArrowUpRight,
+  ArrowsLeftRight,
+  Code,
+  ImageSquare,
+  PushPin,
+  SlidersHorizontal,
+  Stop,
+  Warning,
+  X,
+} from "@phosphor-icons/react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import type {
+  AuthState,
+  BillingState,
+  ColorPalette,
+  FontCategory,
+  GenerationEffort,
+  GenerationIntent,
+  ReviewFocus,
+  ReviewStrictness,
+  RuntimeState,
+  StudioProject,
+} from "../types";
+import {
+  clampEffort,
+  THINKING_OPTIONS,
+  videoEngineIsReady,
+  type ChatMode,
+  type ChatSide,
+  type FloatingPosition,
+} from "../lib/studio";
+import { AgentActivity } from "./Progress";
+import { AssetPicker } from "./AssetPicker";
+
+function ThinkingControl({
+  value,
+  disabled,
+  maxEffort = "thorough",
+  onChange,
+}: {
+  value: GenerationEffort;
+  disabled?: boolean;
+  maxEffort?: GenerationEffort;
+  onChange: (value: GenerationEffort) => void;
+}) {
+  const selectedIndex = Math.max(
+    0,
+    THINKING_OPTIONS.findIndex((option) => option.value === value),
+  );
+  const maxIndex = Math.max(
+    0,
+    THINKING_OPTIONS.findIndex((option) => option.value === maxEffort),
+  );
+  return (
+    <label className="thinking-control">
+      <span className="thinking-heading">
+        <span>Thinking</span>
+        <strong>{THINKING_OPTIONS[selectedIndex].label}</strong>
+      </span>
+      <input
+        type="range"
+        min="0"
+        max={maxIndex}
+        step="1"
+        value={selectedIndex}
+        disabled={disabled}
+        aria-label="Thinking effort"
+        aria-valuetext={THINKING_OPTIONS[selectedIndex].label}
+        onChange={(event) =>
+          onChange(THINKING_OPTIONS[Number(event.target.value)].value)
+        }
+      />
+      <span className="thinking-scale" aria-hidden="true">
+        {THINKING_OPTIONS.map((option) => (
+          <span key={option.value}>{option.label}</span>
+        ))}
+      </span>
+    </label>
+  );
+}
+
+export function ChatPanel({
+  project,
+  auth,
+  billing,
+  runtime,
+  draft,
+  sendError,
+  sending,
+  onDraft,
+  onSend,
+  onCancel,
+  onReviewPreferences,
+  onDesignPreferences,
+  onNarrationPreferences,
+  onGenerationPreferences,
+  onNotify,
+  mode,
+  side,
+  floatingPosition,
+  onToggleMode,
+  onToggleSide,
+  onClose,
+  onFloatingPosition,
+}: {
+  project?: StudioProject;
+  auth: AuthState;
+  billing: BillingState;
+  runtime: RuntimeState;
+  draft: string;
+  sendError: string;
+  sending: boolean;
+  onDraft: (text: string) => void;
+  onSend: (
+    text: string,
+    intent: GenerationIntent,
+    effort: GenerationEffort,
+  ) => Promise<boolean>;
+  onCancel: () => void;
+  onReviewPreferences: (
+    focus: ReviewFocus,
+    strictness: ReviewStrictness,
+  ) => Promise<void>;
+  onDesignPreferences: (changes: {
+    fontCategory?: FontCategory;
+    colorPalette?: ColorPalette;
+  }) => Promise<void>;
+  onNarrationPreferences: (enabled: boolean) => Promise<void>;
+  onGenerationPreferences: (effort: GenerationEffort) => Promise<void>;
+  onNotify: (message: string) => void;
+  mode: ChatMode;
+  side: ChatSide;
+  floatingPosition: FloatingPosition;
+  onToggleMode: () => void;
+  onToggleSide: () => void;
+  onClose: () => void;
+  onFloatingPosition: (position: FloatingPosition) => void;
+}) {
+  const [intent, setIntent] = useState<GenerationIntent>("auto");
+  const [generationEffort, setGenerationEffort] = useState<GenerationEffort>(
+    clampEffort(
+      project?.generationPreferences?.effort || "balanced",
+      billing.entitlements.maxEffort,
+    ),
+  );
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const running = project?.status === "running";
+  const hasPriorWork = Boolean(
+    project?.threadId || project?.messages.length || project?.versions.length,
+  );
+  const videoReady = videoEngineIsReady(runtime);
+  const suggestions = [
+    "Animate why the Pythagorean theorem works",
+    "Make gradient descent feel intuitive",
+    "Show how sound becomes a frequency spectrum",
+  ];
+
+  async function submit() {
+    const value = draft.trim();
+    if (!value || running || sending) return;
+    const sent = await onSend(value, intent, generationEffort);
+    if (sent) setIntent("auto");
+  }
+
+  function beginChatDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (
+      mode !== "floating" ||
+      (event.target as HTMLElement).closest("button, select, textarea, input")
+    )
+      return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = floatingPosition;
+    const bounds = (event.currentTarget.closest(".chat-panel") as HTMLElement)
+      ?.getBoundingClientRect();
+    const panelWidth = bounds?.width || 500;
+    const panelHeight = bounds?.height || 640;
+    const move = (pointer: PointerEvent) => {
+      onFloatingPosition({
+        x: Math.min(
+          Math.max(12, window.innerWidth - panelWidth - 12),
+          Math.max(12, origin.x + pointer.clientX - startX),
+        ),
+        y: Math.min(
+          Math.max(64, window.innerHeight - panelHeight - 12),
+          Math.max(64, origin.y + pointer.clientY - startY),
+        ),
+      });
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
+  return (
+    <section
+      className={`chat-panel chat-${mode}`}
+      aria-label="Video chat"
+      style={
+        mode === "floating"
+          ? { left: floatingPosition.x, top: floatingPosition.y }
+          : undefined
+      }
+    >
+      <header className="panel-header" onPointerDown={beginChatDrag}>
+        <div className="chat-title">
+          <span className="kicker">Creative copilot</span>
+          <h1>{project?.title || "New video"}</h1>
+        </div>
+        <div className="chat-window-controls">
+          {mode === "docked" && (
+            <button
+              className="icon-button"
+              onClick={onToggleSide}
+              aria-label={`Move chat to the ${side === "left" ? "right" : "left"}`}
+              title={`Move chat to the ${side === "left" ? "right" : "left"}`}
+            >
+              <ArrowsLeftRight size={16} />
+            </button>
+          )}
+          <button
+            className="icon-button"
+            onClick={onToggleMode}
+            aria-label={mode === "floating" ? "Dock chat" : "Float chat"}
+            title={mode === "floating" ? "Dock chat" : "Float chat"}
+          >
+            {mode === "floating" ? (
+              <PushPin size={16} />
+            ) : (
+              <ArrowUpRight size={16} />
+            )}
+          </button>
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Hide chat"
+            title="Hide chat"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </header>
+
+      {/*
+        The list is rendered bottom-up inside a column-reverse container, so
+        the browser keeps the scroll position pinned to the newest content
+        while messages stream in - no scroll effect needed.
+      */}
+      <div className="messages">
+        {project?.error && (
+          <div className="inline-error">
+            <Warning size={15} />
+            <span>{project.error}</span>
+          </div>
+        )}
+        {project && <AgentActivity project={project} />}
+        {project?.messages
+          .map((message) => (
+            <div className={`message message-${message.role}`} key={message.id}>
+              <div className="message-bubble">
+                {message.attachment?.type === "frameReview" && (
+                  <div className="message-frame">
+                    <img
+                      src={message.attachment.imageUrl}
+                      alt={`Annotated frame ${message.attachment.label}`}
+                    />
+                    <span>{message.attachment.label}</span>
+                  </div>
+                )}
+                {message.text ||
+                  (message.streaming ? (
+                    <span className="typing">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                  ) : (
+                    ""
+                  ))}
+              </div>
+            </div>
+          ))
+          .reverse()}
+        {!project?.messages.length && (
+          <div className="chat-empty">
+            <h2>Turn an idea into motion.</h2>
+            <p>
+              Describe what you want to teach. The studio will plan, animate,
+              render, and review it.
+            </p>
+            <div className="suggestions">
+              {suggestions.map((suggestion) => (
+                <button key={suggestion} onClick={() => onDraft(suggestion)}>
+                  {suggestion}
+                  <ArrowRight size={13} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="composer-wrap">
+        {!auth.connected && (
+          <div className="runtime-callout">
+            <Warning size={14} /> Generation service needs configuration
+          </div>
+        )}
+        {!videoReady && (
+          <div className="runtime-callout">
+            <Code size={14} /> Video engine needs setup
+          </div>
+        )}
+
+        <div className="composer-toolbar">
+          {project && (
+            <label className="action-select">
+              Action
+              <select
+                value={intent}
+                disabled={running || !hasPriorWork}
+                onChange={(event) =>
+                  setIntent(event.target.value as GenerationIntent)
+                }
+              >
+                <option value="auto">Smart choice</option>
+                <option value="revise">Edit this video</option>
+                <option value="new">Create a separate video</option>
+              </select>
+            </label>
+          )}
+          {project && (
+            <button
+              type="button"
+              className="composer-tool"
+              onClick={() =>
+                billing.entitlements.licensedAssets
+                  ? setAssetsOpen(true)
+                  : onNotify(
+                      "Licensed visual search is included with paid plans.",
+                    )
+              }
+              disabled={running}
+            >
+              <ImageSquare size={15} /> Add visual
+              {project.assets?.length ? ` · ${project.assets.length}` : ""}
+            </button>
+          )}
+        </div>
+
+        <details className="creative-controls">
+          <summary>
+            <span>
+              <SlidersHorizontal size={15} /> Creative controls
+            </span>
+            <small>Style, motion, voice &amp; review</small>
+          </summary>
+          <div className="creative-controls-body">
+            {project && (
+              <div
+                className="generation-settings"
+                aria-label="Generation settings"
+              >
+                <ThinkingControl
+                  value={generationEffort}
+                  maxEffort={billing.entitlements.maxEffort}
+                  disabled={running}
+                  onChange={(effort) => {
+                    const previous = generationEffort;
+                    setGenerationEffort(effort);
+                    onGenerationPreferences(effort).catch(() =>
+                      setGenerationEffort(previous),
+                    );
+                  }}
+                />
+              </div>
+            )}
+            {project && (
+              <div
+                className="review-settings"
+                aria-label="Automatic review settings"
+              >
+                <label>
+                  Review
+                  <select
+                    value={project.reviewPreferences?.focus || "balanced"}
+                    disabled={running}
+                    onChange={(event) =>
+                      void onReviewPreferences(
+                        event.target.value as ReviewFocus,
+                        project.reviewPreferences?.strictness || "normal",
+                      ).catch(() => undefined)
+                    }
+                  >
+                    <option value="balanced">Balanced</option>
+                    <option value="layout">Layout</option>
+                    <option value="motion">Motion</option>
+                    <option value="pedagogy">Teaching</option>
+                    <option value="accessibility">Accessibility</option>
+                    <option value="polish">Polish</option>
+                  </select>
+                </label>
+                <label>
+                  Depth
+                  <select
+                    value={project.reviewPreferences?.strictness || "normal"}
+                    disabled={running}
+                    onChange={(event) =>
+                      void onReviewPreferences(
+                        project.reviewPreferences?.focus || "balanced",
+                        event.target.value as ReviewStrictness,
+                      ).catch(() => undefined)
+                    }
+                  >
+                    <option value="quick">Quick</option>
+                    <option value="normal">Normal</option>
+                    <option value="obsessive">Frame-heavy</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {project && (
+              <div
+                className="design-settings"
+                aria-label="Video style settings"
+              >
+                <label>
+                  Font
+                  <select
+                    value={project.designPreferences?.fontCategory || "modern"}
+                    disabled={running}
+                    onChange={(event) =>
+                      void onDesignPreferences({
+                        fontCategory: event.target.value as FontCategory,
+                      }).catch(() => undefined)
+                    }
+                  >
+                    <option value="modern">Modern</option>
+                    <option value="editorial">Editorial</option>
+                    <option value="technical">Technical</option>
+                    <option value="friendly">Friendly</option>
+                    <option value="classic">Classic</option>
+                  </select>
+                </label>
+                <label>
+                  Colors
+                  <select
+                    value={project.designPreferences?.colorPalette || "studio"}
+                    disabled={running}
+                    onChange={(event) =>
+                      void onDesignPreferences({
+                        colorPalette: event.target.value as ColorPalette,
+                      }).catch(() => undefined)
+                    }
+                  >
+                    <option value="cinematic">Cinematic · Default</option>
+                    <option value="studio">Studio warm</option>
+                    <option value="ocean">Ocean</option>
+                    <option value="forest">Forest</option>
+                    <option value="sunset">Sunset</option>
+                    <option value="monochrome">Monochrome</option>
+                    <option value="high-contrast">High contrast</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {project && (
+              <div
+                className="narration-settings"
+                aria-label="Narration settings"
+              >
+                <label>
+                  AI voice
+                  <select
+                    value={
+                      project.narrationPreferences?.enabled === false
+                        ? "off"
+                        : "on"
+                    }
+                    disabled={running}
+                    onChange={(event) =>
+                      void onNarrationPreferences(
+                        event.target.value === "on",
+                      ).catch(() => undefined)
+                    }
+                  >
+                    <option
+                      value="on"
+                      disabled={!billing.entitlements.narration}
+                    >
+                      Speechify narration
+                      {billing.entitlements.narration ? "" : " · Creator"}
+                    </option>
+                    <option value="off">Off · silent video</option>
+                  </select>
+                </label>
+                <span>
+                  {project.narrationPreferences?.enabled === false
+                    ? "Silent video"
+                    : "Generated during final render"}
+                </span>
+              </div>
+            )}
+          </div>
+        </details>
+
+        <label className="sr-only" htmlFor="prompt">
+          Video prompt
+        </label>
+        <div className={`composer ${sendError ? "composer-error" : ""}`}>
+          <textarea
+            id="prompt"
+            value={draft}
+            onChange={(event) => onDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void submit();
+              }
+            }}
+            placeholder={
+              intent === "new"
+                ? "Describe the separate video you want to create..."
+                : project?.videoUrl
+                  ? "Describe an edit, or ask for a completely new video..."
+                  : "Describe the lesson you want to bring to life..."
+            }
+            rows={2}
+            disabled={running}
+          />
+          {running ? (
+            <button
+              className="send-button stop-button"
+              onClick={onCancel}
+              aria-label="Stop generation"
+            >
+              <Stop size={14} weight="fill" />
+            </button>
+          ) : (
+            <button
+              className="send-button"
+              onClick={() => void submit()}
+              disabled={
+                !draft.trim() || sending || !auth.connected || !videoReady
+              }
+              aria-label="Send prompt"
+            >
+              <ArrowUp size={15} weight="bold" />
+            </button>
+          )}
+        </div>
+        {sendError && <span className="form-error">{sendError}</span>}
+        <span className="composer-hint">
+          {intent === "new"
+            ? "Creates a separate project with the cinematic baseline"
+            : intent === "revise"
+              ? "Changes this video and preserves everything else"
+              : "Smart choice understands whether you mean an edit or a new video"}
+        </span>
+      </div>
+      {assetsOpen && project && (
+        <AssetPicker project={project} onClose={() => setAssetsOpen(false)} />
+      )}
+    </section>
+  );
+}

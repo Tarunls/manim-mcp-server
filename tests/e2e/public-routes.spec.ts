@@ -23,8 +23,9 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.getByRole("link", { name: /Open studio/ }).first()).toHaveAttribute("href", "/studio");
   await expect(page.getByRole("link", { name: "Create your first lesson" }).first()).toHaveAttribute("href", "/studio");
   await expect(page.getByRole("link", { name: "Compare plans" })).toHaveAttribute("href", "/pricing");
-  await expect(page.locator(".live-integral-hero")).toBeVisible();
-  await expect(page.locator(".live-integral-equation")).toContainText(/∫|eˣ/);
+  await expect(page.locator("video.reel-video")).toBeVisible();
+  await expect(page.locator("video.reel-video")).toHaveAttribute("src", "/lesson-studio-reel.mp4");
+  await expect(page.locator(".how-section")).toContainText("Say what you mean");
   await expectNoHorizontalOverflow(page);
   if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
 });

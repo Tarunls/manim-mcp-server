@@ -1,9 +1,7 @@
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
 export type RendererKind = "manim" | "remotion" | "composite";
-export type AgentModel = "gpt-5.6-sol" | "gpt-5.6-terra";
 export type GenerationEffort = "quick" | "balanced" | "thorough";
-export type AgentReasoningEffort = "medium" | "high" | "xhigh";
 export type GenerationIntent = "auto" | "new" | "revise";
 export type BillingPlanId = "free" | "creator" | "pro" | "studio";
 export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
@@ -60,17 +58,6 @@ export interface ProjectVersion {
   render?: RenderInfo;
 }
 
-export interface FrameReview {
-  id: string;
-  versionId: string;
-  time: number;
-  frame: number;
-  note: string;
-  createdAt: string;
-  cleanFrameUrl: string;
-  annotatedFrameUrl: string;
-}
-
 export interface ProjectAsset {
   id: string;
   title: string;
@@ -102,8 +89,6 @@ export interface NarrationPreferences {
 
 export interface GenerationPreferences {
   effort: GenerationEffort;
-  model: AgentModel;
-  reasoningEffort: AgentReasoningEffort;
 }
 
 export interface StudioProject {
@@ -118,11 +103,9 @@ export interface StudioProject {
   status: ProjectStatus;
   stage: ProjectStage;
   threadId?: string;
-  turnId?: string;
   videoUrl?: string;
   posterUrl?: string;
   versions: ProjectVersion[];
-  reviews: FrameReview[];
   assets: ProjectAsset[];
   reviewPreferences: ReviewPreferences;
   designPreferences: DesignPreferences;
@@ -145,7 +128,6 @@ export interface BillingState {
   plan: BillingPlanId;
   planName: string;
   status: "free" | "active" | "trialing" | "past_due" | "canceled" | "incomplete";
-  creditsUsed: number;
   creditsRemaining: number;
   periodEnd: string;
   email?: string;
@@ -167,9 +149,6 @@ export interface PricingPlan {
 
 export interface AuthState {
   connected: boolean;
-  email?: string;
-  plan?: string;
-  mode?: string;
 }
 
 export interface RuntimeState {
