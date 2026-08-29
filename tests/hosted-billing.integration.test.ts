@@ -127,6 +127,72 @@ test("hosted billing verifies webhooks, ignores replays, cancels access, and iso
     assert.equal(canceled.plan, "free");
     assert.equal(canceled.status, "free");
     await assert.rejects(() => billing.assertNarration(ownerId), /paid plans/);
+
+    // Re-subscribe on a new subscription, then replay delayed events for the
+    // old subscription: they must not downgrade the new active plan.
+    await billing.handleWebhook({
+      id: `evt_${randomUUID()}`,
+      object: "event",
+      api_version: "2026-06-30.basil",
+      created: Math.floor(Date.now() / 1000),
+      livemode: false,
+      pending_webhooks: 1,
+      request: null,
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: `cs_${randomUUID()}`,
+          object: "checkout.session",
+          client_reference_id: ownerId,
+          customer: "cus_integration",
+          subscription: "sub_integration_2",
+          payment_status: "paid",
+          metadata: { userId: ownerId, plan: "pro" },
+        },
+      },
+    } as unknown as Stripe.Event);
+    assert.equal((await billing.getState(ownerId)).plan, "pro");
+    await billing.handleWebhook({
+      id: `evt_${randomUUID()}`,
+      object: "event",
+      api_version: "2026-06-30.basil",
+      created: Math.floor(Date.now() / 1000),
+      livemode: false,
+      pending_webhooks: 1,
+      request: null,
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: "sub_integration",
+          object: "subscription",
+          customer: "cus_integration",
+          status: "canceled",
+          metadata: { userId: ownerId, plan: "creator" },
+          items: { data: [] },
+        },
+      },
+    } as unknown as Stripe.Event);
+    await billing.handleWebhook({
+      id: `evt_${randomUUID()}`,
+      object: "event",
+      api_version: "2026-06-30.basil",
+      created: Math.floor(Date.now() / 1000),
+      livemode: false,
+      pending_webhooks: 1,
+      request: null,
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          id: `in_${randomUUID()}`,
+          object: "invoice",
+          customer: "cus_integration",
+          subscription: "sub_integration",
+        },
+      },
+    } as unknown as Stripe.Event);
+    const survived = await billing.getState(ownerId);
+    assert.equal(survived.plan, "pro");
+    assert.equal(survived.status, "active");
   } finally {
     await db.query("DELETE FROM app_users WHERE id = ANY($1::text[])", [[ownerId, otherId]]).catch(() => undefined);
     await db.close();

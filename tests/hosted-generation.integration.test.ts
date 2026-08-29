@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Database } from "../server/database.js";
 import { HostedGenerationService } from "../server/hosted-generation-service.js";
 import { ProjectRepository } from "../server/project-repository.js";
-import { ScopedCodexProxy } from "../server/scoped-codex-proxy.js";
+import { CodexBudgetExceededError, ScopedCodexProxy } from "../server/scoped-codex-proxy.js";
 import type { StudioProject } from "../server/types.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -16,6 +16,7 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
   const previousSecret = process.env.JOB_CALLBACK_SECRET;
   const previousOpenAiKey = process.env.OPENAI_API_KEY;
   const previousCodexLimit = process.env.CODEX_MAX_API_CALLS_PER_JOB;
+  const previousCodexBudget = process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB;
   const previousDatabaseSsl = process.env.DATABASE_SSL;
   const previousTemplateVersion = process.env.E2B_TEMPLATE_VERSION;
   const originalFetch = globalThis.fetch;
@@ -78,7 +79,10 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     assert.ok(secondClaim?.dispatchLeaseId);
     assert.notEqual(secondClaim?.dispatchLeaseId, firstClaim.dispatchLeaseId);
     assert.equal(await service.markSandboxStarted(first.jobId, firstClaim.dispatchLeaseId, "stale-sandbox"), undefined);
-    assert.equal((await service.markSandboxStarted(first.jobId, secondClaim.dispatchLeaseId!, "sandbox-1"))?.status, "running");
+    // Unique per run: sandbox cleanup rows are deduplicated by sandbox id and
+    // outlive the test's cascade cleanup, so a fixed id breaks reruns.
+    const sandboxId = `sandbox-${randomUUID()}`;
+    assert.equal((await service.markSandboxStarted(first.jobId, secondClaim.dispatchLeaseId!, sandboxId))?.status, "running");
     const callbackToken = service.callbackToken(first.jobId);
     const codexToken = service.codexToken(first.jobId);
     assert.notEqual(callbackToken, codexToken);
@@ -99,12 +103,30 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     ]);
     assert.equal(calls.filter((result) => result.status === "fulfilled").length, 1);
     assert.equal(calls.filter((result) => result.status === "rejected").length, 1);
+    process.env.CODEX_MAX_API_CALLS_PER_JOB = "10";
+    process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB = "100000";
+    await db.query(
+      "UPDATE job_provider_calls SET estimated_cost_microusd = 250000 WHERE job_id = $1 AND provider = 'openai'",
+      [first.jobId],
+    );
+    await assert.rejects(
+      () => proxy.responses(activeJob, { model: "test", input: "over budget" }, { compact: true }),
+      (error: unknown) =>
+        error instanceof CodexBudgetExceededError &&
+        error.statusCode === 400 &&
+        error.terminal === true,
+    );
+    // Backdate the reservation so the refund's period stamping is observable.
+    await db.query(
+      "UPDATE credit_ledger SET created_at = created_at - interval '45 days' WHERE user_id = $1 AND idempotency_key = $2",
+      [ownerId, `job:${first.jobId}:reserve`],
+    );
     await db.query("UPDATE generation_jobs SET lease_expires_at = now() - interval '1 minute' WHERE id = $1", [first.jobId]);
     const reconciled = await service.reconcileExpiredJobs();
     assert.deepEqual(reconciled, { reconciled: 1 });
     const cleanup = await service.pendingSandboxCleanups();
     assert.equal(cleanup.length, 1);
-    assert.deepEqual({ jobId: cleanup[0].jobId, sandboxId: cleanup[0].sandboxId }, { jobId: first.jobId, sandboxId: "sandbox-1" });
+    assert.deepEqual({ jobId: cleanup[0].jobId, sandboxId: cleanup[0].sandboxId }, { jobId: first.jobId, sandboxId });
     assert.equal(await service.verifyCodexAccess(first.jobId, codexToken), undefined);
     const failed = await db.query<{ error_code: string; error_message: string; error_detail: string }>(
       "SELECT error_code, error_message, error_detail FROM generation_jobs WHERE id = $1",
@@ -118,6 +140,44 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
       [ownerId],
     );
     assert.equal(refunded.rows[0].balance, "0");
+    // The refund must land in the reservation's billing period, not now().
+    const ledgerTimes = await db.query<{ reason: string; created_at: Date }>(
+      "SELECT reason, created_at FROM credit_ledger WHERE user_id = $1 AND job_id = $2 ORDER BY reason",
+      [ownerId, first.jobId],
+    );
+    assert.deepEqual(
+      ledgerTimes.rows.map((row) => row.reason),
+      ["generation_refund", "generation_reservation"],
+    );
+    assert.equal(
+      ledgerTimes.rows[0].created_at.getTime(),
+      ledgerTimes.rows[1].created_at.getTime(),
+    );
+    // A queued job whose Cloud Tasks dispatch never arrived is failed and
+    // refunded once it exceeds the queued-age bound.
+    const second = await service.submit({
+      ownerId,
+      project,
+      prompt: "Explain composite numbers",
+      effort: "quick",
+      idempotencyKey: `request:${randomUUID()}`,
+    });
+    await db.query(
+      "UPDATE generation_jobs SET updated_at = now() - interval '2 hours' WHERE id = $1",
+      [second.jobId],
+    );
+    assert.deepEqual(await service.reconcileExpiredJobs(), { reconciled: 1 });
+    const stuck = await db.query<{ status: string; error_code: string }>(
+      "SELECT status, error_code FROM generation_jobs WHERE id = $1",
+      [second.jobId],
+    );
+    assert.equal(stuck.rows[0].status, "failed");
+    assert.equal(stuck.rows[0].error_code, "dispatch_expired");
+    const afterStuck = await db.query<{ balance: string }>(
+      "SELECT COALESCE(sum(amount), 0)::text AS balance FROM credit_ledger WHERE user_id = $1",
+      [ownerId],
+    );
+    assert.equal(afterStuck.rows[0].balance, "0");
     await db.query("DELETE FROM app_users WHERE id = $1", [ownerId]);
     testOwnerId = undefined;
     assert.equal((await service.pendingSandboxCleanups())[0]?.eventId, cleanup[0].eventId);
@@ -134,6 +194,8 @@ test("hosted generation reserves credits and jobs atomically", { skip: !connecti
     else process.env.OPENAI_API_KEY = previousOpenAiKey;
     if (previousCodexLimit === undefined) delete process.env.CODEX_MAX_API_CALLS_PER_JOB;
     else process.env.CODEX_MAX_API_CALLS_PER_JOB = previousCodexLimit;
+    if (previousCodexBudget === undefined) delete process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB;
+    else process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB = previousCodexBudget;
     if (previousDatabaseSsl === undefined) delete process.env.DATABASE_SSL;
     else process.env.DATABASE_SSL = previousDatabaseSsl;
     if (previousTemplateVersion === undefined) delete process.env.E2B_TEMPLATE_VERSION;

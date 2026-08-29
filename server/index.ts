@@ -7,12 +7,13 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { createServer as createViteServer } from "vite";
 import { isWindows, manimPath } from "./platform.js";
 import {
   StudioService,
+  generationPreferencesFor,
   looksLikeIndependentVideoRequest,
 } from "./studio-service.js";
+import { titleFromPrompt } from "./plan.js";
 import { BillingService } from "./billing-service.js";
 import { IdentityAuthService, type AuthUser } from "./auth-service.js";
 import { database } from "./database.js";
@@ -31,7 +32,10 @@ import { verifyCloudTask } from "./internal-auth.js";
 import { HostedBillingService } from "./hosted-billing-service.js";
 import { ScopedNarrationService } from "./scoped-narration.js";
 import { HostedMediaService } from "./hosted-media-service.js";
-import { ScopedCodexProxy } from "./scoped-codex-proxy.js";
+import {
+  CodexBudgetExceededError,
+  ScopedCodexProxy,
+} from "./scoped-codex-proxy.js";
 import { routeAllowedForService, type ServiceRole } from "./service-role.js";
 import type {
   BillingPlanId,
@@ -111,11 +115,6 @@ function validateProductionConfiguration() {
   }
   if ((process.env.JOB_CALLBACK_SECRET?.length || 0) < 32)
     missing.push("JOB_CALLBACK_SECRET (32+ characters)");
-  if (
-    serviceRole !== "dispatcher" &&
-    (process.env.AUDIT_HASH_SECRET?.length || 0) < 32
-  )
-    missing.push("AUDIT_HASH_SECRET (32+ characters)");
   for (const name of ["APP_BASE_URL", "JOB_CALLBACK_BASE_URL"] as const) {
     const value = process.env[name];
     if (!value || !value.startsWith("https://"))
@@ -128,6 +127,14 @@ function validateProductionConfiguration() {
 }
 
 validateProductionConfiguration();
+
+// A stray rejected promise must not crash the whole service; log it instead.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection", {
+    message: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+});
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
@@ -547,6 +554,12 @@ app.post(
     } catch (error) {
       if (response.headersSent)
         return response.destroy(error instanceof Error ? error : undefined);
+      // Budget exhaustion is terminal: the Codex SDK in the sandbox retries
+      // 5xx responses, so it must see a 4xx and fail fast.
+      if (error instanceof CodexBudgetExceededError)
+        return response
+          .status(error.statusCode)
+          .json({ error: error.message, terminal: true });
       response
         .status(502)
         .json({
@@ -847,6 +860,59 @@ app.post("/api/billing/portal", async (request, response) => {
   }
 });
 
+// Open SSE responses, so shutdown can end them instead of hanging server.close().
+const sseResponses = new Set<express.Response>();
+type ProjectPollSubscriber = (event: StudioEvent) => void;
+const projectPollers = new Map<
+  string,
+  {
+    timer: NodeJS.Timeout;
+    subscribers: Set<ProjectPollSubscriber>;
+    knownRevisions: Map<string, number>;
+  }
+>();
+
+// One shared poller per user: N open tabs cost one projects.list query.
+function subscribeToProjectChanges(
+  pollUserId: string,
+  subscriber: ProjectPollSubscriber,
+) {
+  let poller = projectPollers.get(pollUserId);
+  if (!poller) {
+    const created = {
+      subscribers: new Set<ProjectPollSubscriber>(),
+      knownRevisions: new Map<string, number>(),
+      timer: setInterval(() => {
+        void projects
+          .list(pollUserId)
+          .then((items) => {
+            for (const item of items) {
+              const revision = Number(
+                (item as typeof item & { storageRevision?: number })
+                  .storageRevision || 0,
+              );
+              if (created.knownRevisions.get(item.id) !== revision)
+                for (const send of created.subscribers)
+                  send({ type: "project", project: item });
+              created.knownRevisions.set(item.id, revision);
+            }
+          })
+          .catch(() => undefined);
+      }, 2_000),
+    };
+    projectPollers.set(pollUserId, created);
+    poller = created;
+  }
+  poller.subscribers.add(subscriber);
+  return () => {
+    poller.subscribers.delete(subscriber);
+    if (!poller.subscribers.size) {
+      clearInterval(poller.timer);
+      projectPollers.delete(pollUserId);
+    }
+  };
+}
+
 app.get("/api/events", async (request, response) => {
   response.setHeader("Content-Type", "text/event-stream");
   response.setHeader("Cache-Control", "no-cache, no-transform");
@@ -876,59 +942,75 @@ app.get("/api/events", async (request, response) => {
     () => response.write(": keepalive\n\n"),
     20_000,
   );
-  let knownRevisions = new Map<string, number>();
-  const projectPoll = generations.configured
-    ? setInterval(() => {
-        void projects
-          .list(currentUserId)
-          .then((items) => {
-            for (const item of items) {
-              const revision = Number(
-                (item as typeof item & { storageRevision?: number })
-                  .storageRevision || 0,
-              );
-              if (knownRevisions.get(item.id) !== revision)
-                send({ type: "project", project: item });
-              knownRevisions.set(item.id, revision);
-            }
-          })
-          .catch(() => undefined);
-      }, 2_000)
+  sseResponses.add(response);
+  const unsubscribe = generations.configured
+    ? subscribeToProjectChanges(currentUserId, send)
     : undefined;
   request.on("close", () => {
     clearInterval(heartbeat);
-    if (projectPoll) clearInterval(projectPoll);
+    sseResponses.delete(response);
+    if (unsubscribe) unsubscribe();
     if (!generations.configured) studio.off("event", send);
   });
 });
 
-app.post("/api/projects", async (request, response) => {
-  const prompt =
-    typeof request.body?.prompt === "string" ? request.body.prompt.trim() : "";
-  const state = await billingState(request);
-  const project = studio.createProject(
-    generations.configured ? "" : prompt,
-    "composite",
-    { narrationPreferences: { enabled: state.entitlements.narration } },
-    userId(request),
-  );
-  if (generations.configured && prompt) {
-    project.prompt = prompt;
-    project.title =
-      prompt
-        .replace(/[^a-zA-Z0-9\s-]/g, " ")
-        .trim()
-        .split(/\s+/)
-        .slice(0, 5)
-        .join(" ") || "Untitled video";
-  }
-  const updated = studio.updateGenerationPreferences(
-    project.id,
-    state.plan === "free" ? "quick" : "balanced",
-  );
-  await persistHostedProject(updated);
-  response.status(201).json(updated);
-});
+app.post(
+  "/api/projects",
+  // A local-mode create with a prompt starts a generation, so it must pass
+  // the same rate limit as the messages route.
+  (request, response, next) => {
+    const prompt =
+      typeof request.body?.prompt === "string" ? request.body.prompt.trim() : "";
+    if (!generations.configured && prompt)
+      return generationLimiter(request, response, next);
+    next();
+  },
+  async (request, response) => {
+    const prompt =
+      typeof request.body?.prompt === "string" ? request.body.prompt.trim() : "";
+    const state = await billingState(request);
+    const effort = state.plan === "free" ? "quick" : "balanced";
+    let credits = 0;
+    if (!generations.configured && prompt) {
+      try {
+        credits = billing.reserveGeneration(userId(request), effort);
+      } catch (error) {
+        return response.status(409).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not start generation.",
+        });
+      }
+    }
+    const project = studio.createProject(
+      "",
+      "composite",
+      { narrationPreferences: { enabled: state.entitlements.narration } },
+      userId(request),
+    );
+    if (generations.configured && prompt) {
+      project.prompt = prompt;
+      project.title = titleFromPrompt(prompt);
+    }
+    const updated = studio.updateGenerationPreferences(project.id, effort);
+    if (!generations.configured && prompt) {
+      try {
+        await studio.sendMessage(project.id, prompt);
+      } catch (error) {
+        billing.refundGeneration(userId(request), credits);
+        return response.status(409).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not start generation.",
+        });
+      }
+    }
+    await persistHostedProject(updated);
+    response.status(201).json(updated);
+  },
+);
 
 app.patch("/api/projects/:id/favorite", async (request, response) => {
   if (typeof request.body?.favorite !== "boolean")
@@ -936,13 +1018,16 @@ app.patch("/api/projects/:id/favorite", async (request, response) => {
       .status(400)
       .json({ error: "Choose whether this video is a favorite." });
   try {
-    await ownedProject(request);
-    const project = studio.updateFavorite(
-      String(request.params.id),
-      userId(request),
-      request.body.favorite,
-    );
-    await persistHostedProject(project);
+    const favorite = request.body.favorite as boolean;
+    const project = generations.configured
+      ? await projects.update(String(request.params.id), userId(request), (stored) => {
+          stored.favorite = favorite;
+        })
+      : studio.updateFavorite(
+          String(request.params.id),
+          userId(request),
+          favorite,
+        );
     response.json(project);
   } catch (error) {
     response
@@ -1009,8 +1094,17 @@ app.post(
         );
         await projects.save(project, userId(request));
       } else if (requestedRenderer && !hasPriorWork) {
-        project.renderer = requestedRenderer;
-        await persistHostedProject(project);
+        if (generations.configured) {
+          project = await projects.update(
+            project.id,
+            userId(request),
+            (stored) => {
+              stored.renderer = requestedRenderer;
+            },
+          );
+        } else {
+          project.renderer = requestedRenderer;
+        }
       } else if (requestedRenderer && requestedRenderer !== project.renderer) {
         throw new Error(
           "A project's renderer is fixed after generation starts. Create a new video to switch renderers.",
@@ -1020,13 +1114,24 @@ app.post(
       if (project.narrationPreferences.enabled) await assertNarration(request);
       if (generations.configured) {
         const idempotencyKey = request.header("idempotency-key") || "";
-        const result = await generations.submit({
-          ownerId: userId(request),
-          project,
-          prompt: text,
-          effort: selectedEffort,
-          idempotencyKey,
-        });
+        let result;
+        try {
+          result = await generations.submit({
+            ownerId: userId(request),
+            project,
+            prompt: text,
+            effort: selectedEffort,
+            idempotencyKey,
+          });
+        } catch (error) {
+          // Do not leave the empty fresh project behind if its first
+          // generation was rejected.
+          if (startFresh)
+            await projects
+              .delete(project.id, userId(request))
+              .catch(() => undefined);
+          throw error;
+        }
         void generationQueue
           .flush()
           .catch((error) =>
@@ -1086,11 +1191,17 @@ app.patch(
     try {
       await ownedProject(request);
       await assertEffort(request, effort);
-      const project = studio.updateGenerationPreferences(
-        String(request.params.id),
-        effort,
-      );
-      await persistHostedProject(project);
+      const project = generations.configured
+        ? await projects.update(
+            String(request.params.id),
+            userId(request),
+            (stored) => {
+              if (stored.status === "running")
+                throw new Error("Wait for the current generation to finish.");
+              stored.generationPreferences = generationPreferencesFor(effort);
+            },
+          )
+        : studio.updateGenerationPreferences(String(request.params.id), effort);
       response.json(project);
     } catch (error) {
       response
@@ -1114,12 +1225,21 @@ app.patch("/api/projects/:id/review-preferences", async (request, response) => {
       .json({ error: "Choose a valid review focus and strictness." });
   try {
     await ownedProject(request);
-    const project = studio.updateReviewPreferences(
-      String(request.params.id),
-      focus,
-      strictness,
-    );
-    await persistHostedProject(project);
+    const project = generations.configured
+      ? await projects.update(
+          String(request.params.id),
+          userId(request),
+          (stored) => {
+            if (stored.status === "running")
+              throw new Error("Wait for the current generation to finish.");
+            stored.reviewPreferences = { focus, strictness };
+          },
+        )
+      : studio.updateReviewPreferences(
+          String(request.params.id),
+          focus,
+          strictness,
+        );
     response.json(project);
   } catch (error) {
     response
@@ -1152,11 +1272,23 @@ app.patch("/api/projects/:id/design-preferences", async (request, response) => {
       .json({ error: "Choose a valid font category or color palette." });
   try {
     await ownedProject(request);
-    const project = studio.updateDesignPreferences(String(request.params.id), {
-      fontCategory,
-      colorPalette,
-    });
-    await persistHostedProject(project);
+    const project = generations.configured
+      ? await projects.update(
+          String(request.params.id),
+          userId(request),
+          (stored) => {
+            if (stored.status === "running")
+              throw new Error("Wait for the current generation to finish.");
+            stored.designPreferences = {
+              fontCategory: fontCategory ?? stored.designPreferences.fontCategory,
+              colorPalette: colorPalette ?? stored.designPreferences.colorPalette,
+            };
+          },
+        )
+      : studio.updateDesignPreferences(String(request.params.id), {
+          fontCategory,
+          colorPalette,
+        });
     response.json(project);
   } catch (error) {
     response
@@ -1179,12 +1311,19 @@ app.patch(
         .json({ error: "Choose whether AI voice is on or off." });
     try {
       await ownedProject(request);
-      if (request.body.enabled) await assertNarration(request);
-      const project = studio.updateNarrationPreferences(
-        String(request.params.id),
-        request.body.enabled,
-      );
-      await persistHostedProject(project);
+      const enabled = request.body.enabled as boolean;
+      if (enabled) await assertNarration(request);
+      const project = generations.configured
+        ? await projects.update(
+            String(request.params.id),
+            userId(request),
+            (stored) => {
+              if (stored.status === "running")
+                throw new Error("Wait for the current generation to finish.");
+              stored.narrationPreferences = { enabled };
+            },
+          )
+        : studio.updateNarrationPreferences(String(request.params.id), enabled);
       response.json(project);
     } catch (error) {
       response
@@ -1273,9 +1412,8 @@ app.post("/api/projects/:id/reviews", async (request, response) => {
           clean,
           annotated,
         );
-        const reviewId = randomUUID();
         const review = {
-          id: reviewId,
+          id: randomUUID(),
           versionId,
           time: extracted.time,
           frame: extracted.frame,
@@ -1284,20 +1422,51 @@ app.post("/api/projects/:id/reviews", async (request, response) => {
           cleanFrameUrl: `/api/project-files/${stored.cleanId}`,
           annotatedFrameUrl: `/api/project-files/${stored.annotatedId}`,
         };
-        project.reviews.push(review);
-        await projects.save(project, userId(request));
-        const result = await generations.submit({
-          ownerId: userId(request),
-          project,
-          prompt: `Frame review at ${review.time.toFixed(2)} seconds: ${note}`,
-          effort: project.generationPreferences.effort,
-          idempotencyKey: request.header("idempotency-key") || "",
-          attachments: [
-            { fileId: stored.cleanId, label: "Clean rendered frame" },
-            { fileId: stored.annotatedId, label: "Reviewer-annotated frame" },
-          ],
-        });
-        void generationQueue.flush();
+        // Submit first: a rejected submit must not leave an orphaned review
+        // in the project or stray frame uploads behind.
+        let result;
+        try {
+          result = await generations.submit({
+            ownerId: userId(request),
+            project,
+            prompt: `Frame review at ${review.time.toFixed(2)} seconds: ${note}`,
+            effort: project.generationPreferences.effort,
+            idempotencyKey: request.header("idempotency-key") || "",
+            attachments: [
+              { fileId: stored.cleanId, label: "Clean rendered frame" },
+              { fileId: stored.annotatedId, label: "Reviewer-annotated frame" },
+            ],
+          });
+        } catch (error) {
+          await hostedMedia
+            .deleteProjectFiles(userId(request), project.id, [
+              stored.cleanId,
+              stored.annotatedId,
+            ])
+            .catch(() => undefined);
+          throw error;
+        }
+        if (result.duplicate) {
+          // An idempotent retry reuses the original job; drop this attempt's
+          // redundant frame uploads instead of appending a second review.
+          await hostedMedia
+            .deleteProjectFiles(userId(request), project.id, [
+              stored.cleanId,
+              stored.annotatedId,
+            ])
+            .catch(() => undefined);
+        } else {
+          await projects.update(project.id, userId(request), (current) => {
+            current.reviews.push(review);
+          });
+        }
+        void generationQueue
+          .flush()
+          .catch((error) =>
+            console.error("Outbox flush failed", {
+              message: error instanceof Error ? error.message : "unknown",
+            }),
+          );
         return response.status(202).json({ ...review, jobId: result.jobId });
       } finally {
         await extracted.cleanup();
@@ -1356,10 +1525,9 @@ app.post("/api/projects/:id/assets", async (request, response) => {
         )
       : await studio.importAsset(String(request.params.id), request.body);
     if (generations.configured) {
-      project.assets.push(asset);
-      await projects.save(project, userId(request));
-    } else {
-      await persistHostedProject(project);
+      await projects.update(project.id, userId(request), (current) => {
+        current.assets.push(asset);
+      });
     }
     response.status(201).json(asset);
   } catch (error) {
@@ -1456,6 +1624,11 @@ app.use(
   }),
 );
 
+// Any /api path that no route claimed is JSON 404, never the SPA fallback.
+app.use("/api", (_request, response) =>
+  response.status(404).json({ error: "Not found." }),
+);
+
 if (process.env.NODE_ENV === "production") {
   const clientDir = path.join(root, "dist", "client");
   app.use(express.static(clientDir));
@@ -1463,6 +1636,8 @@ if (process.env.NODE_ENV === "production") {
     response.sendFile(path.join(clientDir, "index.html")),
   );
 } else {
+  // Dynamic import keeps vite out of production installs (npm ci --omit=dev).
+  const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
     root: path.join(root, "client"),
     server: { middlewareMode: true },
@@ -1477,7 +1652,11 @@ const server = app.listen(port, host, () => {
 
 if (!generations.configured) void studio.initialize();
 
-const outboxTimer = generationQueue.configured
+// In-process background work belongs to the dispatcher role; the api role
+// must not run a second reconciler/outbox loop (mirrors the route gating).
+const runsBackgroundWork = serviceRole !== "api";
+
+const outboxTimer = runsBackgroundWork && generationQueue.configured
   ? setInterval(
       () => {
         void generationQueue
@@ -1492,7 +1671,7 @@ const outboxTimer = generationQueue.configured
     )
   : undefined;
 
-const reconciliationTimer = dispatcher.configured
+const reconciliationTimer = runsBackgroundWork && dispatcher.configured
   ? setInterval(
       () => {
         void dispatcher.reconcile().catch((error) =>
@@ -1505,11 +1684,22 @@ const reconciliationTimer = dispatcher.configured
     )
   : undefined;
 
+let shuttingDown = false;
 function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   if (outboxTimer) clearInterval(outboxTimer);
   if (reconciliationTimer) clearInterval(reconciliationTimer);
   studio.bridge.stop();
+  // Open SSE streams would keep server.close() waiting forever.
+  for (const response of sseResponses) response.end();
+  sseResponses.clear();
   server.close(() => void database.close().finally(() => process.exit(0)));
+  server.closeIdleConnections();
+  setTimeout(() => {
+    console.error("Forced exit: connections did not drain within 10 seconds.");
+    process.exit(1);
+  }, 10_000).unref();
 }
 
 process.on("SIGINT", shutdown);

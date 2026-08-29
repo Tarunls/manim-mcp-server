@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
 import { PRICING_PLANS } from "./billing-service.js";
+import { effortRank } from "./plan.js";
 import type { Database } from "./database.js";
 import type { BillingPlanId, BillingState, GenerationEffort } from "./types.js";
 
@@ -16,10 +17,6 @@ type ProfileRow = {
   stripe_subscription_id: string | null;
   balance: string;
 };
-
-function effortRank(effort: GenerationEffort) {
-  return effort === "thorough" ? 3 : effort === "balanced" ? 2 : 1;
-}
 
 function stripeId(value: string | { id: string } | null | undefined) {
   return typeof value === "string" ? value : value?.id;
@@ -228,9 +225,23 @@ export class HostedBillingService {
     const subscriptionId = profile.rows[0]?.stripe_subscription_id;
     if (!subscriptionId) return;
     if (!this.stripe) throw new Error("Stripe is not configured.");
-    await this.stripe.subscriptions.cancel(subscriptionId, {
-      prorate: false,
-    });
+    try {
+      await this.stripe.subscriptions.cancel(subscriptionId, {
+        prorate: false,
+      });
+    } catch (error) {
+      // A retry after a partial failure must not wedge deletion: a subscription
+      // that is already canceled (or gone entirely) needs no further action.
+      const stripeError = error as Stripe.errors.StripeError;
+      const alreadyCanceled =
+        stripeError?.code === "resource_missing" ||
+        /canceled subscription/i.test(stripeError?.message || "");
+      if (!alreadyCanceled) throw error;
+    }
+    await this.db.query(
+      "UPDATE billing_profiles SET stripe_subscription_id = NULL, updated_at = now() WHERE user_id = $1",
+      [userId],
+    );
   }
 
   constructWebhook(payload: Buffer, signature: string) {
@@ -251,96 +262,99 @@ export class HostedBillingService {
         [event.id, event.type, event.livemode, JSON.stringify(event)],
       );
       if (!inserted.rowCount) return;
-      try {
+      if (
+        event.type === "checkout.session.completed" ||
+        event.type === "checkout.session.async_payment_succeeded"
+      ) {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const userId =
+          session.metadata?.userId || session.client_reference_id;
+        const plan = session.metadata?.plan;
         if (
-          event.type === "checkout.session.completed" ||
-          event.type === "checkout.session.async_payment_succeeded"
+          userId &&
+          (plan === "creator" || plan === "pro" || plan === "studio") &&
+          session.payment_status !== "unpaid"
         ) {
-          const session = event.data.object as Stripe.Checkout.Session;
-          const userId =
-            session.metadata?.userId || session.client_reference_id;
-          const plan = session.metadata?.plan;
-          if (
-            userId &&
-            (plan === "creator" || plan === "pro" || plan === "studio") &&
-            session.payment_status !== "unpaid"
-          ) {
-            await client.query(
-              `UPDATE billing_profiles SET plan = $2, status = 'active', stripe_customer_id = $3,
-                 stripe_subscription_id = $4, updated_at = now() WHERE user_id = $1`,
-              [
-                userId,
-                plan,
-                stripeId(session.customer),
-                stripeId(session.subscription),
-              ],
-            );
-          }
-        } else if (
-          event.type === "customer.subscription.created" ||
-          event.type === "customer.subscription.updated" ||
-          event.type === "customer.subscription.deleted"
-        ) {
-          const subscription = event.data.object as Stripe.Subscription;
-          const plan = subscription.metadata.plan;
-          const userId = subscription.metadata.userId;
-          const [start, end] = period(subscription);
-          const status =
-            event.type === "customer.subscription.deleted"
-              ? "canceled"
-              : subscription.status === "trialing"
-                ? "trialing"
-                : subscription.status === "active"
-                  ? "active"
-                  : subscription.status === "past_due"
-                    ? "past_due"
-                    : subscription.status === "incomplete"
-                      ? "incomplete"
-                      : "canceled";
           await client.query(
-            `UPDATE billing_profiles SET
-               plan = CASE WHEN $2 IN ('creator', 'pro', 'studio') AND $3 <> 'canceled' THEN $2 ELSE 'free' END,
-               status = CASE WHEN $3 = 'canceled' THEN 'free' ELSE $3 END,
-               stripe_customer_id = $4, stripe_subscription_id = $5,
-               period_start = $6, period_end = $7, updated_at = now()
-             WHERE user_id = $1 OR stripe_customer_id = $4`,
+            `UPDATE billing_profiles SET plan = $2, status = 'active', stripe_customer_id = $3,
+               stripe_subscription_id = $4, updated_at = now() WHERE user_id = $1`,
             [
-              userId || "",
-              plan || "free",
-              status,
-              stripeId(subscription.customer),
-              subscription.id,
-              start,
-              end,
-            ],
-          );
-        } else if (
-          event.type === "invoice.paid" ||
-          event.type === "invoice.payment_failed"
-        ) {
-          const invoice = event.data.object as Stripe.Invoice;
-          await client.query(
-            `UPDATE billing_profiles SET status = $2, updated_at = now() WHERE stripe_customer_id = $1`,
-            [
-              stripeId(invoice.customer),
-              event.type === "invoice.paid" ? "active" : "past_due",
+              userId,
+              plan,
+              stripeId(session.customer),
+              stripeId(session.subscription),
             ],
           );
         }
+      } else if (
+        event.type === "customer.subscription.created" ||
+        event.type === "customer.subscription.updated" ||
+        event.type === "customer.subscription.deleted"
+      ) {
+        const subscription = event.data.object as Stripe.Subscription;
+        const plan = subscription.metadata.plan;
+        const userId = subscription.metadata.userId;
+        const [start, end] = period(subscription);
+        const status =
+          event.type === "customer.subscription.deleted"
+            ? "canceled"
+            : subscription.status === "trialing"
+              ? "trialing"
+              : subscription.status === "active"
+                ? "active"
+                : subscription.status === "past_due"
+                  ? "past_due"
+                  : subscription.status === "incomplete"
+                    ? "incomplete"
+                    : "canceled";
+        // A delayed update/delete for a superseded subscription must not
+        // downgrade the profile's current subscription; created events are
+        // exempt because they establish the link.
+        const guarded = event.type !== "customer.subscription.created";
         await client.query(
-          "UPDATE stripe_events SET processed_at = now() WHERE event_id = $1",
-          [event.id],
-        );
-      } catch (error) {
-        await client.query(
-          "UPDATE stripe_events SET processing_error = $2 WHERE event_id = $1",
+          `UPDATE billing_profiles SET
+             plan = CASE WHEN $2 IN ('creator', 'pro', 'studio') AND $3 <> 'canceled' THEN $2 ELSE 'free' END,
+             status = CASE WHEN $3 = 'canceled' THEN 'free' ELSE $3 END,
+             stripe_customer_id = $4, stripe_subscription_id = $5,
+             period_start = $6, period_end = $7, updated_at = now()
+           WHERE (user_id = $1 OR stripe_customer_id = $4)
+             AND ($8 = false OR stripe_subscription_id IS NULL OR stripe_subscription_id = $5)`,
           [
-            event.id,
-            error instanceof Error ? error.message.slice(0, 1000) : "unknown",
+            userId || "",
+            plan || "free",
+            status,
+            stripeId(subscription.customer),
+            subscription.id,
+            start,
+            end,
+            guarded,
           ],
         );
-        throw error;
+      } else if (
+        event.type === "invoice.paid" ||
+        event.type === "invoice.payment_failed"
+      ) {
+        const invoice = event.data.object as Stripe.Invoice & {
+          subscription?: string | { id: string } | null;
+        };
+        const subscriptionId =
+          stripeId(invoice.subscription) ||
+          stripeId(invoice.parent?.subscription_details?.subscription);
+        await client.query(
+          `UPDATE billing_profiles SET status = $2, updated_at = now()
+            WHERE stripe_customer_id = $1
+              AND ($3::text IS NULL OR stripe_subscription_id = $3)`,
+          [
+            stripeId(invoice.customer),
+            event.type === "invoice.paid" ? "active" : "past_due",
+            subscriptionId || null,
+          ],
+        );
       }
+      await client.query(
+        "UPDATE stripe_events SET processed_at = now() WHERE event_id = $1",
+        [event.id],
+      );
     });
   }
 }

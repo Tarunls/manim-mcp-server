@@ -247,6 +247,14 @@ export class ArtifactService {
     };
   }
 
+  async deleteProjectFileObjects(projectId: string, fileIds: string[]) {
+    const bucket = this.storage.bucket(this.bucketName());
+    for (const fileId of fileIds) {
+      const [files] = await bucket.getFiles({ prefix: `project-files/${projectId}/${fileId}/`, versions: true });
+      await Promise.all(files.map((file) => file.delete({ ignoreNotFound: true })));
+    }
+  }
+
   async deleteAccountObjects(projectIds: string[], jobIds: string[]) {
     if (!this.configured) return;
     const prefixes = [

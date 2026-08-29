@@ -192,11 +192,6 @@ export class CodexBridge extends EventEmitter {
     });
   }
 
-  async account() {
-    await this.start();
-    return { account: { type: "api", planType: "usage-based" } };
-  }
-
   async startThread(cwd: string, developerInstructions: string, model: AgentModel = STUDIO_MODEL) {
     await this.start();
     return this.rpc<{ thread: { id: string } }>("thread/start", {

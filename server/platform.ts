@@ -18,7 +18,6 @@ export function venvBin(root: string, name: string): string {
 }
 
 export const manimPath = (root: string) => venvBin(root, "manim");
-export const venvPython = (root: string) => venvBin(root, "python");
 
 /**
  * npm installs CLIs on Windows as a .cmd shim, and CreateProcess cannot execute

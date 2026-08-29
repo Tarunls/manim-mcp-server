@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type express from "express";
 
 export const csrfCookieName = "lesson_studio_csrf";
@@ -52,14 +52,11 @@ export function verifyMutationRequest(request: express.Request, response: expres
 }
 
 export function requestContext(request: express.Request, response: express.Response, next: express.NextFunction) {
-  const requestId = request.header("x-request-id")?.slice(0, 128) || randomUUID();
+  // Only echo caller IDs that are safe header values; setHeader throws on
+  // control characters, which would turn a hostile header into a crash.
+  const provided = request.header("x-request-id") || "";
+  const requestId = /^[\w-]{1,128}$/.test(provided) ? provided : randomUUID();
   response.locals.requestId = requestId;
   response.setHeader("X-Request-Id", requestId);
   next();
-}
-
-export function privacySafeIpHash(request: express.Request) {
-  const secret = process.env.AUDIT_HASH_SECRET || (process.env.NODE_ENV === "production" ? "" : "development-only");
-  if (!secret) throw new Error("AUDIT_HASH_SECRET is required in production.");
-  return createHash("sha256").update(`${secret}:${request.ip}`).digest("hex");
 }

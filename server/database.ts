@@ -19,6 +19,7 @@ export class Database {
       max: Number(process.env.DATABASE_POOL_MAX || 10),
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
+      statement_timeout: Number(process.env.DATABASE_STATEMENT_TIMEOUT_MS || 30_000),
       application_name: "lesson-studio-api",
       ssl: process.env.DATABASE_SSL === "disable" ? false : { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== "false" },
     });
@@ -55,6 +56,9 @@ export class Database {
 
   async migrate(migrationsDirectory: string) {
     if (!this.pool) throw new Error("DATABASE_URL is required to run migrations.");
+    // Deterministic lexicographic order over full filenames. Two applied files
+    // share the 0005_ prefix and are recorded by name, so never rename applied
+    // migrations; new migrations must start at 0006.
     const files = fs.readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort();
     await this.transaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(7812394102891)");

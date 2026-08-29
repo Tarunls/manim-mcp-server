@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { SpeechifyClient } from "@speechify/api";
+import { PRICING_PLANS } from "./billing-service.js";
 import type { Database } from "./database.js";
 import type { HostedJob } from "./hosted-generation-service.js";
 
@@ -11,9 +12,33 @@ function escapeXml(value: string) {
 export class ScopedNarrationService {
   constructor(private readonly db: Database) {}
 
+  private async assertNarrationEntitlement(ownerId: string) {
+    const result = await this.db.query<{
+      plan: keyof typeof PRICING_PLANS;
+      status: string;
+      role: string;
+    }>(
+      `SELECT bp.plan, bp.status, u.role
+         FROM billing_profiles bp
+         JOIN app_users u ON u.id = bp.user_id
+        WHERE bp.user_id = $1`,
+      [ownerId],
+    );
+    const profile = result.rows[0];
+    const staff = profile?.role === "staff" || profile?.role === "admin";
+    const subscribed = Boolean(
+      profile && profile.plan !== "free" && ["active", "trialing"].includes(profile.status),
+    );
+    const allowed = staff || (subscribed && PRICING_PLANS[profile!.plan]?.entitlements.narration);
+    if (!allowed) throw new Error("AI voice is available on paid plans.");
+  }
+
   async speak(job: HostedJob, input: { index?: unknown; text?: unknown }) {
     const apiKey = process.env.SPEECHIFY_API_KEY?.trim();
     if (!apiKey) throw new Error("Speechify narration is not configured.");
+    // The submit-time check is not enough: the plan can lapse mid-job, and the
+    // sandbox holds the callback token, so re-check the owner's entitlement.
+    await this.assertNarrationEntitlement(job.ownerId);
     const index = Number(input.index);
     const text = typeof input.text === "string" ? input.text.trim() : "";
     if (!Number.isInteger(index) || index < 0 || index >= 12 || !text || text.length > 1800) {
@@ -46,7 +71,7 @@ export class ScopedNarrationService {
         audio_format: "mp3",
         output_format: "mp3_24000_160",
         language: "en-US",
-      });
+      }, { timeoutInSeconds: 120 });
       if (!response.audio_data) throw new Error("Speechify returned no audio data.");
       return { audioData: response.audio_data };
     } catch (error) {

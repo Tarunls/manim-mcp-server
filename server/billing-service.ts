@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import Stripe from "stripe";
+import { effortRank, generationCost } from "./plan.js";
 import type {
   BillingEntitlements,
   BillingPlanId,
@@ -112,14 +113,6 @@ function freePeriod(date = new Date()) {
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1),
   );
   return { periodStart: start.toISOString(), periodEnd: end.toISOString() };
-}
-
-function generationCost(effort: GenerationEffort) {
-  return effort === "thorough" ? 4 : effort === "balanced" ? 2 : 1;
-}
-
-function effortRank(effort: GenerationEffort) {
-  return effort === "thorough" ? 3 : effort === "balanced" ? 2 : 1;
 }
 
 function stripeId(value: string | { id: string } | null | undefined) {

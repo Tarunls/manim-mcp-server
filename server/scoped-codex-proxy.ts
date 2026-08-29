@@ -20,6 +20,15 @@ type Usage = {
   outputTokens: number;
 };
 
+/**
+ * A job that exhausted its budget must fail fast: the Codex SDK inside the
+ * sandbox retries 5xx responses, so this error maps to a terminal HTTP 400.
+ */
+export class CodexBudgetExceededError extends Error {
+  readonly statusCode = 400;
+  readonly terminal = true;
+}
+
 export function codexPolicy(effort: HostedJob["effort"]) {
   return {
     model: effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
@@ -43,7 +52,9 @@ export function constrainCodexRequest(
   const request: Record<string, unknown> = {
     ...(body as Record<string, unknown>),
     model: policy.model,
+    store: false,
   };
+  delete request.metadata;
   if (!compact) {
     const requested = Number(request.max_output_tokens);
     request.max_output_tokens =
@@ -171,18 +182,35 @@ export class ScopedCodexProxy {
         )
       )
         throw new Error("Generation is no longer active.");
-      const count = await client.query<{ count: string }>(
-        "SELECT count(*)::text AS count FROM job_provider_calls WHERE job_id = $1 AND provider = 'openai'",
+      // Primary budget: estimated spend. Cost rows are written asynchronously
+      // after each upstream response completes, so this check is approximate;
+      // the generous call-count clamp below is the backstop.
+      const usage = await client.query<{ count: string; cost: string }>(
+        `SELECT count(*)::text AS count,
+                COALESCE(SUM(estimated_cost_microusd), 0)::text AS cost
+           FROM job_provider_calls WHERE job_id = $1 AND provider = 'openai'`,
         [job.id],
       );
+      const budget = boundedInteger(
+        process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB,
+        2_000_000,
+        100_000,
+        20_000_000,
+      );
+      if (Number(usage.rows[0]?.cost || 0) >= budget)
+        throw new CodexBudgetExceededError(
+          "OpenAI cost budget reached for this generation.",
+        );
       const limit = boundedInteger(
         process.env.CODEX_MAX_API_CALLS_PER_JOB,
-        12,
+        200,
         1,
-        64,
+        1000,
       );
-      if (Number(count.rows[0]?.count || 0) >= limit)
-        throw new Error("OpenAI request limit reached for this generation.");
+      if (Number(usage.rows[0]?.count || 0) >= limit)
+        throw new CodexBudgetExceededError(
+          "OpenAI request limit reached for this generation.",
+        );
       await client.query(
         `INSERT INTO job_provider_calls (id, job_id, provider, idempotency_key, request_hash, model)
          VALUES ($1, $2, 'openai', $3, $4, $5)`,

@@ -5,7 +5,9 @@ import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { CodexBridge } from "./codex-bridge.js";
+import { fetchVerifiedCommonsImage } from "./hosted-media-service.js";
 import { manimPath } from "./platform.js";
+import { titleFromPrompt } from "./plan.js";
 import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -18,7 +20,7 @@ const GENERATION_EFFORTS: Record<GenerationEffort, { model: AgentModel; reasonin
   thorough: { model: DEFAULT_MODEL, reasoningEffort: "xhigh" },
 };
 
-function generationPreferencesFor(effort: GenerationEffort): StudioProject["generationPreferences"] {
+export function generationPreferencesFor(effort: GenerationEffort): StudioProject["generationPreferences"] {
   return { effort, ...GENERATION_EFFORTS[effort] };
 }
 
@@ -124,11 +126,6 @@ function now() {
   return new Date().toISOString();
 }
 
-function safeTitle(prompt: string) {
-  const words = prompt.replace(/[^a-zA-Z0-9\s-]/g, " ").trim().split(/\s+/).slice(0, 5);
-  return words.join(" ") || "Untitled video";
-}
-
 function commandLabel(command: string, target: string) {
   if (/studio_asset\.mjs.*\bsearch\b/i.test(command)) return `Searching licensed assets · ${target}`;
   if (/studio_asset\.mjs.*\bimport\b/i.test(command)) return `Adding verified asset · ${target}`;
@@ -214,6 +211,15 @@ export class StudioService extends EventEmitter {
     });
     this.bridge.on("exit", () => {
       this.runtimeState.codex = false;
+      for (const project of this.projects.values()) {
+        if (project.status !== "running") continue;
+        project.status = "error";
+        project.stage = "ready";
+        project.error = "The generation agent stopped unexpectedly. Send the request again.";
+        project.turnId = undefined;
+        for (const action of project.actions) if (action.status === "running") action.status = "failed";
+        this.updateProject(project);
+      }
       this.emitEvent({ type: "runtime", runtime: this.runtimeState });
     });
     this.bridge.on("diagnostic", (message) => {
@@ -311,27 +317,15 @@ export class StudioService extends EventEmitter {
   }
 
   restoreProject(project: StudioProject) {
+    // Hosted projects live in Postgres; caching them in the process-lifetime
+    // Map (and writing per-project config files) on every read would leak.
+    if (!this.localPersistence) return project;
     this.projects.set(project.id, project);
     fs.mkdirSync(path.join(this.projectRoot, project.id), { recursive: true });
     this.writeReviewConfig(project);
     this.writeDesignConfig(project);
     this.writeNarrationConfig(project);
     return project;
-  }
-
-  getAuthState() {
-    return this.authState;
-  }
-
-  claimLegacyProjects(ownerId: string) {
-    let changed = false;
-    for (const project of this.projects.values()) {
-      if (project.ownerId === "__legacy__") {
-        project.ownerId = ownerId;
-        changed = true;
-      }
-    }
-    if (changed) this.persist();
   }
 
   updateFavorite(projectId: string, ownerId: string, favorite: boolean) {
@@ -534,7 +528,10 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       gsrsearch: `${query} filetype:bitmap`, gsrnamespace: "6", gsrlimit: "18",
       prop: "imageinfo", iiprop: "url|extmetadata|size", iiurlwidth: "420",
     }).toString();
-    const response = await fetch(url, { headers: { "User-Agent": "LessonStudio/0.1 educational-video-asset-picker" } });
+    const response = await fetch(url, {
+      headers: { "User-Agent": "LessonStudio/0.1 educational-video-asset-picker" },
+      signal: AbortSignal.timeout(15_000),
+    });
     if (!response.ok) throw new Error("Wikimedia Commons search is unavailable.");
     const data = await response.json() as any;
     return Object.values(data.query?.pages || {}).map((page: any) => {
@@ -560,21 +557,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
   async importAsset(projectId: string, candidate: any) {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
-    const download = new URL(String(candidate.downloadUrl || ""));
-    const source = new URL(String(candidate.sourceUrl || ""));
-    if (download.protocol !== "https:" || download.hostname !== "upload.wikimedia.org" || source.hostname !== "commons.wikimedia.org") {
-      throw new Error("Only Wikimedia Commons assets from the search picker can be imported.");
-    }
-    const response = await fetch(download, { headers: { "User-Agent": "LessonStudio/0.1 educational-video-asset-import" } });
-    if (!response.ok) throw new Error("The selected asset could not be downloaded.");
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > 20 * 1024 * 1024) throw new Error("Choose an image smaller than 20 MB.");
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error("Choose an image smaller than 20 MB.");
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.startsWith("image/")) throw new Error("The selected file is not an image.");
-    const sourceExtension = path.extname(download.pathname).toLowerCase();
-    const extension = /^\.(png|jpe?g|webp|gif|svg)$/.test(sourceExtension) ? sourceExtension : ".png";
+    const { contents: bytes, extension, source } = await fetchVerifiedCommonsImage(candidate || {});
     const id = randomUUID().slice(0, 8);
     const filename = `${safeFileStem(String(candidate.title || "asset"))}-${id}${extension}`;
     const assetDir = path.join(this.projectRoot, project.id, "public", "assets");
@@ -736,12 +719,11 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
   }
 
   async refreshAuth() {
+    // The bridge logs in with the server's API key at startup; a running
+    // bridge is the only account state there is.
     try {
-      const result = await this.bridge.account();
-      const account = result.account;
-      this.authState = account
-        ? { connected: true, plan: account.planType, mode: account.type }
-        : { connected: false };
+      await this.bridge.start();
+      this.authState = { connected: true, plan: "usage-based", mode: "api" };
     } catch {
       this.authState = { connected: false };
     }
@@ -756,7 +738,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       id,
       ownerId,
       favorite: false,
-      title: prompt ? safeTitle(prompt) : "Untitled video",
+      title: prompt ? titleFromPrompt(prompt) : "Untitled video",
       prompt,
       renderer,
       createdAt: timestamp,
@@ -819,7 +801,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     const targetVersion = project.versions.length + 1;
     project.messages.push({ id: randomUUID(), role: "user", text, createdAt: now(), attachment: options?.chatAttachment });
     project.prompt ||= text;
-    if (project.title === "Untitled video") project.title = safeTitle(text);
+    if (project.title === "Untitled video") project.title = titleFromPrompt(text);
     project.status = "running";
     project.stage = "brief";
     project.error = undefined;
@@ -903,10 +885,14 @@ ${requestBody}`;
 
   async cancel(projectId: string) {
     const project = this.projects.get(projectId);
-    if (!project?.threadId || !project.turnId) return;
-    await this.bridge.interrupt(project.threadId, project.turnId);
+    if (!project) return;
+    // Interrupt when a turn is live, but always leave the project stopped: a
+    // project stuck "running" without a turn id would otherwise be
+    // uncancellable.
+    if (project.threadId && project.turnId) await this.bridge.interrupt(project.threadId, project.turnId);
     project.status = "cancelled";
     project.stage = "ready";
+    project.turnId = undefined;
     for (const action of project.actions) if (action.status === "running") action.status = "failed";
     this.updateProject(project);
   }

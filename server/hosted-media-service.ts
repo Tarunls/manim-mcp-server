@@ -22,6 +22,34 @@ function plain(value: unknown) {
   return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Shared by hosted and local asset import: HTTPS Wikimedia origin only, a
+ * post-redirect host re-check, a bounded download, and a raster-only content
+ * type allowlist (no SVG, which can carry script).
+ */
+export async function fetchVerifiedCommonsImage(candidate: Record<string, unknown>) {
+  const download = new URL(String(candidate.downloadUrl || ""));
+  const source = new URL(String(candidate.sourceUrl || ""));
+  if (download.protocol !== "https:" || download.hostname !== "upload.wikimedia.org" || source.hostname !== "commons.wikimedia.org") {
+    throw new Error("Only Wikimedia Commons assets from the search picker can be imported.");
+  }
+  const response = await fetch(download, {
+    headers: { "User-Agent": "LessonStudio/1.0 educational-video-asset-import" },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error("The selected asset could not be downloaded.");
+  if (new URL(response.url).hostname !== "upload.wikimedia.org") throw new Error("The asset download redirected to an untrusted host.");
+  const declaredLength = Number(response.headers.get("content-length") || 0);
+  if (declaredLength > 20 * 1024 * 1024) throw new Error("Choose an image smaller than 20 MB.");
+  const contents = await boundedResponse(response, 20 * 1024 * 1024);
+  const contentType = response.headers.get("content-type")?.split(";")[0] || "";
+  if (!contents.length || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(contentType)) {
+    throw new Error("The selected file is not a supported image under 20 MB.");
+  }
+  const extension = contentType === "image/png" ? ".png" : contentType === "image/webp" ? ".webp" : contentType === "image/gif" ? ".gif" : ".jpg";
+  return { contents, contentType, extension, source };
+}
+
 async function boundedResponse(response: Response, maxBytes: number) {
   if (!response.body) throw new Error("The asset download returned no data.");
   const reader = response.body.getReader();
@@ -45,23 +73,8 @@ export class HostedMediaService {
   constructor(private readonly db: Database, private readonly artifacts: ArtifactService) {}
 
   async importAsset(ownerId: string, project: StudioProject, candidate: Record<string, unknown>) {
-    const download = new URL(String(candidate.downloadUrl || ""));
-    const source = new URL(String(candidate.sourceUrl || ""));
-    if (download.protocol !== "https:" || download.hostname !== "upload.wikimedia.org" || source.hostname !== "commons.wikimedia.org") {
-      throw new Error("Only Wikimedia Commons assets from the search picker can be imported.");
-    }
-    const response = await fetch(download, { headers: { "User-Agent": "LessonStudio/1.0 educational-video-asset-import" } });
-    if (!response.ok) throw new Error("The selected asset could not be downloaded.");
-    if (new URL(response.url).hostname !== "upload.wikimedia.org") throw new Error("The asset download redirected to an untrusted host.");
-    const declaredLength = Number(response.headers.get("content-length") || 0);
-    if (declaredLength > 20 * 1024 * 1024) throw new Error("Choose an image smaller than 20 MB.");
-    const contents = await boundedResponse(response, 20 * 1024 * 1024);
-    const contentType = response.headers.get("content-type")?.split(";")[0] || "";
-    if (!contents.length || contents.length > 20 * 1024 * 1024 || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(contentType)) {
-      throw new Error("The selected file is not a supported image under 20 MB.");
-    }
+    const { contents, contentType, extension, source } = await fetchVerifiedCommonsImage(candidate);
     const fileId = randomUUID();
-    const extension = contentType === "image/png" ? ".png" : contentType === "image/webp" ? ".webp" : contentType === "image/gif" ? ".gif" : ".jpg";
     const stored = await this.artifacts.storeProjectFile(project.id, fileId, `asset${extension}`, contentType, contents);
     await this.db.query(
       `INSERT INTO project_files
@@ -116,6 +129,15 @@ export class HostedMediaService {
       }
     });
     return { cleanId, annotatedId };
+  }
+
+  // Best-effort rollback for review frames whose generation submit failed.
+  async deleteProjectFiles(ownerId: string, projectId: string, fileIds: string[]) {
+    await this.db.query(
+      "DELETE FROM project_files WHERE owner_id = $1 AND project_id = $2 AND id = ANY($3::uuid[])",
+      [ownerId, projectId, fileIds],
+    );
+    await this.artifacts.deleteProjectFileObjects(projectId, fileIds);
   }
 
   async ownedFile(fileId: string, ownerId: string) {

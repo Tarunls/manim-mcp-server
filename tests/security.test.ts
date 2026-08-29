@@ -97,16 +97,31 @@ test("mutation requests require the exact configured origin", () => {
   }
 });
 
-test("request context preserves bounded caller IDs", () => {
+test("request context echoes well-formed caller IDs", () => {
   let header = "";
   let nextCalled = false;
-  const request = { header: () => "r".repeat(256) } as unknown as express.Request;
+  const requestId = "trace_1234-ABC";
+  const request = { header: () => requestId } as unknown as express.Request;
   const response = {
     locals: {},
     setHeader(_name: string, value: string) { header = value; },
   } as unknown as express.Response;
   requestContext(request, response, () => { nextCalled = true; });
-  assert.equal(header, "r".repeat(128));
+  assert.equal(header, requestId);
   assert.equal(response.locals.requestId, header);
   assert.equal(nextCalled, true);
+});
+
+test("request context replaces malformed caller IDs instead of reflecting them", () => {
+  for (const hostile of ["r".repeat(256), "bad\r\nSet-Cookie: x=1", "", "id with spaces"]) {
+    let header = "";
+    const request = { header: () => hostile || undefined } as unknown as express.Request;
+    const response = {
+      locals: {},
+      setHeader(_name: string, value: string) { header = value; },
+    } as unknown as express.Response;
+    requestContext(request, response, () => undefined);
+    assert.notEqual(header, hostile);
+    assert.match(header, /^[0-9a-f-]{36}$/);
+  }
 });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CodexBudgetExceededError,
   codexPolicy,
   constrainCodexRequest,
 } from "../server/scoped-codex-proxy.js";
@@ -37,4 +38,21 @@ test("Codex proxy overrides model selection and caps output tokens", () => {
   assert.equal(constrained.max_output_tokens, 12_000);
   assert.equal(constrained.input, "lesson");
   assert.throws(() => constrainCodexRequest(job("quick"), []), /invalid/);
+});
+
+test("Codex proxy never lets the sandbox persist responses or attach metadata", () => {
+  const constrained = constrainCodexRequest(job("quick"), {
+    input: "lesson",
+    store: true,
+    metadata: { exfil: "user-data" },
+  });
+  assert.equal(constrained.store, false);
+  assert.equal("metadata" in constrained, false);
+});
+
+test("budget exhaustion is a terminal client error, not a retryable 5xx", () => {
+  const error = new CodexBudgetExceededError("budget reached");
+  assert.equal(error.statusCode, 400);
+  assert.equal(error.terminal, true);
+  assert.ok(error instanceof Error);
 });

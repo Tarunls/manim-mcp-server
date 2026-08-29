@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import { PRICING_PLANS } from "./billing-service.js";
+import { effortRank, generationCost, titleFromPrompt } from "./plan.js";
 import type { Database } from "./database.js";
 import type { GenerationEffort, StudioProject } from "./types.js";
 import type { VerifiedArtifact } from "./artifact-service.js";
@@ -47,14 +48,6 @@ type BillingRow = {
   balance: string;
 };
 
-function costFor(effort: GenerationEffort) {
-  return effort === "thorough" ? 4 : effort === "balanced" ? 2 : 1;
-}
-
-function effortRank(effort: GenerationEffort) {
-  return effort === "thorough" ? 3 : effort === "balanced" ? 2 : 1;
-}
-
 function activeJobLimit(plan: BillingRow["plan"], staff: boolean) {
   if (staff) return Number(process.env.STAFF_ACTIVE_JOB_LIMIT || 20);
   return plan === "studio" ? 10 : plan === "pro" ? 5 : plan === "creator" ? 2 : 1;
@@ -66,6 +59,21 @@ function diagnosticMessage(error: unknown) {
 
 export class HostedGenerationService {
   constructor(private readonly db: Database) {}
+
+  // Balances sum the ledger per billing period, so a refund must land in the
+  // reservation's period; stamping it now() after a rollover would mint
+  // credits in the new period.
+  private async refundReservation(client: PoolClient, job: JobRow) {
+    if (job.reserved_credits <= 0) return;
+    await client.query(
+      `INSERT INTO credit_ledger (id, user_id, job_id, amount, reason, idempotency_key, created_at)
+       SELECT $1, $2, $3, $4, 'generation_refund', $5,
+              COALESCE((SELECT created_at FROM credit_ledger
+                         WHERE user_id = $2 AND idempotency_key = $6), now())
+       ON CONFLICT (user_id, idempotency_key) DO NOTHING`,
+      [randomUUID(), job.owner_id, job.id, job.reserved_credits, `job:${job.id}:refund`, `job:${job.id}:reserve`],
+    );
+  }
 
   private async queueSandboxCleanup(client: PoolClient, jobId: string, sandboxId: string | null) {
     if (!sandboxId) return;
@@ -146,10 +154,30 @@ export class HostedGenerationService {
     attachments?: Array<{ fileId: string; label: string }>;
   }) {
     if (!this.configured) throw new Error("Hosted generation is not configured.");
+    if (!/^[A-Za-z0-9._:-]{16,200}$/.test(input.idempotencyKey)) throw new Error("A valid Idempotency-Key header is required.");
+    // Serializable transactions abort with SQLSTATE 40001/40P01 under
+    // contention; retry instead of surfacing that to the user.
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.submitOnce(input);
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (attempt >= 3 || (code !== "40001" && code !== "40P01")) throw error;
+      }
+    }
+  }
+
+  private async submitOnce(input: {
+    ownerId: string;
+    project: StudioProject;
+    prompt: string;
+    effort: GenerationEffort;
+    idempotencyKey: string;
+    attachments?: Array<{ fileId: string; label: string }>;
+  }) {
     const templateVersion = process.env.E2B_TEMPLATE_VERSION?.trim();
     if (!templateVersion || templateVersion === "dev")
       throw new Error("Hosted generation requires an immutable E2B template version.");
-    if (!/^[A-Za-z0-9._:-]{16,200}$/.test(input.idempotencyKey)) throw new Error("A valid Idempotency-Key header is required.");
     const jobId = randomUUID();
     const outboxId = randomUUID();
     const timestamp = new Date().toISOString();
@@ -192,7 +220,7 @@ export class HostedGenerationService {
       if (Number(active.rows[0]?.count || 0) >= activeJobLimit(plan, staff)) {
         throw new Error("Wait for an active generation to finish before starting another one.");
       }
-      const credits = staff ? 0 : costFor(input.effort);
+      const credits = staff ? 0 : generationCost(input.effort);
       const remaining = definition.entitlements.creditsPerMonth + Number(billing.balance);
       if (!staff && remaining < credits) {
         throw new Error(`This request needs ${credits} generation credit${credits === 1 ? "" : "s"}. Upgrade or wait for your monthly credits to renew.`);
@@ -201,9 +229,7 @@ export class HostedGenerationService {
       const mode = project.versions.length ? "revision" : "first-draft";
       project.messages.push({ id: randomUUID(), role: "user", text: input.prompt, createdAt: timestamp });
       project.prompt ||= input.prompt;
-      if (project.title === "Untitled video") {
-        project.title = input.prompt.replace(/[^a-zA-Z0-9\s-]/g, " ").trim().split(/\s+/).slice(0, 5).join(" ") || "Untitled video";
-      }
+      if (project.title === "Untitled video") project.title = titleFromPrompt(input.prompt);
       project.status = "running";
       project.stage = "brief";
       project.error = undefined;
@@ -428,14 +454,7 @@ export class HostedGenerationService {
       const job = result.rows[0];
       if (!job) return;
       await this.queueSandboxCleanup(client, job.id, job.e2b_sandbox_id);
-      if (refund && job.reserved_credits > 0) {
-        await client.query(
-          `INSERT INTO credit_ledger (id, user_id, job_id, amount, reason, idempotency_key)
-           VALUES ($1, $2, $3, $4, 'generation_refund', $5)
-           ON CONFLICT (user_id, idempotency_key) DO NOTHING`,
-          [randomUUID(), job.owner_id, job.id, job.reserved_credits, `job:${job.id}:refund`],
-        );
-      }
+      if (refund) await this.refundReservation(client, job);
       const projectResult = await client.query<{ document: StudioProject }>(
         `SELECT document FROM projects WHERE id = $1 AND owner_id = $2 FOR UPDATE`,
         [job.project_id, job.owner_id],
@@ -475,7 +494,23 @@ export class HostedGenerationService {
         userMessage: "The renderer timed out. Your generation credits were restored.",
       });
     }
-    return { reconciled: expired.rows.length };
+    // Queued jobs hold no lease; if the Cloud Tasks dispatch was dropped or
+    // exhausted, they would otherwise stay queued forever with credits held.
+    const queuedTimeoutMs = Math.max(60_000, Number(process.env.GENERATION_QUEUED_TIMEOUT_MS || 30 * 60_000));
+    const stale = await this.db.query<JobRow>(
+      `SELECT * FROM generation_jobs
+        WHERE status = 'queued'
+          AND updated_at < now() - ($1::int * interval '1 millisecond')
+        ORDER BY updated_at LIMIT 50`,
+      [queuedTimeoutMs],
+    );
+    for (const row of stale.rows) {
+      await this.fail(row.id, new Error("Generation stayed queued past its dispatch deadline."), true, {
+        code: "dispatch_expired",
+        userMessage: "The renderer could not be started. Your generation credits were restored.",
+      });
+    }
+    return { reconciled: expired.rows.length + stale.rows.length };
   }
 
   async queueUntrackedTerminalSandboxes(limit = 50) {
@@ -502,6 +537,9 @@ export class HostedGenerationService {
 
   async pendingSandboxCleanups(limit = 50) {
     const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    // Exponential backoff scheduled from created_at (the row has no
+    // last-attempt column): attempt n becomes eligible 2^n - 1 minutes after
+    // creation. Rows past the attempt cap are kept for manual inspection.
     const result = await this.db.query<{
       id: string;
       aggregate_id: string;
@@ -510,9 +548,11 @@ export class HostedGenerationService {
       `SELECT id, aggregate_id, payload
          FROM outbox_events
         WHERE topic = 'sandbox.cleanup' AND published_at IS NULL
+          AND attempt < $2
+          AND now() >= created_at + ((power(2, LEAST(attempt, 12)) - 1) * interval '1 minute')
         ORDER BY created_at
         LIMIT $1`,
-      [boundedLimit],
+      [boundedLimit, this.sandboxCleanupMaxAttempts()],
     );
     return result.rows.map((row) => ({
       eventId: row.id,
@@ -540,13 +580,26 @@ export class HostedGenerationService {
     });
   }
 
+  private sandboxCleanupMaxAttempts() {
+    return Math.max(1, Math.min(20, Number(process.env.SANDBOX_CLEANUP_MAX_ATTEMPTS || 10)));
+  }
+
   async recordSandboxCleanupFailure(eventId: string, error: unknown) {
-    await this.db.query(
+    const result = await this.db.query<{ attempt: number; aggregate_id: string }>(
       `UPDATE outbox_events
           SET attempt = attempt + 1, last_error = $2
-        WHERE id = $1 AND topic = 'sandbox.cleanup' AND published_at IS NULL`,
+        WHERE id = $1 AND topic = 'sandbox.cleanup' AND published_at IS NULL
+        RETURNING attempt, aggregate_id`,
       [eventId, diagnosticMessage(error).slice(0, 1000)],
     );
+    const row = result.rows[0];
+    if (row && row.attempt >= this.sandboxCleanupMaxAttempts()) {
+      console.error("Giving up on sandbox cleanup after repeated failures; the outbox row is kept for manual inspection", {
+        eventId,
+        sandboxId: row.aggregate_id,
+        attempts: row.attempt,
+      });
+    }
   }
 
   async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"], assistantMessage?: string) {
@@ -574,8 +627,7 @@ export class HostedGenerationService {
           `INSERT INTO artifacts
             (id, owner_id, project_id, job_id, kind, bucket, object_name, generation,
              content_type, byte_size, checksum, checksum_algorithm)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'crc32c')
-           ON CONFLICT (job_id, kind) DO NOTHING`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'crc32c')`,
           [artifactId, job.owner_id, job.project_id, job.id, artifact.kind, artifact.bucket,
             artifact.objectName, artifact.generation, artifact.contentType, artifact.byteSize, artifact.checksum],
         );
@@ -612,6 +664,7 @@ export class HostedGenerationService {
       }
       const safeAssistantMessage = String(assistantMessage || "")
         .replaceAll(this.callbackToken(job.id), "[redacted]")
+        .replaceAll(this.codexToken(job.id), "[redacted]")
         .replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]")
         .slice(0, 2000);
       project.messages.push({
@@ -651,14 +704,7 @@ export class HostedGenerationService {
       const job = result.rows[0];
       if (!job) return undefined;
       await this.queueSandboxCleanup(client, job.id, job.e2b_sandbox_id);
-      if (job.reserved_credits > 0) {
-        await client.query(
-          `INSERT INTO credit_ledger (id, user_id, job_id, amount, reason, idempotency_key)
-           VALUES ($1, $2, $3, $4, 'generation_refund', $5)
-           ON CONFLICT (user_id, idempotency_key) DO NOTHING`,
-          [randomUUID(), ownerId, job.id, job.reserved_credits, `job:${job.id}:refund`],
-        );
-      }
+      await this.refundReservation(client, job);
       const projectResult = await client.query<{ document: StudioProject }>(
         `SELECT document FROM projects WHERE id = $1 AND owner_id = $2 FOR UPDATE`,
         [projectId, ownerId],
