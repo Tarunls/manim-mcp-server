@@ -4,6 +4,25 @@ import type { BillingPlanId, PricingPlan } from "../types";
 import { MarketingChrome } from "./MarketingChrome";
 import { PricingCards } from "./PricingCards";
 
+const PRICING_FAQ = [
+  {
+    q: "What is a credit?",
+    a: "One credit is one pass of the generator. Faster spends 1, Balanced spends 2, and Try harder spends 4 — the harder settings give the model more room to plan and check the scenes before rendering.",
+  },
+  {
+    q: "What happens if a render fails?",
+    a: "Failed and cancelled generations return the credits they reserved. You are never charged for a video you did not get.",
+  },
+  {
+    q: "Do credits roll over?",
+    a: "No. Credits reset at the start of each billing period, so a plan is a monthly allowance rather than a balance you accumulate.",
+  },
+  {
+    q: "Can I change plans?",
+    a: "Yes, at any time, from the billing panel in the studio. Changes take effect on the next invoice and your work stays where it is.",
+  },
+];
+
 export default function Pricing() {
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [checkoutEnabled, setCheckoutEnabled] = useState(false);
@@ -35,7 +54,7 @@ export default function Pricing() {
     }
     if (!checkoutEnabled) {
       setNotice(
-        "Paid plans are opening soon. You can create a free account and use the studio now.",
+        "Paid checkout is not open yet. Create a free account and use the studio in the meantime.",
       );
       return;
     }
@@ -44,22 +63,33 @@ export default function Pricing() {
 
   return (
     <MarketingChrome
-      nav={<a href="/#how-it-works">How it works</a>}
+      nav={
+        <>
+          <a href="/#examples">Examples</a>
+          <a href="/#how-it-works">How it works</a>
+        </>
+      }
       className="pricing-shell"
     >
       <section className="page-hero">
-        <span className="kicker">Pricing</span>
-        <h1>Simple plans for real output.</h1>
-        <p>Pay for the amount of generation and reasoning you use.</p>
-        <p className="page-hero-note">
-          Faster uses 1 credit, Balanced uses 2, and Try harder uses 4.
-        </p>
+        <div className="page-hero-inner">
+          <span className="kicker">Pricing</span>
+          <h1>Pay for what you render.</h1>
+          <p>
+            Every plan uses the same renderer, the same studio, and the same
+            frame-by-frame editing. The only thing that changes is how many
+            lessons you can generate each month.
+          </p>
+          <p className="page-hero-note">
+            Faster spends 1 credit. Balanced spends 2. Try harder spends 4.
+          </p>
+        </div>
       </section>
       <section className="pricing-section" id="pricing">
         {!checkoutEnabled && !loadError && (
           <div className="launch-note">
-            <strong>Free is available now.</strong>
-            <span>Paid checkout is not enabled in this environment.</span>
+            <strong>Free is live now.</strong>
+            <span>Paid checkout is not enabled in this environment yet.</span>
           </div>
         )}
         {loadError && (
@@ -77,6 +107,20 @@ export default function Pricing() {
           checkoutEnabled={checkoutEnabled}
           onChoose={choose}
         />
+      </section>
+      <section className="pricing-faq" aria-labelledby="pricing-faq-title">
+        <div className="mk-section-head">
+          <span className="kicker">Questions</span>
+          <h2 id="pricing-faq-title">How billing works.</h2>
+        </div>
+        <div className="faq-list">
+          {PRICING_FAQ.map((item) => (
+            <details className="faq-item" key={item.q}>
+              <summary>{item.q}</summary>
+              <p>{item.a}</p>
+            </details>
+          ))}
+        </div>
       </section>
     </MarketingChrome>
   );

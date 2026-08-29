@@ -1,6 +1,6 @@
 # Manim MCP Server
 
-## Lesson Studio MVP
+## Orune MVP
 
 The production foundation and custom-domain staging infrastructure are implemented; final narrated-generation and launch certification remain. The trust boundaries and data flow are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), current evidence and blockers are in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), and the exact next-agent continuation is in [docs/GCP_ADMIN_LLM_HANDOFF.md](docs/GCP_ADMIN_LLM_HANDOFF.md).
 
@@ -63,7 +63,7 @@ Never put the key in a `VITE_*` variable. Vite exposes those values to browser c
 
 Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
 
-Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. Hosted E2B workers instead receive an active-job-scoped proxy token in `.env`; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. Codex uses the current Responses WebSocket transport through the same authenticated relay. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Jobs may make up to 64 provider calls, but independent estimated-cost limits stop normal work at $2 and Try harder work at $4.
+Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. Hosted E2B workers instead receive an active-job-scoped proxy token in `.env`; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. Codex uses the current Responses WebSocket transport through the same authenticated relay. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Orune presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Jobs may make up to 64 provider calls, but independent estimated-cost limits stop normal work at $2 and Try harder work at $4.
 
 ### Billing
 

@@ -28,21 +28,21 @@ function stripe(args) {
 
 const plans = [
   {
-    name: "Lesson Studio Creator",
+    name: "Orune Creator",
     description:
       "10 monthly generation credits with Balanced thinking, narration, and licensed visual search.",
     amount: 2000,
     lookupKey: "lesson_studio_creator_monthly",
   },
   {
-    name: "Lesson Studio Pro",
+    name: "Orune Pro",
     description:
       "30 monthly generation credits with Try harder thinking, narration, and licensed visual search.",
     amount: 5000,
     lookupKey: "lesson_studio_pro_monthly",
   },
   {
-    name: "Lesson Studio Studio",
+    name: "Orune Studio",
     description:
       "70 monthly generation credits and the highest concurrency for publishing workflows.",
     amount: 10000,

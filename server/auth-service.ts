@@ -195,13 +195,17 @@ export class IdentityAuthService {
       );
       const email =
         typeof claims.email === "string" ? claims.email.toLowerCase() : "";
-      if (!claims.uid || !email || claims.email_verified !== true)
+      const isStaff = this.staffEmails.has(email);
+      // Staff addresses come from a Secret Manager allowlist and are treated as
+      // verified at sign-in; this check has to agree, or their session cookie
+      // authenticates once and then fails every subsequent request.
+      if (!claims.uid || !email || (claims.email_verified !== true && !isStaff))
         return undefined;
       return {
         uid: claims.uid,
         email,
         emailVerified: true,
-        isStaff: this.staffEmails.has(email),
+        isStaff,
       };
     } catch {
       return undefined;

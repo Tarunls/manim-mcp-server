@@ -3,6 +3,7 @@ import {
   ArrowUp,
   ArrowUpRight,
   ArrowsLeftRight,
+  CaretDown,
   Code,
   ImageSquare,
   PushPin,
@@ -153,9 +154,10 @@ export function ChatPanel({
   );
   const videoReady = videoEngineIsReady(runtime);
   const suggestions = [
-    "Animate why the Pythagorean theorem works",
-    "Make gradient descent feel intuitive",
-    "Show how sound becomes a frequency spectrum",
+    "Explain eigenvectors geometrically",
+    "How a Fourier series builds a square wave",
+    "Why the derivative is a slope",
+    "Bayes' theorem with real numbers",
   ];
 
   async function submit() {
@@ -213,8 +215,13 @@ export function ChatPanel({
     >
       <header className="panel-header" onPointerDown={beginChatDrag}>
         <div className="chat-title">
-          <span className="kicker">Creative copilot</span>
-          <h1>{project?.title || "New video"}</h1>
+          {/* Docked, the topbar already names the project, so the panel just
+              labels itself; floated away it has to carry its own title. */}
+          <h1>
+            {mode === "floating"
+              ? project?.title || "New video"
+              : "Conversation"}
+          </h1>
         </div>
         <div className="chat-window-controls">
           {mode === "docked" && (
@@ -255,7 +262,9 @@ export function ChatPanel({
         the browser keeps the scroll position pinned to the newest content
         while messages stream in - no scroll effect needed.
       */}
-      <div className="messages">
+      {/* tabIndex keeps the transcript reachable by keyboard once it scrolls:
+          it can hold no focusable content of its own. */}
+      <div className="messages" tabIndex={0} role="log" aria-label="Conversation">
         {project?.error && (
           <div className="inline-error">
             <Warning size={15} />
@@ -292,12 +301,14 @@ export function ChatPanel({
           .reverse()}
         {!project?.messages.length && (
           <div className="chat-empty">
-            <h2>Turn an idea into motion.</h2>
+            <h2 className="serif">Turn an idea into motion.</h2>
             <p>
-              Describe what you want to teach. The studio will plan, animate,
-              render, and review it.
+              Describe the idea and the moment it should click. The studio
+              plans the lesson, animates it, renders it, then reviews its own
+              frames.
             </p>
             <div className="suggestions">
+              <span className="suggestions-label">Try one of these</span>
               {suggestions.map((suggestion) => (
                 <button key={suggestion} onClick={() => onDraft(suggestion)}>
                   {suggestion}
@@ -305,6 +316,9 @@ export function ChatPanel({
                 </button>
               ))}
             </div>
+            <span className="chat-empty-hint">
+              Enter sends · Shift + Enter adds a line
+            </span>
           </div>
         )}
       </div>
@@ -321,48 +335,11 @@ export function ChatPanel({
           </div>
         )}
 
-        <div className="composer-toolbar">
-          {project && (
-            <label className="action-select">
-              Action
-              <select
-                value={intent}
-                disabled={running || !hasPriorWork}
-                onChange={(event) =>
-                  setIntent(event.target.value as GenerationIntent)
-                }
-              >
-                <option value="auto">Smart choice</option>
-                <option value="revise">Edit this video</option>
-                <option value="new">Create a separate video</option>
-              </select>
-            </label>
-          )}
-          {project && (
-            <button
-              type="button"
-              className="composer-tool"
-              onClick={() =>
-                billing.entitlements.licensedAssets
-                  ? setAssetsOpen(true)
-                  : onNotify(
-                      "Licensed visual search is included with paid plans.",
-                    )
-              }
-              disabled={running}
-            >
-              <ImageSquare size={15} /> Add visual
-              {project.assets?.length ? ` · ${project.assets.length}` : ""}
-            </button>
-          )}
-        </div>
-
         <details className="creative-controls">
           <summary>
-            <span>
-              <SlidersHorizontal size={15} /> Creative controls
-            </span>
-            <small>Style, motion, voice &amp; review</small>
+            <SlidersHorizontal size={15} />
+            Creative controls
+            <CaretDown className="creative-controls-caret" size={12} />
           </summary>
           <div className="creative-controls-body">
             {project && (
@@ -529,43 +506,82 @@ export function ChatPanel({
             }}
             placeholder={
               intent === "new"
-                ? "Describe the separate video you want to create..."
+                ? "Describe the separate video you want to create…"
                 : project?.videoUrl
-                  ? "Describe an edit, or ask for a completely new video..."
-                  : "Describe the lesson you want to bring to life..."
+                  ? "Describe an edit, or ask for a completely new video…"
+                  : "Describe the lesson you want to bring to life…"
             }
             rows={2}
             disabled={running}
           />
-          {running ? (
-            <button
-              className="send-button stop-button"
-              onClick={onCancel}
-              aria-label="Stop generation"
-            >
-              <Stop size={14} weight="fill" />
-            </button>
-          ) : (
-            <button
-              className="send-button"
-              onClick={() => void submit()}
-              disabled={
-                !draft.trim() || sending || !auth.connected || !videoReady
-              }
-              aria-label="Send prompt"
-            >
-              <ArrowUp size={15} weight="bold" />
-            </button>
-          )}
+          <div className="composer-row">
+            <div className="composer-tools">
+              {project && (
+                <label className="action-select">
+                  <span className="sr-only">Action</span>
+                  <select
+                    value={intent}
+                    disabled={running || !hasPriorWork}
+                    onChange={(event) =>
+                      setIntent(event.target.value as GenerationIntent)
+                    }
+                  >
+                    <option value="auto">Smart choice</option>
+                    <option value="revise">Edit this video</option>
+                    <option value="new">Separate video</option>
+                  </select>
+                </label>
+              )}
+              {project && (
+                <button
+                  type="button"
+                  className="composer-tool"
+                  onClick={() =>
+                    billing.entitlements.licensedAssets
+                      ? setAssetsOpen(true)
+                      : onNotify(
+                          "Licensed visual search is included with paid plans.",
+                        )
+                  }
+                  disabled={running}
+                >
+                  <ImageSquare size={15} /> Add visual
+                  {project.assets?.length ? ` · ${project.assets.length}` : ""}
+                </button>
+              )}
+            </div>
+            <div className="composer-submit">
+              {running ? (
+                <button
+                  className="send-button stop-button"
+                  onClick={onCancel}
+                  aria-label="Stop generation"
+                >
+                  <Stop size={14} weight="fill" />
+                </button>
+              ) : (
+                <button
+                  className="send-button"
+                  onClick={() => void submit()}
+                  disabled={
+                    !draft.trim() || sending || !auth.connected || !videoReady
+                  }
+                  aria-label="Send prompt"
+                >
+                  <ArrowUp size={15} weight="bold" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         {sendError && <span className="form-error">{sendError}</span>}
-        <span className="composer-hint">
-          {intent === "new"
-            ? "Creates a separate project with the cinematic baseline"
-            : intent === "revise"
-              ? "Changes this video and preserves everything else"
-              : "Smart choice understands whether you mean an edit or a new video"}
-        </span>
+        {intent !== "auto" && (
+          <span className="composer-hint">
+            {intent === "new"
+              ? "Creates a separate project with the cinematic baseline."
+              : "Changes this video and preserves everything else."}
+          </span>
+        )}
       </div>
       {assetsOpen && project && (
         <AssetPicker project={project} onClose={() => setAssetsOpen(false)} />

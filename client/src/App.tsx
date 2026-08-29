@@ -1,5 +1,4 @@
 import {
-  Check,
   CircleNotch,
   List,
   MagicWand,
@@ -323,8 +322,8 @@ export function App() {
   if (!access.checked || !loaded) {
     if (access.checked && connection === "reconnecting") {
       return (
-        <main className="app-loading" aria-label="Loading Lesson Studio">
-          <span className="wordmark">Lesson Studio</span>
+        <main className="app-loading" aria-label="Loading Orune">
+          <span className="wordmark">Orune</span>
           <p className="loading-error">
             Could not reach the studio. Retrying automatically.
           </p>
@@ -335,8 +334,8 @@ export function App() {
       );
     }
     return (
-      <main className="app-loading" aria-label="Loading Lesson Studio">
-        <span className="wordmark">Lesson Studio</span>
+      <main className="app-loading" aria-label="Loading Orune">
+        <span className="wordmark">Orune</span>
         <div className="loading-line">
           <span />
         </div>
@@ -394,15 +393,23 @@ export function App() {
               {activeProject?.title || "Untitled video"}
             </span>
             {activeProject?.status === "running" && (
-              <span className="status-chip">
-                <CircleNotch className="spin" size={11} />{" "}
-                {generationLabel(activeProject)}
-              </span>
+              <>
+                <span className="topbar-divider" aria-hidden="true" />
+                <span className="topbar-status" role="status">
+                  <span className="status-dot" data-state="running" />
+                  {generationLabel(activeProject)}
+                </span>
+              </>
             )}
             {activeProject?.status === "complete" && (
-              <span className="status-chip status-complete">
-                <Check size={11} /> Ready · v{activeProject.versions.length}
-              </span>
+              <>
+                <span className="topbar-divider" aria-hidden="true" />
+                <span className="topbar-status" role="status">
+                  <span className="status-dot" data-state="complete" />
+                  Ready
+                  <span className="mono">v{activeProject.versions.length}</span>
+                </span>
+              </>
             )}
           </div>
           <div className="topbar-actions">

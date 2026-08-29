@@ -49,9 +49,9 @@ export function PricingCards({
             {currentPlan === plan.id
               ? "Current plan"
               : plan.id === "free"
-                ? "Open studio"
+                ? "Start free"
                 : !checkoutEnabled
-                  ? "Coming soon"
+                  ? "Not open yet"
                   : `Choose ${plan.name}`}
           </button>
         </article>

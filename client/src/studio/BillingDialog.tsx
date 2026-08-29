@@ -48,12 +48,14 @@ export function BillingDialog({
       onClose={onClose}
       footer={
         <>
+          <a className="modal-footer-note" href={`mailto:${CONTACT_EMAIL}`}>
+            Questions? Contact us
+          </a>
           {billing.hasStripeCustomer && (
             <button className="button button-secondary" onClick={onPortal}>
               Manage or cancel in Stripe
             </button>
           )}
-          <a href={`mailto:${CONTACT_EMAIL}`}>Questions? Contact us</a>
         </>
       }
     >

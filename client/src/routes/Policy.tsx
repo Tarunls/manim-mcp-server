@@ -7,14 +7,23 @@ export default function Policy({ kind }: { kind: "privacy" | "terms" }) {
     <MarketingChrome
       className="policy-shell"
       nav={
-        <a href={privacy ? "/terms" : "/privacy"}>
-          {privacy ? "Terms" : "Privacy"}
-        </a>
+        <>
+          <a href="/#examples">Examples</a>
+          <a href="/pricing">Pricing</a>
+          <a href={privacy ? "/terms" : "/privacy"}>
+            {privacy ? "Terms" : "Privacy"}
+          </a>
+        </>
       }
     >
       <article className="policy-document">
         <span className="kicker">Last updated August 24, 2026</span>
         <h1>{privacy ? "Privacy policy" : "Terms of service"}</h1>
+        <p className="policy-lede">
+          {privacy
+            ? "What Orune stores, why it stores it, and how to get it back or delete it."
+            : "What you can expect from Orune, and what Orune expects from you."}
+        </p>
         {privacy ? (
           <>
             <section>
@@ -23,7 +32,7 @@ export default function Policy({ kind }: { kind: "privacy" | "terms" }) {
                 We store your email, account and subscription state, prompts,
                 project settings, generated media, review notes, usage records,
                 and security audit events. Stripe processes payment details;
-                Lesson Studio does not store full card numbers.
+                Orune does not store full card numbers.
               </p>
             </section>
             <section>
@@ -66,7 +75,7 @@ export default function Policy({ kind }: { kind: "privacy" | "terms" }) {
               <h2>Using the service</h2>
               <p>
                 You must provide accurate account information, protect your
-                login, and use Lesson Studio lawfully. Do not generate abusive
+                login, and use Orune lawfully. Do not generate abusive
                 or infringing material, attack the service, evade plan limits,
                 or attempt to obtain another user's data.
               </p>

@@ -57,10 +57,11 @@ export function VideoWorkspace({
   return (
     <section className="workspace" aria-label="Video preview">
       <div className="workspace-stage">
+       <div className="stage-column">
         {versions.length > 0 && (
           <div className="revision-bar" aria-label="Video versions">
             <span className="revision-label">
-              <ClockCounterClockwise size={16} /> Revisions
+              <ClockCounterClockwise size={14} /> Revisions
             </span>
             <div className="revision-list">
               {[...versions].reverse().map((version) => (
@@ -118,7 +119,7 @@ export function VideoWorkspace({
             />
           ) : project?.status === "running" ? (
             <div className="render-state">
-              <ProgressVisual project={project} />
+              <span className="kicker">Working</span>
               <h2>
                 {project.stage === "rendering"
                   ? `Rendering ${generationLabel(project).toLowerCase()}`
@@ -130,15 +131,32 @@ export function VideoWorkspace({
                 Earlier revisions stay available above while this one is
                 created.
               </p>
+              <ProgressVisual project={project} />
             </div>
           ) : (
             <div className="canvas-empty">
-              <h2>Prompt to preview</h2>
-              <p>
-                {rendererReady
-                  ? "Your video will appear here."
-                  : "The video engine needs setup before it can render a preview."}
-              </p>
+              {/* A real rendered lesson, labelled as an example, so the first
+                  screen shows what the studio makes instead of a black box. */}
+              <video
+                className="canvas-example"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                poster="/showcase/lesson-integral.jpg"
+                src="/showcase/lesson-integral.mp4"
+                aria-label="An example lesson rendered in Orune"
+              />
+              <div className="canvas-empty-copy">
+                <span className="kicker">Example lesson</span>
+                <h2>Yours appears here</h2>
+                <p>
+                  {rendererReady
+                    ? "Describe a lesson and the render lands here the moment it is ready."
+                    : "The video engine needs setup before it can render a preview."}
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -171,28 +189,35 @@ export function VideoWorkspace({
             ))}
           </div>
         )}
+       </div>
       </div>
 
       <div className="workspace-footer">
         <span className="canvas-meta">
-          <span>16:9</span>
-          <span>Editable video</span>
-          {selectedVersion?.render?.width && (
-            <span className="mono">
-              {selectedVersion.render.width}×{selectedVersion.render.height} ·{" "}
-              {selectedVersion.render.fps} fps
-            </span>
-          )}
-          {selectedVersion?.render?.narration?.enabled && (
-            <span
-              className="ai-voice"
-              title={`${selectedVersion.render.narration.model || "Speechify"}, ${selectedVersion.render.narration.voice || "configured voice"}`}
-            >
-              <SpeakerHigh size={14} /> Speechify AI voice
-            </span>
-          )}
-          {selectedVersion?.render?.narration?.status === "setup_required" && (
-            <span>Speechify setup needed</span>
+          {videoUrl ? (
+            <>
+              {effectiveDuration > 0 && (
+                <span className="mono">{effectiveDuration.toFixed(1)}s</span>
+              )}
+              {selectedVersion?.render?.width && (
+                <span className="mono">
+                  {selectedVersion.render.width}×{selectedVersion.render.height}{" "}
+                  · {selectedVersion.render.fps} fps
+                </span>
+              )}
+              {selectedVersion?.render?.narration?.enabled && (
+                <span
+                  className="ai-voice"
+                  title={`${selectedVersion.render.narration.model || "Speechify"}, ${selectedVersion.render.narration.voice || "configured voice"}`}
+                >
+                  <SpeakerHigh size={14} /> AI voice
+                </span>
+              )}
+              {selectedVersion?.render?.narration?.status ===
+                "setup_required" && <span>Speechify setup needed</span>}
+            </>
+          ) : (
+            <span>16:9 · no render yet</span>
           )}
         </span>
         {videoUrl ? (

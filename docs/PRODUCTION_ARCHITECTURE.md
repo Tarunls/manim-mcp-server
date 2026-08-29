@@ -1,4 +1,4 @@
-# Lesson Studio production architecture
+# Orune production architecture
 
 Updated: 2026-08-29
 

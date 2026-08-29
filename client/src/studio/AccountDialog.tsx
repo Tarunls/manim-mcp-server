@@ -37,11 +37,11 @@ export function AccountDialog({
       className="account-dialog"
       onClose={onClose}
       footer={
-        <>
+        <span className="modal-footer-links">
           <a href="/privacy">Privacy</a>
           <a href="/terms">Terms</a>
           <a href={`mailto:${CONTACT_EMAIL}`}>Support</a>
-        </>
+        </span>
       }
     >
       <div className="account-dialog-section">

@@ -19,20 +19,46 @@ async function expectNoSeriousA11yViolations(page: Page) {
 
 test("homepage is responsive and links to real product routes", async ({ page }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Learn whatever way you want.");
-  await expect(page.getByRole("link", { name: /Open studio/ }).first()).toHaveAttribute("href", "/studio");
-  await expect(page.getByRole("link", { name: "Create your first lesson" }).first()).toHaveAttribute("href", "/studio");
-  await expect(page.getByRole("link", { name: "Compare plans" })).toHaveAttribute("href", "/pricing");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hard ideas, made obvious.");
+  await expect(page.getByRole("link", { name: "Start free" }).first()).toHaveAttribute("href", "/studio");
+  await expect(page.getByRole("link", { name: "Start with one free lesson" }).first()).toHaveAttribute("href", "/studio");
+  await expect(page.getByRole("link", { name: /See the plans/ })).toHaveAttribute("href", "/pricing");
   await expect(page.locator("video.reel-video")).toBeVisible();
-  await expect(page.locator("video.reel-video")).toHaveAttribute("src", "/lesson-studio-reel.mp4");
-  await expect(page.locator(".how-section")).toContainText("Say what you mean");
+  await expect(page.locator("video.reel-video")).toHaveAttribute("src", "/orune-reel.mp4");
+  await expect(page.locator("#how-it-works")).toContainText("Describe the idea");
   await expectNoHorizontalOverflow(page);
   if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
 });
 
+test("the hero and its video fit the first screen without scrolling", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The single-screen hero is a desktop layout.");
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const stage = page.locator(".hero-stage");
+    await expect(stage).toBeVisible();
+    const box = await stage.boundingBox();
+    expect(box, `no hero stage box at ${viewport.width}x${viewport.height}`).not.toBeNull();
+    // the whole 16:9 player has to sit above the fold, nav included
+    expect(box!.y + box!.height, `hero bottom at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(viewport.height);
+    expect(box!.height, `hero video is too small at ${viewport.width}x${viewport.height}`).toBeGreaterThan(200);
+    expect(box!.width / box!.height).toBeCloseTo(16 / 9, 1);
+  }
+});
+
+test("the example gallery swaps the stage without leaving the page", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "Gallery selection is exercised once.");
+  await page.goto("/");
+  const thumb = page.getByRole("button", { name: "Fourier series" });
+  await thumb.click();
+  await expect(thumb).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".gallery-stage img")).toHaveAttribute("src", "/showcase/fourier-1.jpg");
+  await expect(page.locator(".gallery-caption")).toContainText("Frequencies are rotations");
+});
+
 test("pricing shows every plan and an honest checkout state", async ({ page }, testInfo) => {
   await page.goto("/pricing");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Simple plans for real output.");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Pay for what you render.");
   await expect(page.locator(".pricing-card")).toHaveCount(4);
   await expect(page.getByText("$20", { exact: false })).toBeVisible();
   await expect(page.getByText("$50", { exact: false })).toBeVisible();

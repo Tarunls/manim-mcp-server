@@ -136,7 +136,7 @@ async function main() {
   await page.locator('input[name="cardNumber"]').fill("4242424242424242");
   await page.locator('input[name="cardExpiry"]').fill("1234");
   await page.locator('input[name="cardCvc"]').fill("123");
-  await fillVisible(page, 'input[name="billingName"]', "Lesson Studio Smoke");
+  await fillVisible(page, 'input[name="billingName"]', "Orune Smoke");
   await fillVisible(page, 'input[name="billingPostalCode"]', "60601");
   await fillVisible(page, 'input[name="phoneNumber"]', "2015550123");
   await page.getByTestId("hosted-payment-submit-button").click();

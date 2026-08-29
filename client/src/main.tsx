@@ -6,7 +6,9 @@ import "@fontsource-variable/newsreader/wght-italic.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import { App } from "./App";
-import "./styles.css";
+import "./theme.css";
+import "./marketing.css";
+import "./studio.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

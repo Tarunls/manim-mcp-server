@@ -1,44 +1,53 @@
-import {
-  Check,
-  CircleNotch,
-  Code,
-  MagicWand,
-  MonitorPlay,
-  Sparkle,
-  Warning,
-} from "@phosphor-icons/react";
+import { Check, CircleNotch, Warning } from "@phosphor-icons/react";
 import type { StudioProject } from "../types";
 import { generationLabel, stageLabel } from "../lib/studio";
 
 const STAGES = [
-  { key: "brief", icon: MagicWand, label: "Plan" },
-  { key: "authoring", icon: Code, label: "Draw" },
-  { key: "rendering", icon: MonitorPlay, label: "Render" },
-  { key: "inspecting", icon: Sparkle, label: "Review" },
+  { key: "brief", label: "Plan" },
+  { key: "authoring", label: "Draw" },
+  { key: "rendering", label: "Render" },
+  { key: "inspecting", label: "Review" },
 ] as const;
+
+function clockTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export function AgentActivity({ project }: { project: StudioProject }) {
   if (project.status !== "running") return null;
+  const actions = project.actions.slice(-3);
   return (
     <div className="agent-activity" aria-live="polite">
       <div className="agent-heading">
+        <span className="status-dot" data-state="running" aria-hidden="true" />
         <strong>{generationLabel(project)}</strong>
         <span>{stageLabel(project.stage)}</span>
       </div>
-      <div className="action-list">
-        {project.actions.slice(-3).map((action) => (
-          <div className="action-row" key={action.id}>
-            {action.status === "running" ? (
-              <CircleNotch className="spin" size={13} />
-            ) : action.status === "failed" ? (
-              <Warning size={13} />
-            ) : (
-              <Check size={13} />
-            )}
-            <span>{action.label}</span>
-          </div>
-        ))}
-      </div>
+      {actions.length > 0 && (
+        <div className="action-list">
+          {actions.map((action) => (
+            <div
+              className={`action-row action-row-${action.status}`}
+              key={action.id}
+            >
+              {action.status === "running" ? (
+                <CircleNotch className="spin" size={13} />
+              ) : action.status === "failed" ? (
+                <Warning size={13} />
+              ) : (
+                <Check size={13} />
+              )}
+              <span>{action.label}</span>
+              {clockTime(action.createdAt) && (
+                <span className="mono">{clockTime(action.createdAt)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -50,34 +59,32 @@ export function ProgressVisual({ project }: { project: StudioProject }) {
   );
   return (
     <div className="progress-block">
-      <strong>{generationLabel(project)}</strong>
-      <span className="progress-caption">
-        {activeIndex + 1} of 4 · {stageLabel(project.stage)}
-      </span>
-      <div className="progress-visual">
-        <div className="progress-track" aria-hidden="true">
-          <span
-            style={{ transform: `scaleX(${Math.max(0.08, activeIndex / 3)})` }}
-          />
-        </div>
-        {STAGES.map((stage, index) => {
-          const Icon = stage.icon;
-          const state =
-            index < activeIndex
-              ? "done"
-              : index === activeIndex
-                ? "active"
-                : "pending";
-          return (
-            <div className={`progress-step progress-${state}`} key={stage.key}>
-              <span>
-                {state === "done" ? <Check size={16} /> : <Icon size={17} />}
-              </span>
-              <small>{stage.label}</small>
-            </div>
-          );
-        })}
+      <div className="progress-track" aria-hidden="true">
+        <span
+          style={{ transform: `scaleX(${Math.max(0.06, activeIndex / 3)})` }}
+        />
       </div>
+      <div className="progress-steps">
+        {STAGES.map((stage, index) => (
+          <span
+            className={`progress-step ${
+              index < activeIndex
+                ? "progress-done"
+                : index === activeIndex
+                  ? "progress-active"
+                  : "progress-pending"
+            }`}
+            key={stage.key}
+          >
+            <i aria-hidden="true" />
+            {stage.label}
+          </span>
+        ))}
+      </div>
+      <p className="progress-caption">
+        <span>{generationLabel(project)}</span>
+        <span>step {activeIndex + 1} of 4</span>
+      </p>
     </div>
   );
 }

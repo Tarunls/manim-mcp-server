@@ -1648,7 +1648,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const server = app.listen(port, host, () => {
-  console.log(`Lesson Studio is running at http://${host}:${port}`);
+  console.log(`Orune is running at http://${host}:${port}`);
 });
 attachScopedCodexWebSocketProxy(server, { generations, proxy: scopedCodex });
 

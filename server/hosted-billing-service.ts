@@ -116,7 +116,7 @@ export class HostedBillingService {
     return {
       userId,
       plan,
-      planName: staff ? "Studio team" : definition.name,
+      planName: staff ? "Orune team" : definition.name,
       status: staff ? "active" : subscribed ? profile.status : "free",
       creditsUsed: staff ? 0 : Math.max(0, -Number(profile.balance)),
       creditsRemaining: remaining,
@@ -162,7 +162,7 @@ export class HostedBillingService {
       throw new Error("Paid subscriptions are opening soon.");
     const state = await this.getState(userId);
     if (state.isStaff)
-      throw new Error("Studio team accounts already include full access.");
+      throw new Error("Orune team accounts already include full access.");
     const lookupKey = `lesson_studio_${plan}_monthly`;
     const prices = await this.stripe.prices.list({
       lookup_keys: [lookupKey],

@@ -2,7 +2,7 @@
 
 Updated: 2026-08-29
 
-This is the authoritative continuation document for the Manim Studio/Lesson Studio SaaS. Read it together with `docs/IMPLEMENTATION_STATUS.md`, then inspect current cloud state before making changes. Values in old commits, terminal history, or screenshots are not authoritative.
+This is the authoritative continuation document for the Manim Studio/Orune SaaS. Read it together with `docs/IMPLEMENTATION_STATUS.md`, then inspect current cloud state before making changes. Values in old commits, terminal history, or screenshots are not authoritative.
 
 ## Mission and hard boundaries
 

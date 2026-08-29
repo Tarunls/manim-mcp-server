@@ -48,7 +48,7 @@ export function Sidebar({
       aria-label="Projects"
     >
       <div className="brand-row">
-        <span className="wordmark collapsible-copy">Lesson Studio</span>
+        <span className="wordmark collapsible-copy">Orune</span>
         <button
           className="icon-button sidebar-toggle desktop-only"
           onClick={onToggle}
@@ -66,12 +66,24 @@ export function Sidebar({
         </button>
       </div>
 
-      <button className="new-button button button-secondary" onClick={onNew}>
+      {/* the label is hidden when the rail is collapsed, so the name is
+          carried explicitly */}
+      <button
+        className="new-button button button-secondary"
+        onClick={onNew}
+        aria-label="New video"
+        title="New video"
+      >
         <Plus size={15} />
         <span className="collapsible-copy">New video</span>
       </button>
 
+      <span className="sidebar-section collapsible-copy">Projects</span>
+
       <nav className="project-list" aria-label="Recent projects">
+        {!projects.length && (
+          <p className="project-empty collapsible-copy">Nothing here yet.</p>
+        )}
         {projects.map((project) => (
           <div
             className={`project-item ${activeId === project.id ? "project-item-active" : ""}`}
@@ -80,9 +92,18 @@ export function Sidebar({
             <button
               className="project-select"
               onClick={() => onSelect(project.id)}
+              aria-label={project.title}
+              title={project.title}
             >
               <span
-                className={`status-dot ${project.status === "running" ? "status-dot-running" : project.status === "error" ? "status-dot-error" : "status-dot-idle"}`}
+                className="status-dot"
+                data-state={
+                  project.status === "running"
+                    ? "running"
+                    : project.status === "error"
+                      ? "error"
+                      : "idle"
+                }
                 aria-hidden="true"
               />
               <span className="project-copy collapsible-copy">
@@ -95,7 +116,7 @@ export function Sidebar({
               </span>
             </button>
             <button
-              className={`favorite-button collapsible-copy ${project.favorite ? "favorite-active" : ""}`}
+              className={`icon-button favorite-button collapsible-copy ${project.favorite ? "favorite-active" : ""}`}
               aria-label={`${project.favorite ? "Remove" : "Add"} ${project.title} ${project.favorite ? "from" : "to"} favorites`}
               onClick={() => onFavorite(project)}
             >

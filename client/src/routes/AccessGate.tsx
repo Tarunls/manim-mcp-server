@@ -39,7 +39,14 @@ export default function AccessGate({
         setNotice("Check your email to verify the account, then sign in.");
       }
     } catch (caught) {
-      setError(errorMessage(caught, "Could not sign in."));
+      setError(
+        errorMessage(
+          caught,
+          mode === "signin"
+            ? "Could not sign in."
+            : "Could not create the account.",
+        ),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -69,10 +76,18 @@ export default function AccessGate({
 
   return (
     <main className="access-page">
+      <header className="site-nav">
+        <div className="site-nav-inner">
+          <a className="wordmark" href="/">
+            Orune
+          </a>
+          <a className="text-link" href="/">
+            Back to the site
+          </a>
+        </div>
+      </header>
+      <div className="access-body">
       <section className="access-card" aria-labelledby="access-title">
-        <a className="wordmark" href="/">
-          Lesson Studio
-        </a>
         <span className="kicker">
           {mode === "signin" ? "Welcome back" : "Start free"}
         </span>
@@ -81,8 +96,8 @@ export default function AccessGate({
         </h1>
         <p>
           {mode === "signin"
-            ? "Continue where you left off."
-            : "One generation credit. No card required."}
+            ? "Your lessons, drafts, and every earlier render are where you left them."
+            : "One lesson free. No card, and nothing to cancel."}
         </p>
         {!configured && (
           <div className="inline-error" role="alert">
@@ -109,6 +124,7 @@ export default function AccessGate({
               name="password"
               type="password"
               minLength={10}
+              aria-describedby="password-hint"
               autoComplete={
                 mode === "signin" ? "current-password" : "new-password"
               }
@@ -116,6 +132,13 @@ export default function AccessGate({
               onChange={(event) => setPassword(event.target.value)}
               required
             />
+            <small id="password-hint" className="field-hint">
+              {mode === "signup"
+                ? password.length > 0 && password.length < 10
+                  ? `${10 - password.length} more character${10 - password.length === 1 ? "" : "s"} needed`
+                  : "At least 10 characters."
+                : " "}
+            </small>
           </label>
           {error && (
             <div className="inline-error" role="alert">
@@ -161,10 +184,21 @@ export default function AccessGate({
             </button>
           )}
         </div>
-        <a className="access-home-link" href="/">
-          &larr; Back home
-        </a>
       </section>
+      <figure className="access-aside">
+        <div className="access-aside-frame stage-frame">
+          <img
+            src="/showcase/integral-2.jpg"
+            alt="A rendered Orune frame showing a solid of revolution."
+          />
+        </div>
+        <figcaption>
+          <strong>This is the output, not a mockup.</strong>
+          One frame from &ldquo;Area becomes volume&rdquo; &mdash; written as a
+          single prompt, rendered with Manim, then corrected in the studio.
+        </figcaption>
+      </figure>
+      </div>
     </main>
   );
 }

@@ -244,53 +244,63 @@ export function FrameReviewDialog({
         </>
       }
     >
-      <div className="annotation-toolbar" aria-label="Annotation tools">
-        <button
-          className={tool === "pen" ? "active" : ""}
-          onClick={() => setTool("pen")}
-          title="Draw"
-          aria-label="Draw"
+      <div className="annotation-toolbar">
+        <div
+          className="annotation-tools"
+          role="group"
+          aria-label="Annotation tools"
         >
-          <PencilSimple size={17} />
-        </button>
-        <button
-          className={tool === "circle" ? "active" : ""}
-          onClick={() => setTool("circle")}
-          title="Circle"
-          aria-label="Circle"
-        >
-          <Circle size={17} />
-        </button>
-        <button
-          className={tool === "rectangle" ? "active" : ""}
-          onClick={() => setTool("rectangle")}
-          title="Rectangle"
-          aria-label="Rectangle"
-        >
-          <Rectangle size={17} />
-        </button>
-        <button
-          className={tool === "arrow" ? "active" : ""}
-          onClick={() => setTool("arrow")}
-          title="Arrow"
-          aria-label="Arrow"
-        >
-          <ArrowUpRight size={17} />
-        </button>
+          <button
+            className={tool === "pen" ? "active" : ""}
+            onClick={() => setTool("pen")}
+            title="Draw"
+            aria-label="Draw"
+            aria-pressed={tool === "pen"}
+          >
+            <PencilSimple size={16} />
+          </button>
+          <button
+            className={tool === "circle" ? "active" : ""}
+            onClick={() => setTool("circle")}
+            title="Circle"
+            aria-label="Circle"
+            aria-pressed={tool === "circle"}
+          >
+            <Circle size={16} />
+          </button>
+          <button
+            className={tool === "rectangle" ? "active" : ""}
+            onClick={() => setTool("rectangle")}
+            title="Rectangle"
+            aria-label="Rectangle"
+            aria-pressed={tool === "rectangle"}
+          >
+            <Rectangle size={16} />
+          </button>
+          <button
+            className={tool === "arrow" ? "active" : ""}
+            onClick={() => setTool("arrow")}
+            title="Arrow"
+            aria-label="Arrow"
+            aria-pressed={tool === "arrow"}
+          >
+            <ArrowUpRight size={16} />
+          </button>
+        </div>
         <span />
         <button
+          className="button button-ghost"
           onClick={() => setAnnotations((items) => items.slice(0, -1))}
           disabled={!annotations.length}
         >
           Undo
         </button>
         <button
+          className="button button-ghost"
           onClick={() => setAnnotations([])}
           disabled={!annotations.length}
-          title="Clear"
-          aria-label="Clear annotations"
         >
-          <Trash size={17} />
+          <Trash size={15} /> Clear
         </button>
       </div>
       <div className="annotation-canvas-wrap">

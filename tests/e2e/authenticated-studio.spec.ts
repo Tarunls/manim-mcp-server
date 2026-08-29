@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
 
 const billing = {
   userId: "user-1",
@@ -21,7 +22,18 @@ const billing = {
   },
 };
 
-test("authenticated users reach a hydrated studio without the auth gate", async ({ page }) => {
+async function expectNoSeriousA11yViolations(page: Page) {
+  const results = await new AxeBuilder({ page }).analyze();
+  const violations = results.violations.filter(
+    (violation) => violation.impact === "critical" || violation.impact === "serious",
+  );
+  expect(
+    violations,
+    violations.map((item) => `${item.id}: ${item.description}`).join("\n"),
+  ).toEqual([]);
+}
+
+test("authenticated users reach a hydrated studio without the auth gate", async ({ page }, testInfo) => {
   await page.route("**/api/auth/status", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({
@@ -54,4 +66,17 @@ test("authenticated users reach a hydrated studio without the auth gate", async 
   await expect(page.getByText("Creator").first()).toBeVisible();
   await expect(page.getByText("10 credits").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in to your studio" })).toHaveCount(0);
+
+  // The empty state is the first thing a new user sees: an invitation plus
+  // example prompts that fill the composer. Narrow viewports open on the
+  // preview pane, so switch to the chat tab first.
+  if (testInfo.project.name !== "desktop")
+    await page.locator(".mobile-tabs").getByRole("button", { name: "Chat" }).click();
+  const suggestion = page.getByRole("button", { name: "Explain eigenvectors geometrically" });
+  await expect(page.getByRole("heading", { name: "Turn an idea into motion." })).toBeVisible();
+  await expect(suggestion).toBeVisible();
+  await suggestion.click();
+  await expect(page.getByLabel("Video prompt")).toHaveValue("Explain eigenvectors geometrically");
+
+  if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
 });

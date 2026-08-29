@@ -107,3 +107,30 @@ test("session cookies are parsed by exact name and production uses the Host pref
     restore("IDENTITY_PLATFORM_API_KEY", previousKey);
   }
 });
+
+test("staff addresses sign in without provider verification", async () => {
+  const previousKey = process.env.IDENTITY_PLATFORM_API_KEY;
+  const previousStaff = process.env.STAFF_EMAILS;
+  const previousFetch = globalThis.fetch;
+  process.env.IDENTITY_PLATFORM_API_KEY = "identity-test-key";
+  process.env.STAFF_EMAILS = "owner@example.com";
+  globalThis.fetch = async (input) => {
+    const action = new URL(String(input)).pathname.split(":").at(-1) || "";
+    if (action === "signInWithPassword") return Response.json({ localId: "user-3", email: "owner@example.com", idToken: "identity-token" });
+    if (action === "lookup") return Response.json({ users: [{ localId: "user-3", email: "owner@example.com", idToken: "identity-token", emailVerified: false }] });
+    return Response.json({});
+  };
+  try {
+    const auth = new IdentityAuthService();
+    // Reaching session creation (which needs Firebase Admin) proves the
+    // verification gate was passed rather than the "Verify your email" throw.
+    await assert.rejects(
+      () => auth.signIn("owner@example.com", "long-enough-password"),
+      (error: Error) => !/Verify your email/.test(error.message),
+    );
+  } finally {
+    restore("IDENTITY_PLATFORM_API_KEY", previousKey);
+    restore("STAFF_EMAILS", previousStaff);
+    globalThis.fetch = previousFetch;
+  }
+});

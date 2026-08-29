@@ -240,7 +240,7 @@ export class BillingService {
       return {
         userId,
         plan: "pro",
-        planName: "Studio team",
+        planName: "Orune team",
         status: "active",
         creditsUsed: 0,
         creditsRemaining: 999,
@@ -333,7 +333,7 @@ export class BillingService {
         "Stripe test mode is not configured yet. Add STRIPE_SECRET_KEY to .env.",
       );
     if (this.staffUsers.has(userId))
-      throw new Error("Studio team accounts already include full access.");
+      throw new Error("Orune team accounts already include full access.");
     if (
       this.billingMode !== "live" &&
       process.env.ALLOW_TEST_CHECKOUT !== "true"
