@@ -143,6 +143,21 @@ async function main() {
 
 try {
   await main();
+} catch (error) {
+  if (authenticated) {
+    const exported = await appRequest<{
+      providerUsage?: {
+        input_tokens?: string;
+        cached_input_tokens?: string;
+        output_tokens?: string;
+        estimated_cost_microusd?: string;
+      };
+    }>("/api/account/export").catch(() => undefined);
+    if (exported?.providerUsage) {
+      console.error(`Staging smoke: provider usage before cleanup ${JSON.stringify(exported.providerUsage)}.`);
+    }
+  }
+  throw error;
 } finally {
   if (authenticated) {
     if (project?.status === "running")
