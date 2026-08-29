@@ -8,9 +8,7 @@ This is the current source of truth for implementation and staging status. The d
 
 The SaaS foundation is implemented and the staging website is online at `https://useorune.com`. Authentication, PostgreSQL persistence, Stripe sandbox billing, the private GCP edge, asynchronous jobs, E2B sandbox creation, Codex execution, private artifact storage, credit charging/refunds, and a complete silent generation have all passed real staging tests.
 
-Staging is **not yet release-certified**. The latest paid narrated end-to-end test completed signup, Checkout, webhook provisioning, portal creation, job submission, and E2B startup, but failed when Composite invoked a Manim launcher whose embedded Python path was invalid in the mounted E2B image. The credit was restored and the disposable account/subscription were removed correctly.
-
-Commit `c74eb0d` fixes the renderer to invoke `python -m manim`, creates the virtual environment at its final path, and strengthens the E2B runtime smoke. Its application image was built successfully, but its matching E2B template has not been built, smoked, deployed, or tested end to end. Do not report narration or release certification complete until that happens.
+Staging is **release-certified on `7e7ca10`** (2026-08-29). That commit merges the `c74eb0d` sandbox-Python fix and websocket transport with the production audit fixes (cost-first codex budget with a terminal 400, project-document optimistic concurrency, queued-job reconciliation, graceful shutdown, shared SSE polling, the decomposed and redesigned client). The release followed the documented order: E2B template `lesson-studio-renderer:7e7ca10` built and passed the runtime smoke, `app:7e7ca10` deployed migrate → dispatcher → API, Terraform applied cleanly (no drift; the email alert channel now exists and `CODEX_MAX_API_CALLS_PER_JOB=200` is live), and then both `smoke:staging` (complete silent generation with a validated private MP4) and `smoke:staging-payment` (hosted Checkout, signed webhook provisioning, Customer Portal, and a paid narrated generation) passed end to end.
 
 ## Current staging inventory
 
