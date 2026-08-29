@@ -7,6 +7,7 @@ import ast
 from datetime import datetime
 import json
 import os
+import re
 from pathlib import Path
 import re
 import shutil
@@ -113,6 +114,20 @@ def main() -> None:
         fail(
             "scene.py must build all text through the manim_paper typography "
             "system (running_head, claim, label, caption, expr, fit_stage)."
+        )
+    stripped = "\n".join(
+        line.split("#", 1)[0] for line in code.splitlines()
+    )
+    if re.search(r"(?<![\w.])(?:MarkupText|Text)\s*\(", stripped):
+        fail(
+            "scene.py calls Text/MarkupText directly. All text must come from "
+            "manim_paper (text, running_head, claim, label, caption, expr) so "
+            "sizes, fonts, and spacing stay consistent."
+        )
+    if "assert_no_overlap(" not in code:
+        fail(
+            "scene.py never calls assert_no_overlap. Assert the independent "
+            "peers (including every label) at each stable beat."
         )
     if "assert_scene_safe(" not in code:
         fail("scene.py must call assert_scene_safe for its important visual groups.")
