@@ -180,7 +180,7 @@ async function main() {
       headers: { "Idempotency-Key": `payment-smoke:${randomUUID()}` },
       body: JSON.stringify({
         text: "Create a concise four-second narrated explanation that three plus three equals six.",
-        renderer: "composite",
+        renderer: "manim",
         intent: "auto",
         effort: "quick",
       }),

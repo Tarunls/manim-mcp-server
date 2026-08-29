@@ -21,7 +21,7 @@ export default function Policy({ kind }: { kind: "privacy" | "terms" }) {
         <h1>{privacy ? "Privacy policy" : "Terms of service"}</h1>
         <p className="policy-lede">
           {privacy
-            ? "What Orune stores, why it stores it, and how to get it back or delete it."
+            ? "What Orune stores, why it stores it, and how to get it back or delete it. Written to be read, not skimmed past."
             : "What you can expect from Orune, and what Orune expects from you."}
         </p>
         {privacy ? (
@@ -29,10 +29,10 @@ export default function Policy({ kind }: { kind: "privacy" | "terms" }) {
             <section>
               <h2>What we collect</h2>
               <p>
-                We store your email, account and subscription state, prompts,
-                project settings, generated media, review notes, usage records,
-                and security audit events. Stripe processes payment details;
-                Orune does not store full card numbers.
+                Your email, account and subscription state, prompts, project
+                settings, generated media, review notes, usage records, and
+                security audit events. Stripe processes payment details; Orune
+                never stores full card numbers.
               </p>
             </section>
             <section>

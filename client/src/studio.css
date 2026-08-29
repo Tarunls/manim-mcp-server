@@ -1168,8 +1168,8 @@ dialog.modal .mono,
   width: 100%;
   aspect-ratio: 16 / 9;
   background: var(--stage);
+  border: 1px solid var(--line, var(--border));
   border-radius: var(--radius-container);
-  box-shadow: var(--shadow-stage);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -1218,14 +1218,15 @@ dialog.modal .mono,
   color: var(--stage-ink-2);
 }
 
-/* The example plays behind the copy, dimmed so the text stays legible. */
+/* The example plays behind the copy. On paper it needs almost no dimming -
+   the scrim below carries legibility - where on the old dark stage it did. */
 .player-shell .canvas-example {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.5;
+  opacity: 0.92;
 }
 
 .canvas-empty-copy {
@@ -1239,8 +1240,8 @@ dialog.modal .mono,
   width: 100%;
   background: linear-gradient(
     to top,
-    rgba(10, 12, 11, 0.94) 40%,
-    rgba(10, 12, 11, 0)
+    rgba(251, 250, 247, 0.96) 42%,
+    rgba(251, 250, 247, 0)
   );
 }
 

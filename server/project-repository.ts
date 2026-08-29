@@ -1,3 +1,4 @@
+import { normalizeStoredProject } from "./studio-service.js";
 import type { StudioProject } from "./types.js";
 import type { Database, SqlClient } from "./database.js";
 
@@ -10,7 +11,9 @@ export class ProjectRevisionConflictError extends Error {
 }
 
 function projectFromRow(row: ProjectRow, ownerId: string) {
-  const project = { ...row.document, ownerId } as StudioProject & { storageRevision: number };
+  // Stored documents predate the Manim-only, paper-styled studio, so they are
+  // migrated in memory on every read.
+  const project = normalizeStoredProject({ ...row.document, ownerId } as StudioProject & { storageRevision: number });
   Object.defineProperty(project, "storageRevision", { value: Number(row.revision), enumerable: false });
   return project;
 }

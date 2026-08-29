@@ -10,13 +10,13 @@ Hosted mode uses `EXECUTION_MODE=e2b`, PostgreSQL, Cloud Tasks, private GCS arti
 
 Deployment is defined in [infra/terraform](infra/terraform/README.md). Follow [the GCP runbook](docs/DEPLOYMENT_RUNBOOK.md) and [production checklist](docs/PRODUCTION_CHECKLIST.md); applying Terraform is a deliberate billable operation and is not part of ordinary application CI.
 
-This repository includes a local prompt-to-video studio with an explicit per-project renderer choice. Choose Manim for equations and geometry, Remotion for editorial motion, or Composite when a Remotion-directed video should contain self-contained Manim inserts. Composite does not let two layout engines compete: Remotion always owns the final canvas.
+This repository includes a local prompt-to-video studio. Every lesson is rendered with Manim Community Edition; there is one renderer and one layout engine, so nothing competes for the final canvas.
 
 Rendered revisions include a seven-frame filmstrip. Pause anywhere, select **Review frame**, draw with the default pen or choose a circle, arrow, or rectangle, add a note, and send the clean plus annotated frame to the model as direct high-detail image inputs. The reviewer isolates the smallest marked target and records nearby objects that must remain unchanged.
 
 The agent automatically decides whether authentic imagery would help. When it would, it searches Wikimedia Commons with a context-rich query, downloads local candidate previews, visually checks at least three, and imports only a semantic match with creator, description, license, source URL, and SHA-256 digest. The manual asset picker remains available. Project settings expose a plain-language Thinking control, font categories, color palettes, voice control, review focus, and review depth; generation reads those settings from versioned JSON files.
 
-New projects default to Composite, Balanced thinking, modern type, and the studio's cinematic visual language. Four representative frames from each of the successful Fourier and integral lessons are attached to every first-draft turn as visual quality targets, and the complete integral video is available locally as a pacing reference. The internal source scaffold lives under `reference-template/`, not as active renderable source. The agent is told to preserve the exemplars' pacing, hierarchy, spaciousness, and Manim/Remotion division of labor while rebuilding all subject-specific teaching content. Rendering is blocked until the current request has a fresh topic-specific beat plan and transformed source; unchanged template clips and leftover reference-topic content are rejected. The request selector can force a new template-based video or a revision; Auto starts standalone video prompts and failed first attempts in a fresh project instead of quietly reusing an old plan.
+New projects default to Balanced thinking, the Orune Serif type preset, and the studio's paper visual language: a warm paper ground, an editorial left margin, one working colour, and one payoff colour used once per lesson. There are no cards, eyebrow labels, or dark cinematic backgrounds. The rules live in [studio/references/DEFAULT_VISUAL_LANGUAGE.md](studio/references/DEFAULT_VISUAL_LANGUAGE.md) and are restated in the agent instructions and in each project's `design-config.json`. Rendering is blocked until the current request has a fresh topic-specific beat plan and fresh `scene.py`. The request selector can force a new video or a revision; Auto starts standalone video prompts and failed first attempts in a fresh project instead of quietly reusing an old plan.
 
 ### Run it
 
@@ -94,7 +94,7 @@ Copy the `whsec_...` value printed by the listener into `STRIPE_WEBHOOK_SECRET`,
 
 ### Google Cloud deployment
 
-The included `Dockerfile` packages Node, FFmpeg, Manim, and Remotion's browser dependencies for Cloud Run. `cloudbuild.yaml` caches the heavy rendering layers. The public homepage and pricing page require no account; the studio uses Google Cloud Identity Platform email/password accounts with mandatory email verification. Staff emails receive the full internal plan without requiring a Stripe subscription.
+The included `Dockerfile` packages Node, FFmpeg, and Manim's Cairo/Pango stack for Cloud Run. `cloudbuild.yaml` caches the heavy rendering layers. The public homepage and pricing page require no account; the studio uses Google Cloud Identity Platform email/password accounts with mandatory email verification. Staff emails receive the full internal plan without requiring a Stripe subscription.
 
 The scalable Terraform deployment expects these existing Secret Manager names:
 
@@ -138,8 +138,8 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/pytho
 
 1. The Node backend signs an isolated Codex worker into API-key mode, then starts one long-lived `codex app-server` process over stdio.
 2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
-3. The renderer choice is fixed when generation starts. Codex writes `scene.py` for Manim, `video.tsx` for Remotion, or `video.tsx` plus `manim/*.py` and `composite.json` for Composite.
-4. The matching render helper produces 1920×1080 video at 30 fps, validates layout, optimizes MP4 seeking, extracts a poster and twelve-frame contact sheet, and records the selected renderer in metadata.
+3. Codex writes `scene.py`, a single Manim `GeneratedScene`, in the studio's paper visual style.
+4. `scripts/render_scene.py` produces 1920×1080 video at 30 fps, validates layout, optimizes MP4 seeking, extracts a poster and twelve-frame contact sheet, and records the renderer in metadata.
 5. If `narration.json` and a server API key are present, timed speech segments are generated and muxed into the MP4.
 6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
 7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
@@ -159,9 +159,8 @@ Every successful generation remains editable:
 
 ```text
 studio/projects/<project-id>/
-  scene.py or video.tsx
-  composite.json (Composite projects)
-  manim/ (Composite insert sources)
+  scene.py
+  beat-plan.md
   public/assets/ (licensed imported assets)
   assets.json
   asset-decision.json
@@ -182,7 +181,7 @@ studio/projects/<project-id>/
 
 ### Collision checks
 
-Layout is checked by code as well as by image review. Manim projects use `assert_no_overlap` for stable poses and `watch_no_overlap` during motion. Remotion projects wrap independent visual groups in `LayoutItem`; `LayoutAudit` checks their browser bounds on every rendered frame. Intentional composites should be grouped so container-child overlap is not mistaken for a collision.
+Layout is checked by code as well as by image review. Scenes use `assert_no_overlap` for stable poses and `watch_no_overlap` during motion. Intentional composites should be grouped so container-child overlap is not mistaken for a collision.
 
 ## MCP server
 

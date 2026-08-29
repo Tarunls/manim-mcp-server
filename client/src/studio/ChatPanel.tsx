@@ -413,7 +413,7 @@ export function ChatPanel({
                 <label>
                   Font
                   <select
-                    value={project.designPreferences?.fontCategory || "modern"}
+                    value={project.designPreferences?.fontCategory || "serif"}
                     disabled={running}
                     onChange={(event) =>
                       void onDesignPreferences({
@@ -421,17 +421,15 @@ export function ChatPanel({
                       }).catch(() => undefined)
                     }
                   >
-                    <option value="modern">Modern</option>
-                    <option value="editorial">Editorial</option>
-                    <option value="technical">Technical</option>
-                    <option value="friendly">Friendly</option>
-                    <option value="classic">Classic</option>
+                    <option value="serif">Serif · Default</option>
+                    <option value="sans">Sans</option>
+                    <option value="mono">Mono</option>
                   </select>
                 </label>
                 <label>
                   Colors
                   <select
-                    value={project.designPreferences?.colorPalette || "studio"}
+                    value={project.designPreferences?.colorPalette || "paper"}
                     disabled={running}
                     onChange={(event) =>
                       void onDesignPreferences({
@@ -439,13 +437,10 @@ export function ChatPanel({
                       }).catch(() => undefined)
                     }
                   >
-                    <option value="cinematic">Cinematic · Default</option>
-                    <option value="studio">Studio warm</option>
-                    <option value="ocean">Ocean</option>
-                    <option value="forest">Forest</option>
-                    <option value="sunset">Sunset</option>
+                    <option value="paper">Paper · Default</option>
+                    <option value="ochre">Ochre</option>
+                    <option value="sage">Sage</option>
                     <option value="monochrome">Monochrome</option>
-                    <option value="high-contrast">High contrast</option>
                   </select>
                 </label>
               </div>
@@ -578,7 +573,7 @@ export function ChatPanel({
         {intent !== "auto" && (
           <span className="composer-hint">
             {intent === "new"
-              ? "Creates a separate project with the cinematic baseline."
+              ? "Creates a separate project from the default style."
               : "Changes this video and preserves everything else."}
           </span>
         )}

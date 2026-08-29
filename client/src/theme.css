@@ -6,7 +6,7 @@
 
 :root {
   /* Surfaces — warm neutrals (stone), chosen over cold grey so the page
-     reads considered next to the deep-green stage of a rendered lesson. */
+     matches the warm paper the lessons themselves render on. */
   --bg: #ffffff;
   --bg-subtle: #fafaf9;
   --bg-inset: #f5f5f4;
@@ -31,15 +31,22 @@
   --danger-hover: #b91c1c;
   --warning: #b45309;
 
-  /* The stage: the single dark surface, tuned to the lessons' own ground. */
-  --stage: #0a0c0b;
-  --stage-2: #131716;
-  --stage-ink: #ededed;
-  --stage-ink-2: #9ca3a0;
-  --stage-border: rgba(255, 255, 255, 0.1);
+  /* The stage sits behind a rendered lesson. Lessons render on warm paper, so
+     the stage matches that ground exactly - a dark surface behind a light
+     video reads as letterboxing and breaks the page. */
+  --stage: #fbfaf7;
+  --stage-2: #f2f1ea;
+  --stage-ink: #1a1917;
+  --stage-ink-2: #55534c;
+  --stage-border: rgba(28, 25, 23, 0.1);
 
-  --font-ui: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-serif: "Newsreader Variable", Georgia, "Times New Roman", serif;
+  /* One type system across the marketing site and the studio. Fraunces is
+     self-hosted with all four axes (see the @font-face rules in marketing.css)
+     so WONK/SOFT/opsz can be set deliberately. */
+  --font-ui:
+    "Schibsted Grotesk Variable", system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-serif: "Fraunces", Georgia, "Times New Roman", serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --radius-control: 8px;
@@ -47,7 +54,7 @@
   --radius-large: 16px;
 
   --shadow: 0 8px 30px rgba(28, 25, 23, 0.12);
-  --shadow-stage: 0 1px 2px rgba(28, 25, 23, 0.04), 0 24px 56px rgba(28, 25, 23, 0.14);
+  --shadow-stage: 0 1px 2px rgba(28, 25, 23, 0.03), 0 12px 32px rgba(28, 25, 23, 0.06);
 
   --nav-height: 60px;
   --page-max: 1120px;

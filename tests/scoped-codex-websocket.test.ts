@@ -12,7 +12,7 @@ const hostedJob: HostedJob = {
   projectId: "project",
   status: "running",
   prompt: "Explain limits",
-  renderer: "composite",
+  renderer: "manim",
   effort: "balanced",
   templateVersion: "release",
   reservedCredits: 2,

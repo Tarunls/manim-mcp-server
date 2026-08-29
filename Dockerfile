@@ -10,34 +10,24 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-# Manim/Pango, FFmpeg, and the shared libraries required by Remotion's Chrome
-# Headless Shell. The generated lessons intentionally avoid LaTeX-only APIs.
+# Cairo/Pango (Manim's text and vector stack) and FFmpeg. The generated lessons
+# intentionally avoid LaTeX-only APIs, so no TeX distribution is installed.
 # NOTE (future optimization): hosted (EXECUTION_MODE=e2b) services render inside
-# E2B sandboxes and likely do not need Manim/FFmpeg/Chrome in this image; they
-# are kept for local-mode rendering until that is verified.
+# E2B sandboxes and likely do not need Manim/FFmpeg in this image; they are kept
+# for local-mode rendering until that is verified.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     ffmpeg \
+    fontconfig \
     fonts-dejavu-core \
     fonts-noto-color-emoji \
     libcairo2 \
     libcairo2-dev \
     libdbus-1-3 \
     libffi-dev \
-    libgbm-dev \
-    libasound2 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libnss3 \
     libpango-1.0-0 \
     libpango1.0-dev \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxkbcommon-dev \
-    libxrandr2 \
     pkg-config \
     python3 \
     python3-dev \
@@ -47,21 +37,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev
-RUN npx remotion browser ensure
 RUN python3 -m venv .venv \
     && .venv/bin/pip install --no-cache-dir "manim>=0.19,<0.20"
 
 COPY . .
+# Manim resolves fonts through Pango by family name. Without this the lessons
+# fall back to DejaVu Sans, which is most of why generated output used to look
+# generic, so install the shipped face and rebuild the font cache.
+RUN mkdir -p /usr/local/share/fonts/orune \
+    && cp fonts/OruneSerif-*.ttf /usr/local/share/fonts/orune/ \
+    && fc-cache -f \
+    && fc-list : family | grep -q "Orune Serif"
 RUN npm run build \
     && mkdir -p studio/projects \
     && chown -R node:node /app/studio
 
 # Drop dev dependencies now that the client bundle is built. Runtime only needs
 # tsx (a production dependency) and the server deps; vite is imported
-# dynamically in dev mode only. Remotion's headless browser lives in
-# node_modules/.remotion, so re-ensure it in case the prune removed it.
-RUN npm prune --omit=dev \
-    && node -e "import('@remotion/renderer').then((m) => m.ensureBrowser())"
+# dynamically in dev mode only.
+RUN npm prune --omit=dev
 
 # Run as the unprivileged user shipped with the official node image. The app
 # only writes to /tmp (TMPDIR is forced to /tmp at startup), and to

@@ -6,7 +6,7 @@ This is the authoritative continuation document for the Manim Studio/Orune SaaS.
 
 ## Mission and hard boundaries
 
-The product accepts an authenticated video request, reserves plan credits, queues a durable job, starts one isolated E2B sandbox, runs Codex against a job-scoped OpenAI relay, renders a Manim/Remotion/Composite video, optionally obtains Speechify narration through a scoped application bridge, uploads validated artifacts to private GCS, and returns an owner-authorized signed download.
+The product accepts an authenticated video request, reserves plan credits, queues a durable job, starts one isolated E2B sandbox, runs Codex against a job-scoped OpenAI relay, renders a Manim video, optionally obtains Speechify narration through a scoped application bridge, uploads validated artifacts to private GCS, and returns an owner-authorized signed download.
 
 The owner authorized staging work in GCP project `educationalvideo-506219` with a $20 monthly GCP budget alert and Stripe sandbox mode. The $20 figure is not a hard cap and excludes OpenAI, E2B, Speechify, and Stripe. Do not increase staging capacity or create production resources without new authorization.
 
@@ -106,7 +106,7 @@ Terraform remote state is in the configured GCS backend. The last apply changed 
 
 ## What is not proven
 
-The paid narrated end-to-end generation is not complete. Job `2cf0e941-e293-4b93-8c37-9e5df7787d6d` reached E2B after successful payment and entitlement provisioning, then failed because the Composite renderer invoked a Manim console script whose shebang pointed to nonexistent `/app/.venv/bin/python3`. The user-visible failure was generic and the credit was restored.
+The paid narrated end-to-end generation is not complete. Job `2cf0e941-e293-4b93-8c37-9e5df7787d6d` reached E2B after successful payment and entitlement provisioning, then failed because the renderer invoked a Manim console script whose shebang pointed to nonexistent `/app/.venv/bin/python3`. The user-visible failure was generic and the credit was restored.
 
 The narration bridge itself has a passing security/unit test, but live Speechify narration plus final audio muxing has not yet passed because rendering stopped first.
 
@@ -189,7 +189,7 @@ List jobs again before cleanup and delete only exact temporary names. Do not del
 | Scoped Codex HTTP/WS relay | `server/scoped-codex-proxy.ts`, `server/scoped-codex-websocket.ts` |
 | E2B image/bootstrap | `e2b/Dockerfile`, `e2b/bootstrap.mjs` |
 | Secure narration bridge | `e2b/narration-proxy.mjs`, `scripts/generate_narration.mjs` |
-| Renderers | `scripts/render_scene.py`, `scripts/render_remotion.mjs`, `scripts/render_composite.mjs`, `scripts/render_manim_insert.py` |
+| Renderer | `scripts/render_scene.py` |
 | Artifact validation/storage | `server/artifact-service.ts`, `server/hosted-media-service.ts` |
 | Identity/session security | `server/auth-service.ts`, auth routes in `server/index.ts` |
 | Billing | `server/billing-service.ts`, Stripe routes/webhook in `server/index.ts` |

@@ -231,7 +231,7 @@ export function App() {
         `/api/projects/${project.id}/messages`,
         {
           method: "POST",
-          body: JSON.stringify({ text, renderer: "composite", intent, effort }),
+          body: JSON.stringify({ text, intent, effort }),
         },
       );
       pendingProjectRef.current = undefined;

@@ -15,7 +15,7 @@ function job(effort: HostedJob["effort"]): HostedJob {
     projectId: "project",
     status: "running",
     prompt: "Explain limits",
-    renderer: "composite",
+    renderer: "manim",
     effort,
     templateVersion: "release",
     reservedCredits: 1,

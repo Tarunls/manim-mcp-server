@@ -1,4 +1,3 @@
-import { Check } from "@phosphor-icons/react";
 import type { BillingPlanId, PricingPlan } from "../types";
 
 export function PricingCards({
@@ -19,10 +18,10 @@ export function PricingCards({
           className={`pricing-card ${plan.id === "creator" ? "pricing-featured" : ""}`}
           key={plan.id}
         >
-          {plan.id === "creator" && (
-            <span className="pricing-ribbon">Recommended</span>
-          )}
           <div className="pricing-card-head">
+            <span className="pricing-ribbon" aria-hidden={plan.id !== "creator"}>
+              {plan.id === "creator" ? "Recommended" : ""}
+            </span>
             <span>{plan.name}</span>
             <strong>
               {plan.monthlyPrice ? `$${plan.monthlyPrice}` : "$0"}
@@ -32,9 +31,7 @@ export function PricingCards({
           <p>{plan.description}</p>
           <ul>
             {plan.features.map((feature) => (
-              <li key={feature}>
-                <Check size={15} weight="bold" /> {feature}
-              </li>
+              <li key={feature}>{feature}</li>
             ))}
           </ul>
           <button

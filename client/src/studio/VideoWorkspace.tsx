@@ -144,8 +144,8 @@ export function VideoWorkspace({
                 loop
                 playsInline
                 preload="metadata"
-                poster="/showcase/lesson-integral.jpg"
-                src="/showcase/lesson-integral.mp4"
+                poster="/showcase/accumulation.jpg"
+                src="/showcase/accumulation.mp4"
                 aria-label="An example lesson rendered in Orune"
               />
               <div className="canvas-empty-copy">

@@ -25,20 +25,16 @@
     "stripe:listen": "stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed --forward-to http://127.0.0.1:4321/api/stripe/webhook",
     "stripe:cloud-webhook": "node scripts/configure_cloud_run_webhook.mjs",
     "identity:setup": "node scripts/setup_identity_platform.mjs",
-    "gcp:storage": "node scripts/setup_cloud_storage.mjs",
-    "render:marketing-reel": "node scripts/render_marketing_reel.mjs"
+    "gcp:storage": "node scripts/setup_cloud_storage.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.3.0",
-    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource-variable/schibsted-grotesk": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@google-cloud/storage": "^8.0.1",
     "@google-cloud/tasks": "^7.0.0",
     "@openai/codex": "^0.147.0",
     "@openai/codex-sdk": "^0.149.1",
     "@phosphor-icons/react": "^2.1.10",
-    "@remotion/bundler": "^4.0.514",
-    "@remotion/renderer": "^4.0.514",
     "@speechify/api": "^4.0.1",
     "e2b": "^2.45.0",
     "express": "^5.1.0",
@@ -49,7 +45,6 @@
     "pg": "^8.23.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "remotion": "^4.0.514",
     "stripe": "^22.5.0",
     "tsx": "^4.20.5",
     "ws": "^8.21.0"
@@ -57,7 +52,6 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.62.1",
-    "@remotion/cli": "^4.0.514",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.0",
     "@types/pg": "^8.23.1",

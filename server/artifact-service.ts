@@ -49,7 +49,7 @@ export function validateRenderMetadata(value: unknown): RenderInfo {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Render metadata is invalid.");
   const metadata = value as Record<string, unknown>;
-  if (metadata.renderer !== undefined && !["manim", "remotion", "composite"].includes(String(metadata.renderer)))
+  if (metadata.renderer !== undefined && String(metadata.renderer) !== "manim")
     throw new Error("Render metadata has an invalid renderer.");
   const ranges: Array<[string, number, number, boolean]> = [
     ["duration", 0.01, 3_600, true],

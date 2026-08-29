@@ -4,14 +4,14 @@ import type { BillingPlanId, PricingPlan } from "../types";
 import { MarketingChrome } from "./MarketingChrome";
 import { PricingCards } from "./PricingCards";
 
-const PRICING_FAQ = [
+const TERMS = [
   {
     q: "What is a credit?",
-    a: "One credit is one pass of the generator. Faster spends 1, Balanced spends 2, and Try harder spends 4 — the harder settings give the model more room to plan and check the scenes before rendering.",
+    a: "One credit is one pass of the generator. Faster spends 1, Balanced spends 2, and Try harder spends 4 — the slower settings give the model more room to plan and check the scenes before anything is rendered.",
   },
   {
     q: "What happens if a render fails?",
-    a: "Failed and cancelled generations return the credits they reserved. You are never charged for a video you did not get.",
+    a: "Failed and cancelled generations return the credits they reserved. You are not charged for a video you did not get.",
   },
   {
     q: "Do credits roll over?",
@@ -19,7 +19,7 @@ const PRICING_FAQ = [
   },
   {
     q: "Can I change plans?",
-    a: "Yes, at any time, from the billing panel in the studio. Changes take effect on the next invoice and your work stays where it is.",
+    a: "At any time, from the billing panel in the studio. Changes take effect on the next invoice and your work stays where it is.",
   },
 ];
 
@@ -54,7 +54,7 @@ export default function Pricing() {
     }
     if (!checkoutEnabled) {
       setNotice(
-        "Paid checkout is not open yet. Create a free account and use the studio in the meantime.",
+        "Paid checkout is not open yet. Make a free account and use the studio in the meantime.",
       );
       return;
     }
@@ -71,20 +71,25 @@ export default function Pricing() {
       }
       className="pricing-shell"
     >
-      <section className="page-hero">
-        <div className="page-hero-inner">
-          <span className="kicker">Pricing</span>
-          <h1>Pay for what you render.</h1>
-          <p>
-            Every plan uses the same renderer, the same studio, and the same
-            frame-by-frame editing. The only thing that changes is how many
-            lessons you can generate each month.
-          </p>
-          <p className="page-hero-note">
-            Faster spends 1 credit. Balanced spends 2. Try harder spends 4.
-          </p>
+      <section className="page-head">
+        <div className="page-head-inner">
+          <div>
+            <span className="kicker">Pricing</span>
+            <h1>Pay for what you render.</h1>
+          </div>
+          <div>
+            <p>
+              Every plan uses the same renderer, the same studio, and the same
+              frame-by-frame editing. The only thing that changes is how many
+              lessons you can generate each month.
+            </p>
+            <p className="page-head-note">
+              Faster spends 1 credit. Balanced spends 2. Try harder spends 4.
+            </p>
+          </div>
         </div>
       </section>
+
       <section className="pricing-section" id="pricing">
         {!checkoutEnabled && !loadError && (
           <div className="launch-note">
@@ -108,18 +113,18 @@ export default function Pricing() {
           onChoose={choose}
         />
       </section>
-      <section className="pricing-faq" aria-labelledby="pricing-faq-title">
-        <div className="mk-section-head">
-          <span className="kicker">Questions</span>
-          <h2 id="pricing-faq-title">How billing works.</h2>
-        </div>
-        <div className="faq-list">
-          {PRICING_FAQ.map((item) => (
-            <details className="faq-item" key={item.q}>
-              <summary>{item.q}</summary>
-              <p>{item.a}</p>
-            </details>
-          ))}
+
+      <section className="pricing-terms" aria-labelledby="pricing-terms-title">
+        <div className="pricing-terms-inner">
+          <h2 id="pricing-terms-title">How billing works.</h2>
+          <dl>
+            {TERMS.map((item) => (
+              <div key={item.q}>
+                <dt>{item.q}</dt>
+                <dd>{item.a}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
     </MarketingChrome>

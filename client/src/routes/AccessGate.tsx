@@ -87,117 +87,120 @@ export default function AccessGate({
         </div>
       </header>
       <div className="access-body">
-      <section className="access-card" aria-labelledby="access-title">
-        <span className="kicker">
-          {mode === "signin" ? "Welcome back" : "Start free"}
-        </span>
-        <h1 id="access-title">
-          {mode === "signin" ? "Sign in to your studio" : "Create your account"}
-        </h1>
-        <p>
-          {mode === "signin"
-            ? "Your lessons, drafts, and every earlier render are where you left them."
-            : "One lesson free. No card, and nothing to cancel."}
-        </p>
-        {!configured && (
-          <div className="inline-error" role="alert">
-            <Warning size={15} /> Account sign-in is being configured. Please
-            try again shortly.
-          </div>
-        )}
-        <form onSubmit={(event) => void submit(event)}>
-          <label>
-            <span>Email</span>
-            <input
-              name="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoFocus
-              required
-            />
-          </label>
-          <label>
-            <span>Password</span>
-            <input
-              name="password"
-              type="password"
-              minLength={10}
-              aria-describedby="password-hint"
-              autoComplete={
-                mode === "signin" ? "current-password" : "new-password"
-              }
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-            <small id="password-hint" className="field-hint">
-              {mode === "signup"
-                ? password.length > 0 && password.length < 10
-                  ? `${10 - password.length} more character${10 - password.length === 1 ? "" : "s"} needed`
-                  : "At least 10 characters."
-                : " "}
-            </small>
-          </label>
-          {error && (
+        <section className="access-card" aria-labelledby="access-title">
+          <span className="kicker">
+            {mode === "signin" ? "Welcome back" : "Start free"}
+          </span>
+          <h1 id="access-title">
+            {mode === "signin"
+              ? "Sign in to your studio"
+              : "Create your account"}
+          </h1>
+          <p>
+            {mode === "signin"
+              ? "Your lessons, drafts, and every earlier render are where you left them."
+              : "One lesson free. No card, and nothing to cancel."}
+          </p>
+          {!configured && (
             <div className="inline-error" role="alert">
-              <Warning size={15} /> {error}
+              <Warning size={15} /> Account sign-in is being configured. Please
+              try again shortly.
             </div>
           )}
-          {notice && (
-            <div className="inline-notice" role="status">
-              <Check size={15} /> {notice}
-            </div>
-          )}
-          <button
-            className="button button-primary"
-            type="submit"
-            disabled={
-              !configured || submitting || !email || password.length < 10
-            }
-          >
-            {submitting ? (
-              <CircleNotch className="spin" size={17} />
-            ) : (
-              <>
-                {mode === "signin" ? "Sign in" : "Create account"}{" "}
-                <ArrowRight size={16} />
-              </>
+          <form onSubmit={(event) => void submit(event)}>
+            <label>
+              <span>Email</span>
+              <input
+                name="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoFocus
+                required
+              />
+            </label>
+            <label>
+              <span>Password</span>
+              <input
+                name="password"
+                type="password"
+                minLength={10}
+                aria-describedby="password-hint"
+                autoComplete={
+                  mode === "signin" ? "current-password" : "new-password"
+                }
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+              <small id="password-hint" className="field-hint">
+                {mode === "signup"
+                  ? password.length > 0 && password.length < 10
+                    ? `${10 - password.length} more character${10 - password.length === 1 ? "" : "s"} needed`
+                    : "At least 10 characters."
+                  : " "}
+              </small>
+            </label>
+            {error && (
+              <div className="inline-error" role="alert">
+                <Warning size={15} /> {error}
+              </div>
             )}
-          </button>
-        </form>
-        <div className="access-switch">
-          <button
-            type="button"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError("");
-              setNotice("");
-            }}
-          >
-            {mode === "signin" ? "Create an account" : "Sign in instead"}
-          </button>
-          {mode === "signin" && (
-            <button type="button" onClick={() => void resetPassword()}>
-              Forgot password?
+            {notice && (
+              <div className="inline-notice" role="status">
+                <Check size={15} /> {notice}
+              </div>
+            )}
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={
+                !configured || submitting || !email || password.length < 10
+              }
+            >
+              {submitting ? (
+                <CircleNotch className="spin" size={17} />
+              ) : (
+                <>
+                  {mode === "signin" ? "Sign in" : "Create account"}{" "}
+                  <ArrowRight size={16} />
+                </>
+              )}
             </button>
-          )}
-        </div>
-      </section>
-      <figure className="access-aside">
-        <div className="access-aside-frame stage-frame">
-          <img
-            src="/showcase/integral-2.jpg"
-            alt="A rendered Orune frame showing a solid of revolution."
-          />
-        </div>
-        <figcaption>
-          <strong>This is the output, not a mockup.</strong>
-          One frame from &ldquo;Area becomes volume&rdquo; &mdash; written as a
-          single prompt, rendered with Manim, then corrected in the studio.
-        </figcaption>
-      </figure>
+          </form>
+          <div className="access-switch">
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "signin" ? "signup" : "signin");
+                setError("");
+                setNotice("");
+              }}
+            >
+              {mode === "signin" ? "Create an account" : "Sign in instead"}
+            </button>
+            {mode === "signin" && (
+              <button type="button" onClick={() => void resetPassword()}>
+                Forgot password?
+              </button>
+            )}
+          </div>
+        </section>
+        <figure className="access-aside">
+          <div className="access-aside-media">
+            <img
+              src="/showcase/slope.jpg"
+              alt="An Orune lesson: a tangent line drawn on a parabola at a marked point."
+            />
+          </div>
+          <figcaption>
+            <strong>Rendered, not mocked up</strong>
+            One frame from &ldquo;That line&rsquo;s steepness is the
+            derivative&rdquo; — written as a single sentence, rendered with
+            Manim, then corrected in the studio.
+          </figcaption>
+        </figure>
       </div>
     </main>
   );

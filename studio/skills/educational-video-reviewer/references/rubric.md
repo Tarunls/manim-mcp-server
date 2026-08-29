@@ -24,8 +24,18 @@
 - Important text is large, concise, and visible long enough to read.
 - Motion is not needlessly rapid, flashing, or disorienting.
 
+## House style
+
+- The ground is warm paper. No dark background, gradient, glow, vignette, or drop shadow appears in any frame.
+- No cards, rounded boxes, uppercase eyebrow tags, chips, badges, or decorative rules appear anywhere.
+- Every beat's running head, claim, and visual align to one editorial left margin. Nothing is centred.
+- The claim reads as a full sentence in sentence case; the running head is small and muted. Emphasis never comes from bold weight or colour.
+- The working colour carries the mathematical object; the payoff colour appears exactly once in the lesson.
+- Axes are thin and untipped in the rule colour; fills stay pale enough to read the curve on top of them.
+- Text is cross-faded rather than morphed, and groups with different element counts are cross-faded rather than transformed.
+- Every text mobject uses the font family named in `design-config.json`.
+
 ## Polish
 
-- Spacing, radii, stroke widths, type scale, and palette are consistent.
-- Manim inserts in Composite mode feel intentionally framed by Remotion.
+- Spacing, stroke widths, type scale, and palette are consistent.
 - Asset crops are clean and credits/licenses remain in `assets.json`.

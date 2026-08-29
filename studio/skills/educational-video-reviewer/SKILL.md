@@ -1,6 +1,6 @@
 ---
 name: educational-video-reviewer
-description: Review rendered educational videos and frame annotations for collisions, motion clarity, pedagogy, accessibility, and visual polish. Use after Manim, Remotion, or Composite renders; when review-config.json requests a focus or strictness; or when a user supplies clean and annotated frames with a note.
+description: Review rendered educational videos and frame annotations for collisions, motion clarity, pedagogy, accessibility, and visual polish. Use after a Manim render; when review-config.json requests a focus or strictness; or when a user supplies clean and annotated frames with a note.
 ---
 
 # Educational Video Reviewer
@@ -21,7 +21,7 @@ Inspect the actual rendered frames, return evidence tied to frame numbers, and d
 
 ```json
 {
-  "renderer": "manim|remotion|composite",
+  "renderer": "manim",
   "focus": "balanced|layout|motion|pedagogy|accessibility|polish",
   "strictness": "quick|normal|obsessive",
   "verdict": "pass|needs_changes",
@@ -33,7 +33,7 @@ Inspect the actual rendered frames, return evidence tied to frame numbers, and d
       "frame": 120,
       "time": 4.0,
       "evidence": "What is visibly wrong in this frame.",
-      "fix": "A specific renderer-appropriate correction."
+      "fix": "A specific Manim-level correction."
     }
   ]
 }

@@ -14,7 +14,6 @@ export const EMPTY_AUTH: AuthState = { connected: false };
 export const EMPTY_RUNTIME: RuntimeState = {
   codex: false,
   manim: false,
-  remotion: false,
   ffmpeg: false,
 };
 
@@ -70,7 +69,7 @@ export function shortDate(value: string) {
 }
 
 export function videoEngineIsReady(runtime: RuntimeState) {
-  return runtime.manim && runtime.remotion;
+  return runtime.manim;
 }
 
 export function stageLabel(stage: ProjectStage) {

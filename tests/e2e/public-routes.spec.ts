@@ -24,10 +24,10 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.getByRole("link", { name: "Start with one free lesson" }).first()).toHaveAttribute("href", "/studio");
   await expect(page.getByRole("link", { name: /See the plans/ })).toHaveAttribute("href", "/pricing");
   await expect(page.locator("video.reel-video")).toBeVisible();
-  await expect(page.locator("video.reel-video")).toHaveAttribute("src", "/orune-reel.mp4");
+  await expect(page.locator("video.reel-video")).toHaveAttribute("src", "/showcase/accumulation.mp4");
   await expect(page.locator("#how-it-works")).toContainText("Describe the idea");
   await expectNoHorizontalOverflow(page);
-  if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
+  await expectNoSeriousA11yViolations(page);
 });
 
 test("the hero and its video fit the first screen without scrolling", async ({ page }, testInfo) => {
@@ -46,14 +46,25 @@ test("the hero and its video fit the first screen without scrolling", async ({ p
   }
 });
 
-test("the example gallery swaps the stage without leaving the page", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "Gallery selection is exercised once.");
+// the gallery is gone: all three lessons are laid out together as one spread,
+// so the assertion's intent — every example is reachable without leaving the
+// page — is now checked by them all being present and captioned at once.
+test("every example lesson is on the page at once, captioned and playing", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The spread is exercised once.");
   await page.goto("/");
-  const thumb = page.getByRole("button", { name: "Fourier series" });
-  await thumb.click();
-  await expect(thumb).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".gallery-stage img")).toHaveAttribute("src", "/showcase/fourier-1.jpg");
-  await expect(page.locator(".gallery-caption")).toContainText("Frequencies are rotations");
+  const spread = page.locator("#examples");
+  await expect(spread.locator(".lesson")).toHaveCount(3);
+  for (const [id, caption] of [
+    ["slope", /tangent is placed by evaluating the derivative/i],
+    ["rotation", /turning at a steady rate/i],
+    ["accumulation", /Rectangles narrowing under a curve/i],
+  ] as const) {
+    const lesson = spread.locator(`#lesson-${id}`);
+    await expect(lesson).toBeVisible();
+    await expect(lesson.locator("video")).toHaveAttribute("src", `/showcase/${id}.mp4`);
+    await expect(lesson.locator("video")).toHaveAttribute("poster", `/showcase/${id}.jpg`);
+    await expect(lesson.locator(".lesson-note")).toHaveText(caption);
+  }
 });
 
 test("pricing shows every plan and an honest checkout state", async ({ page }, testInfo) => {
@@ -65,7 +76,7 @@ test("pricing shows every plan and an honest checkout state", async ({ page }, t
   await expect(page.getByText("$100", { exact: false })).toBeVisible();
   await expect(page.getByText(/Paid checkout is not enabled|Recommended/).first()).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
+  await expectNoSeriousA11yViolations(page);
 });
 
 test("studio gate exposes sign-in, sign-up, and reset controls", async ({ page }, testInfo) => {
@@ -77,7 +88,7 @@ test("studio gate exposes sign-in, sign-up, and reset controls", async ({ page }
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Create your account");
   await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "new-password");
   await expectNoHorizontalOverflow(page);
-  if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
+  await expectNoSeriousA11yViolations(page);
 });
 
 test("privacy and terms routes publish the account controls and service boundaries", async ({ page }, testInfo) => {
@@ -88,7 +99,7 @@ test("privacy and terms routes publish the account controls and service boundari
   await expect(page.getByRole("heading", { name: "Terms of service" })).toBeVisible();
   await expect(page.getByText(/Generated videos can contain mistakes/i)).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  if (testInfo.project.name === "desktop") await expectNoSeriousA11yViolations(page);
+  await expectNoSeriousA11yViolations(page);
 });
 
 test("mutating auth requests fail closed without a CSRF token", async ({ request }, testInfo) => {

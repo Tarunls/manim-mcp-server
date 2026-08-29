@@ -3,8 +3,8 @@ import test from "node:test";
 import { hasExpectedSignature, validateRenderMetadata } from "../server/artifact-service.js";
 
 test("render metadata rejects missing, non-finite, and unreasonable durations", () => {
-  assert.equal(validateRenderMetadata({ duration: 12.5, renderer: "composite", fps: 30 }).duration, 12.5);
-  assert.throws(() => validateRenderMetadata({ renderer: "composite" }), /duration/);
+  assert.equal(validateRenderMetadata({ duration: 12.5, renderer: "manim", fps: 30 }).duration, 12.5);
+  assert.throws(() => validateRenderMetadata({ renderer: "manim" }), /duration/);
   assert.throws(() => validateRenderMetadata({ duration: Number.NaN }), /duration/);
   assert.throws(() => validateRenderMetadata({ duration: 4_000 }), /duration/);
   assert.throws(() => validateRenderMetadata({ duration: 2, renderer: "shell" }), /renderer/);

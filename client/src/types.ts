@@ -1,13 +1,15 @@
 export type ProjectStatus = "idle" | "running" | "complete" | "error" | "cancelled";
 export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "inspecting" | "complete";
-export type RendererKind = "manim" | "remotion" | "composite";
+// The studio renders every lesson with Manim. The field is kept on stored
+// project documents so rows written before the Manim-only change still parse.
+export type RendererKind = "manim";
 export type GenerationEffort = "quick" | "balanced" | "thorough";
 export type GenerationIntent = "auto" | "new" | "revise";
 export type BillingPlanId = "free" | "creator" | "pro" | "studio";
 export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
 export type ReviewStrictness = "quick" | "normal" | "obsessive";
-export type FontCategory = "modern" | "editorial" | "technical" | "friendly" | "classic";
-export type ColorPalette = "cinematic" | "studio" | "ocean" | "forest" | "sunset" | "monochrome" | "high-contrast";
+export type FontCategory = "serif" | "sans" | "mono";
+export type ColorPalette = "paper" | "ochre" | "sage" | "monochrome";
 
 export interface ChatMessage {
   id: string;
@@ -154,7 +156,6 @@ export interface AuthState {
 export interface RuntimeState {
   codex: boolean;
   manim: boolean;
-  remotion: boolean;
   ffmpeg: boolean;
 }
 

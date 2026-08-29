@@ -9,7 +9,7 @@ import sys
 
 
 ALLOWED = {
-    "renderer": {"manim", "remotion", "composite"},
+    "renderer": {"manim"},
     "focus": {"balanced", "layout", "motion", "pedagogy", "accessibility", "polish"},
     "strictness": {"quick", "normal", "obsessive"},
     "verdict": {"pass", "needs_changes"},

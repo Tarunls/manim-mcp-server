@@ -27,7 +27,7 @@ function activeJob(): HostedJob {
     projectId: "project-1",
     status: "dispatching",
     prompt: "Explain limits",
-    renderer: "composite",
+    renderer: "manim",
     effort: "quick",
     templateVersion: "release-abc123",
     dispatchLeaseId: "00000000-0000-4000-8000-000000000002",

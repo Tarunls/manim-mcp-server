@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { isWindows, manimPath } from "./platform.js";
 import {
   StudioService,
+  colorPaletteOrDefault,
+  fontCategoryOrDefault,
   generationPreferencesFor,
   looksLikeIndependentVideoRequest,
 } from "./studio-service.js";
@@ -44,7 +46,6 @@ import type {
   FontCategory,
   GenerationEffort,
   GenerationIntent,
-  RendererKind,
   ReviewFocus,
   ReviewStrictness,
   StudioEvent,
@@ -222,7 +223,7 @@ function hostedRuntime() {
     generations.configured &&
     generationQueue.configured &&
     artifacts.configured;
-  return { codex: ready, manim: ready, remotion: ready, ffmpeg: ready };
+  return { codex: ready, manim: ready, ffmpeg: ready };
 }
 
 async function ownedProject(request: express.Request) {
@@ -245,12 +246,6 @@ function baseUrl(request: express.Request) {
   return (
     process.env.APP_BASE_URL || `${request.protocol}://${request.get("host")}`
   );
-}
-
-function rendererFrom(value: unknown): RendererKind | undefined {
-  return value === "manim" || value === "remotion" || value === "composite"
-    ? value
-    : undefined;
 }
 
 function generationEffortFrom(value: unknown): GenerationEffort | undefined {
@@ -284,26 +279,15 @@ function reviewStrictnessFrom(value: unknown): ReviewStrictness | undefined {
     : undefined;
 }
 
-function fontCategoryFrom(value: unknown): FontCategory | undefined {
-  return ["modern", "editorial", "technical", "friendly", "classic"].includes(
-    String(value),
-  )
-    ? (value as FontCategory)
-    : undefined;
+// Design preferences saved before the paper house style (and any client still
+// sending the retired names) resolve to the current default rather than being
+// rejected, so an old project never fails to open.
+function fontCategoryFrom(value: unknown): FontCategory {
+  return fontCategoryOrDefault(value);
 }
 
-function colorPaletteFrom(value: unknown): ColorPalette | undefined {
-  return [
-    "cinematic",
-    "studio",
-    "ocean",
-    "forest",
-    "sunset",
-    "monochrome",
-    "high-contrast",
-  ].includes(String(value))
-    ? (value as ColorPalette)
-    : undefined;
+function colorPaletteFrom(value: unknown): ColorPalette {
+  return colorPaletteOrDefault(value);
 }
 
 app.post(
@@ -986,7 +970,6 @@ app.post(
     }
     const project = studio.createProject(
       "",
-      "composite",
       { narrationPreferences: { enabled: state.entitlements.narration } },
       userId(request),
     );
@@ -1057,20 +1040,11 @@ app.post(
         request.body?.intent === undefined
           ? "auto"
           : generationIntentFrom(request.body.intent);
-      const requestedRenderer =
-        request.body?.renderer === undefined
-          ? undefined
-          : rendererFrom(request.body.renderer);
-      if (
-        !intent ||
-        (request.body?.effort !== undefined && !effort) ||
-        (request.body?.renderer !== undefined && !requestedRenderer)
-      )
+      if (!intent || (request.body?.effort !== undefined && !effort))
         return response
           .status(400)
           .json({
-            error:
-              "Choose a valid generation mode, renderer, and thinking setting.",
+            error: "Choose a valid generation mode and thinking setting.",
           });
       const hasPriorWork = Boolean(
         project.messages.length || project.versions.length,
@@ -1084,7 +1058,6 @@ app.post(
       if (startFresh) {
         project = studio.createProject(
           "",
-          requestedRenderer || project.renderer,
           {
             reviewPreferences: project.reviewPreferences,
             designPreferences: project.designPreferences,
@@ -1094,22 +1067,6 @@ app.post(
           userId(request),
         );
         await projects.save(project, userId(request));
-      } else if (requestedRenderer && !hasPriorWork) {
-        if (generations.configured) {
-          project = await projects.update(
-            project.id,
-            userId(request),
-            (stored) => {
-              stored.renderer = requestedRenderer;
-            },
-          );
-        } else {
-          project.renderer = requestedRenderer;
-        }
-      } else if (requestedRenderer && requestedRenderer !== project.renderer) {
-        throw new Error(
-          "A project's renderer is fixed after generation starts. Create a new video to switch renderers.",
-        );
       }
       const selectedEffort = effort || project.generationPreferences.effort;
       if (project.narrationPreferences.enabled) await assertNarration(request);
@@ -1157,12 +1114,10 @@ app.post(
         response
           .status(202)
           .json(
-            await studio.sendMessage(
-              String(request.params.id),
-              text,
-              undefined,
-              { intent, requestedEffort: effort },
-            ),
+            await studio.sendMessage(String(request.params.id), text, {
+              intent,
+              requestedEffort: effort,
+            }),
           );
       } catch (error) {
         billing.refundGeneration(userId(request), credits);
@@ -1263,14 +1218,10 @@ app.patch("/api/projects/:id/design-preferences", async (request, response) => {
     request.body?.colorPalette === undefined
       ? undefined
       : colorPaletteFrom(request.body.colorPalette);
-  if (
-    (!fontCategory && request.body?.fontCategory !== undefined) ||
-    (!colorPalette && request.body?.colorPalette !== undefined) ||
-    (!fontCategory && !colorPalette)
-  )
+  if (!fontCategory && !colorPalette)
     return response
       .status(400)
-      .json({ error: "Choose a valid font category or color palette." });
+      .json({ error: "Choose a font category or color palette." });
   try {
     await ownedProject(request);
     const project = generations.configured
@@ -1281,8 +1232,12 @@ app.patch("/api/projects/:id/design-preferences", async (request, response) => {
             if (stored.status === "running")
               throw new Error("Wait for the current generation to finish.");
             stored.designPreferences = {
-              fontCategory: fontCategory ?? stored.designPreferences.fontCategory,
-              colorPalette: colorPalette ?? stored.designPreferences.colorPalette,
+              fontCategory: fontCategoryOrDefault(
+                fontCategory ?? stored.designPreferences.fontCategory,
+              ),
+              colorPalette: colorPaletteOrDefault(
+                colorPalette ?? stored.designPreferences.colorPalette,
+              ),
             };
           },
         )

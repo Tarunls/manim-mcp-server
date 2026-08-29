@@ -103,7 +103,7 @@ async function main() {
     headers: { "Idempotency-Key": `release-smoke:${randomUUID()}` },
     body: JSON.stringify({
       text: "Create a concise four-second visual explanation that two plus two equals four.",
-      renderer: "composite",
+      renderer: "manim",
       intent: "auto",
       effort: "quick",
     }),

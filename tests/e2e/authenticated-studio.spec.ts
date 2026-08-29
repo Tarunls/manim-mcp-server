@@ -53,7 +53,7 @@ test("authenticated users reach a hydrated studio without the auth gate", async 
     projects: [],
     auth: { connected: true },
     billing,
-    runtime: { codex: true, manim: true, remotion: true, ffmpeg: true },
+    runtime: { codex: true, manim: true, ffmpeg: true },
   });
   await page.route("**/api/events", (route) => route.fulfill({
     status: 200,

@@ -11,7 +11,7 @@ import { titleFromPrompt } from "./plan.js";
 import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_RENDERER: RendererKind = "composite";
+const RENDERER: RendererKind = "manim";
 const DEFAULT_MODEL: AgentModel = "gpt-5.6-sol";
 const DEFAULT_GENERATION_EFFORT: GenerationEffort = "balanced";
 const GENERATION_EFFORTS: Record<GenerationEffort, { model: AgentModel; reasoningEffort: AgentReasoningEffort }> = {
@@ -31,36 +31,74 @@ function normalizeGenerationPreferences(preferences?: Partial<StudioProject["gen
   return generationPreferencesFor(effort);
 }
 
+export const DEFAULT_FONT_CATEGORY: FontCategory = "serif";
+export const DEFAULT_COLOR_PALETTE: ColorPalette = "paper";
+
+// The repository ships "Orune Serif"; the images install it as a system family.
+// The alternates name faces that are guaranteed present in the render images so
+// a generated scene never silently falls back to an unknown generic sans.
 const FONT_PRESETS = {
-  modern: { manim: "Segoe UI", css: '"Inter", "Manrope", "Segoe UI", sans-serif', character: "clean geometric sans" },
-  editorial: { manim: "Georgia", css: 'Georgia, "Times New Roman", serif', character: "editorial serif" },
-  technical: { manim: "Cascadia Mono", css: '"Cascadia Mono", Consolas, monospace', character: "precise monospaced" },
-  friendly: { manim: "Trebuchet MS", css: '"Trebuchet MS", "Segoe UI", sans-serif', character: "rounded humanist sans" },
-  classic: { manim: "Times New Roman", css: '"Times New Roman", Times, serif', character: "traditional academic serif" },
+  serif: { manim: "Orune Serif", css: '"Orune Serif", "Newsreader", Georgia, serif', character: "editorial book serif" },
+  sans: { manim: "DejaVu Sans", css: '"Inter", "DejaVu Sans", sans-serif', character: "plain grotesque sans" },
+  mono: { manim: "DejaVu Sans Mono", css: '"JetBrains Mono", "DejaVu Sans Mono", monospace', character: "precise monospaced" },
 } as const;
 
+// Every palette is grounded on paper. There is no dark background anywhere:
+// `primary` is the single working colour for the mathematical object and
+// `accent` is the payoff colour, used once per lesson.
 const COLOR_PRESETS = {
-  cinematic: { background: "#07111F", surface: "#0C1D2E", text: "#F7F4ED", primary: "#67E8F9", secondary: "#FB7185", accent: "#FBBF24" },
-  studio: { background: "#F6F3EE", surface: "#FFFFFF", text: "#1C1C1A", primary: "#D95C32", secondary: "#406E8E", accent: "#E8B44F" },
-  ocean: { background: "#071D2B", surface: "#0E3042", text: "#F1FAFF", primary: "#45C4D9", secondary: "#4E7AC7", accent: "#F4C95D" },
-  forest: { background: "#0C2018", surface: "#17382A", text: "#F2F6EC", primary: "#78C091", secondary: "#B7D38D", accent: "#E7B65A" },
-  sunset: { background: "#24131D", surface: "#3A1F2D", text: "#FFF4EC", primary: "#F06C5B", secondary: "#C76B98", accent: "#F3B562" },
-  monochrome: { background: "#111111", surface: "#242424", text: "#F5F5F5", primary: "#D8D8D8", secondary: "#919191", accent: "#FFFFFF" },
-  "high-contrast": { background: "#050505", surface: "#171717", text: "#FFFFFF", primary: "#FFDD00", secondary: "#00E5FF", accent: "#FF4D8D" },
+  paper: { background: "#FBFAF7", surface: "#FFFFFF", text: "#1A1917", muted: "#8A857D", rule: "#D9D4CA", primary: "#2E5266", accent: "#B07548" },
+  ochre: { background: "#FCF9F2", surface: "#FFFFFF", text: "#1B1813", muted: "#8C8474", rule: "#DED6C4", primary: "#7A5B23", accent: "#9B4722" },
+  sage: { background: "#F8FAF6", surface: "#FFFFFF", text: "#171A16", muted: "#83887E", rule: "#D3D9CC", primary: "#3C5A45", accent: "#B0603C" },
+  monochrome: { background: "#FAFAF9", surface: "#FFFFFF", text: "#141413", muted: "#8A8A85", rule: "#D6D6D2", primary: "#3A3A36", accent: "#0B0B0A" },
 } as const;
 
-const COMMON_AGENT_INSTRUCTIONS = `You are the rendering agent for a local programmatic educational-video studio.
+export function fontCategoryOrDefault(value: unknown): FontCategory {
+  return Object.hasOwn(FONT_PRESETS, String(value)) ? (value as FontCategory) : DEFAULT_FONT_CATEGORY;
+}
 
-Turn the user's teaching goal into one coherent editable video using the renderer strategy selected below.
+// Projects saved before the paper house style name palettes that no longer
+// exist ("cinematic", "ocean", ...). Those rows must still load, so an
+// unrecognised name resolves to the default instead of throwing.
+export function colorPaletteOrDefault(value: unknown): ColorPalette {
+  return Object.hasOwn(COLOR_PRESETS, String(value)) ? (value as ColorPalette) : DEFAULT_COLOR_PALETTE;
+}
+
+// Documents written before the studio became Manim-only, and before the paper
+// house style replaced the dark presets, are still in local and hosted storage.
+// Normalizing them on read is what keeps those projects openable.
+export function normalizeStoredProject<T extends StudioProject>(project: T): T {
+  project.renderer = RENDERER;
+  project.designPreferences = {
+    fontCategory: fontCategoryOrDefault(project.designPreferences?.fontCategory),
+    colorPalette: colorPaletteOrDefault(project.designPreferences?.colorPalette),
+  };
+  return project;
+}
+
+const COMMON_AGENT_INSTRUCTIONS = `You are the rendering agent for a programmatic educational-video studio. Every video is rendered with Manim Community Edition.
+
+Turn the user's teaching goal into one coherent editable Manim video in the studio's paper house style.
+
+House style — these rules are proven and are not open to reinterpretation:
+- The ground is warm paper. There is no dark background, no gradient, no glow, no vignette, and no drop shadow anywhere in the video.
+- Ink is used for primary text, a lighter muted tone for a small running head, and the rule colour for axes and rules. Exactly one working colour carries the mathematical object, and one payoff colour appears once in the whole lesson, at the moment the idea lands.
+- No cards, no rounded boxes, no uppercase eyebrow tags, no chips, no badges, and no decorative rules. A beat is a small running head, one sentence of claim, and the mathematical object. Nothing else.
+- Keep an editorial left margin: every beat's running head, claim, and visual align to the same left edge. Do not centre text.
+- The claim is a full sentence in sentence case at about 40pt. The running head is about 19pt in the muted colour. Authority comes from size, tight leading, and space — never from bold weight and never from colour.
+- Fills are pale, roughly 0.14-0.22 opacity, so the curve or edge stays readable on top of them.
+- Never morph one sentence into another. ReplacementTransform between two Text mobjects smears the glyphs into an unreadable mess mid-tween: always FadeOut the old sentence and FadeIn the new one.
+- Never Transform between two Riemann-rectangle groups (or any two grids) with different element counts; mid-tween the viewer sees two misaligned grids. Cross-fade instead with FadeOut(old) and FadeIn(new).
+- Draw axes with include_tip=False and include_ticks=False, stroke_width about 1.6, in the rule colour. No arrowheads.
+- Keep generous margins, one idea on screen at a time, and make each beat visibly transform the previous one.
 
 Requirements:
 - Start by writing a short beat plan for yourself: one teaching purpose, one dominant visual, and one narration passage per beat. Avoid adding a second panel when changing or replacing the current visual would teach the point more clearly.
-- Use the studio's reference production standard unless the user asks for a different format: about four chapter-like beats and 35-45 seconds, one concise editorial thesis plus one large focused visual stage, generous negative space, restrained supporting copy, and a clear visual transformation from one beat to the next. This is a quality floor, not a template to copy literally.
-- For Composite work, follow the proven division of labor: Manim owns the hard mathematical object or geometric transformation; Remotion owns the final canvas, typography, cards, pacing, transitions, and polish. Keep Manim inserts visually dominant and use React framing to clarify them, not compete with them.
-- Favor cinematic restraint over dashboard density. Do not fill the frame with interchangeable cards, decorative widgets, or simultaneous mini-explanations. Each beat should have one memorable visual claim that can be understood from a paused frame.
-- Compose for a 16:9 frame with a restrained palette, readable type, consistent spacing, and purposeful motion.
+- Use the studio's production standard unless the user asks for a different format: about four beats and 35-45 seconds, one claim sentence plus one large focused visual, generous negative space, and a clear visual transformation from one beat to the next. This is a quality floor, not a template to copy literally.
+- Each beat should have one memorable visual claim that can be understood from a paused frame. Do not fill the frame with interchangeable panels, decorative widgets, or simultaneous mini-explanations.
+- Compose for a 16:9 frame with the configured palette, readable type, consistent spacing, and purposeful motion.
 - Treat layout as a constraint problem, not a visual guess. Identify independent peer objects for every beat, give each a reserved region, and keep at least 3% of the frame width between unrelated objects.
-- A bounding box intersecting another bounding box counts as a collision unless the overlap is intentional (for example, a label inside its own card). Group intentional composites and audit the composites against their peers.
+- A bounding box intersecting another bounding box counts as a collision unless the overlap is intentional (for example, a curve drawn on top of its own pale fill). Group intentional composites and audit the composites against their peers.
 - Check layout at the beginning, midpoint, and end of every transition—not only on the final frame. Text reflow, transforms, and entering/exiting objects can collide between key poses.
 - Prefer replacing, transforming, or fading a visual before introducing more simultaneous objects. Keep no more than 5 independent visual groups on screen unless the lesson truly requires it.
 - Read narration-config.json before planning. When enabled is false, make a silent video, do not depend on narration.json, and verify metadata.json reports narration.enabled false. When enabled is true, write narration.json before rendering as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages aligned to the visual beats.
@@ -69,20 +107,20 @@ Requirements:
 - Inspect both poster.png and contact-sheet.png. The contact sheet samples twelve moments; check every one for clipping, crowded panels, uneven spacing, poor contrast, accidental occlusion, and objects crossing during transitions. If any issue exists, fix the source and render again.
 - If review-config.json exists, read ../../skills/educational-video-reviewer/SKILL.md and follow it after rendering. Write review-report.json, validate it, and repair blocking issues once before finishing.
 - Read design-config.json before authoring and use its chosen font category and palette consistently. Do not silently replace the selected visual system with your own defaults.
+- Every Text and MarkupText must set font to the exact family named by design-config.json font.manim. Never hardcode a system font such as Arial, Helvetica, Segoe UI, or DejaVu Sans, and never leave the font argument off and accept Manim's silent generic fallback.
 - Before authoring, write asset-decision.json with needsAuthenticImage and reason. Authentic imagery usually helps for a real person, place, artifact, organism, or historical context; skip it for abstract explanations that are clearer with native shapes.
 - When imagery is useful, run node ../../../scripts/studio_asset.mjs . search "a precise context-rich query". Inspect at least three downloaded candidate previews and their descriptions. Never choose the top result merely because it is attractive; reject candidates that depict the wrong person, era, object, location, or causal context. Import the best verified match with node ../../../scripts/studio_asset.mjs . import <candidate-id>. If no result is genuinely relevant, use renderer-native visuals instead.
-- If assets.json exists, use only assets listed there. Preserve credits and licenses. Manim may load their localPath with ImageMobject; Remotion may load their publicPath with staticFile. Generated scene/video source must not make network requests.
+- If assets.json exists, use only assets listed there. Preserve credits and licenses. Load an asset's localPath with ImageMobject. Generated scene source must not make network requests.
 - If the request cites a frame review, inspect both directly attached images before editing. Compare clean.png with annotated.png, identify the smallest exact object enclosed or touched by red markup, and explicitly exclude adjacent untargeted objects. Write reviews/<review-id>/interpretation.json with target, evidence, and excludedNearbyObjects before changing source. Do not reproduce the markup in the video and do not generalize a local edit to sibling labels.
 - output.mp4 must exist before you finish. Never return base64 or paste the full source into chat.
-- Revisions must preserve unrelated source and stay on the renderer already selected for the project.
+- Revisions must preserve unrelated source and must stay in the paper house style.
 - Your final response is one or two short sentences describing what changed. Begin with "First draft ready:" or "Revision N ready:" using the target named in the turn request. For frame feedback, name the exact targeted object and a nearby object intentionally left unchanged. Do not expose hidden reasoning or raw command logs.`;
 
-const MANIM_AGENT_INSTRUCTIONS = `${COMMON_AGENT_INSTRUCTIONS}
-
-Selected renderer: MANIM. Use Manim Community Edition exclusively; do not create React, Remotion, HTML, or CSS source.
+const AGENT_INSTRUCTIONS = `${COMMON_AGENT_INSTRUCTIONS}
 
 Manim requirements:
-- Keep the source of truth in scene.py and define exactly one renderable Scene subclass named GeneratedScene.
+- Keep the source of truth in scene.py and define exactly one renderable Scene subclass named GeneratedScene. Use Manim Community Edition exclusively; do not create React, HTML, or CSS source.
+- Set the scene background to the palette's background colour explicitly; never rely on Manim's default dark canvas.
 - Use only Manim CE APIs available in the local environment. Prefer shapes, Text, MarkupText, NumberPlane, Axes, graphs, and deterministic animations. Avoid MathTex unless you first verify LaTeX is installed.
 - Import fit_inside, stack_in_panel, assert_inside, assert_scene_safe, assert_no_overlap, and watch_no_overlap from manim_layout.
 - Compose for a 16:9 frame. Keep all important objects at least 0.32 Manim units from the frame edge.
@@ -91,36 +129,7 @@ Manim requirements:
 - Call assert_no_overlap on the independent peer objects in every stable key pose. Install watch_no_overlap for peer objects that move concurrently so every rendered animation frame is checked. Do not compare a container with its own contents; group those intentional composites first. Use allow_pairs only for named, deliberate overlaps and add a short source comment explaining each exception.
 - Use no more than two type sizes inside a panel. Keep labels at least 0.18 units apart and align related captions to the equation terms above them.
 - Render by running: python3 ../../../scripts/render_scene.py . balanced
-- Before finishing, ensure no warnings were bypassed by removing required layout assertions.`;
-
-const REMOTION_AGENT_INSTRUCTIONS = `${COMMON_AGENT_INSTRUCTIONS}
-
-Selected renderer: REMOTION. Use Remotion exclusively; do not create Manim or Python source.
-
-Remotion requirements:
-- Keep the source of truth in video.tsx. It must register exactly one Remotion Composition with id GeneratedVideo.
-- Export or define a 1920x1080 composition at 30 fps. Use deterministic frame-based motion with useCurrentFrame, interpolate, spring, Sequence, and AbsoluteFill. Do not use browser time, random values without a fixed seed, network requests, or CSS animations.
-- Import LayoutAudit and LayoutItem from ../../../remotion/layout. Render one LayoutAudit in the composition and wrap every independent visual group in a LayoutItem with a stable id. Leave the group at its default of canvas for anything that can appear concurrently; only use a different group for elements that are provably never mounted together. LayoutItem's style should own that group's positioning and dimensions.
-- LayoutAudit checks every rendered frame. Keep minGap at 36 pixels or more. Group intentional composites inside one LayoutItem instead of allowing overlap. Use allowOverlapWith only for a named, deliberate crossing and add a short source comment explaining it.
-- Keep text inside explicit width and height bounds. Use responsive font sizing or shorter copy; never rely on overflow:hidden to conceal a layout failure.
-- Use only local code and assets already present in the project. Do not download unrequested assets.
-- Render by running: node ../../../scripts/render_remotion.mjs . balanced
-- Before finishing, confirm metadata.json reports renderer remotion and that the render completed without LayoutAudit errors.`;
-
-const COMPOSITE_AGENT_INSTRUCTIONS = `${COMMON_AGENT_INSTRUCTIONS}
-
-Selected renderer: COMPOSITE. Remotion is the only final compositor. Manim may create self-contained visual inserts; it must never position React text or other final-canvas elements.
-
-Composite requirements:
-- Keep the final source of truth in video.tsx with exactly one 1920x1080, 30 fps Remotion Composition named GeneratedVideo.
-- Import LayoutAudit and LayoutItem from ../../../remotion/layout. Wrap every independent final-canvas group—including every Manim insert—in a LayoutItem. Remotion owns all final positions, typography, transitions, narration timing, and spacing.
-- Put Manim insert sources in manim/*.py. Each source must define exactly one Scene subclass named GeneratedScene. An insert should contain only the mathematical or geometric visual that benefits from Manim.
-- Describe inserts in composite.json as {"clips":[{"id":"graph","source":"manim/graph.py","scene":"GeneratedScene","transparent":true}]}. Clip ids must be unique safe filenames.
-- Import ManimSequence from ../../../remotion/layout and import clip metadata from ./composite-metadata.json. Render an insert as <ManimSequence clipId="<id>" frameCount={clip.frames} /> inside its LayoutItem and Sequence. The helper uses transparent PNG frames so alpha works consistently on every platform.
-- Use deterministic frame motion. Do not use browser time, unseeded randomness, network requests, or CSS animations.
-- Keep LayoutAudit at minGap 36 or higher. Group only genuine composites; document any allowOverlapWith exception.
-- Render by running: node ../../../scripts/render_composite.mjs . balanced
-- Before finishing, confirm metadata.json reports renderer composite and composite-metadata.json lists every rendered insert.`;
+- Before finishing, confirm metadata.json reports renderer manim and ensure no warnings were bypassed by removing required layout assertions.`;
 
 function now() {
   return new Date().toISOString();
@@ -129,9 +138,9 @@ function now() {
 function commandLabel(command: string, target: string) {
   if (/studio_asset\.mjs.*\bsearch\b/i.test(command)) return `Searching licensed assets · ${target}`;
   if (/studio_asset\.mjs.*\bimport\b/i.test(command)) return `Adding verified asset · ${target}`;
-  if (/render_scene\.py|render_remotion\.mjs|render_composite\.mjs|\bmanim\b|\bremotion\b/i.test(command)) return `Rendering ${target}`;
+  if (/render_scene\.py|\bmanim\b/i.test(command)) return `Rendering ${target}`;
   if (/ffmpeg|ffprobe/i.test(command)) return `Inspecting ${target} frame by frame`;
-  if (/scene\.py|video\.tsx|apply_patch/i.test(command)) return `Building ${target}`;
+  if (/scene\.py|apply_patch/i.test(command)) return `Building ${target}`;
   return `Working on ${target}`;
 }
 
@@ -192,7 +201,7 @@ export class StudioService extends EventEmitter {
   private assistantMessageByItem = new Map<string, string>();
   private agentMessagePhaseByItem = new Map<string, string | null>();
   private authState: AuthState = { connected: false };
-  private runtimeState: RuntimeState = { codex: false, manim: false, remotion: false, ffmpeg: false };
+  private runtimeState: RuntimeState = { codex: false, manim: false, ffmpeg: false };
   private readonly localPersistence: boolean;
 
   constructor(root: string, dataRoot = root) {
@@ -250,17 +259,13 @@ export class StudioService extends EventEmitter {
           delete migrated.quality;
           delete migrated.proxyUrl;
         }
-        project.renderer ||= "manim";
+        normalizeStoredProject(project);
         project.ownerId ||= "__legacy__";
         project.favorite = project.favorite === true;
         project.versions ||= [];
         project.reviews ||= [];
         project.assets ||= [];
         project.reviewPreferences ||= { focus: "balanced", strictness: "normal" };
-        project.designPreferences = {
-          fontCategory: project.designPreferences?.fontCategory || "modern",
-          colorPalette: project.designPreferences?.colorPalette || "cinematic",
-        };
         project.narrationPreferences = { enabled: project.narrationPreferences?.enabled !== false };
         project.generationPreferences = normalizeGenerationPreferences(project.generationPreferences);
         fs.mkdirSync(path.join(this.projectRoot, project.id), { recursive: true });
@@ -294,13 +299,12 @@ export class StudioService extends EventEmitter {
   }
 
   async initialize() {
-    const [codex, manim, remotion, ffmpeg] = await Promise.all([
+    const [codex, manim, ffmpeg] = await Promise.all([
       this.bridge.start().then(() => true).catch(() => false),
       fs.promises.access(manimPath(this.root)).then(() => true).catch(() => false),
-      fs.promises.access(path.join(this.root, "node_modules", "@remotion", "renderer", "package.json")).then(() => true).catch(() => false),
       execFileAsync("ffmpeg", ["-version"]).then(() => true).catch(() => false),
     ]);
-    this.runtimeState = { codex, manim, remotion, ffmpeg };
+    this.runtimeState = { codex, manim, ffmpeg };
     if (codex) await this.refreshAuth();
     this.emitEvent({ type: "runtime", runtime: this.runtimeState });
   }
@@ -343,19 +347,24 @@ export class StudioService extends EventEmitter {
 
   private writeDesignConfig(project: StudioProject) {
     const projectDir = path.join(this.projectRoot, project.id);
-    const fontCategory = project.designPreferences.fontCategory;
-    const colorPalette = project.designPreferences.colorPalette;
+    // A project restored from storage can still name a retired preset, so
+    // resolve both through the legacy-tolerant lookups before indexing.
+    const fontCategory = fontCategoryOrDefault(project.designPreferences?.fontCategory);
+    const colorPalette = colorPaletteOrDefault(project.designPreferences?.colorPalette);
     fs.writeFileSync(path.join(projectDir, "design-config.json"), JSON.stringify({
       fontCategory,
       font: FONT_PRESETS[fontCategory],
       colorPalette,
       colors: COLOR_PRESETS[colorPalette],
       productionStyle: {
-        reference: "cinematic editorial math explainer",
-        pacing: "about four chapter-like beats over 35-45 seconds unless the user asks otherwise",
-        composition: "one concise thesis and one dominant visual stage with generous negative space",
-        motion: "replace or transform the dominant visual between beats; avoid dashboard-like accumulation",
-        compositeDivision: "Manim for the mathematical centerpiece; Remotion for final typography, layout, timing, and polish",
+        reference: "paper editorial math explainer",
+        ground: "warm paper; never a dark background, gradient, glow, vignette, or drop shadow",
+        pacing: "about four beats over 35-45 seconds unless the user asks otherwise",
+        composition: "a small running head, one sentence of claim, and one mathematical object, all on a shared left margin",
+        typography: "claim about 40pt sentence case, running head about 19pt in the muted colour; authority from size and space, never bold weight or colour",
+        forbidden: "cards, rounded boxes, uppercase eyebrow tags, chips, badges, decorative rules, centred text",
+        colorUse: "primary carries the mathematical object; accent appears exactly once, when the idea lands",
+        motion: "replace or transform the dominant visual between beats; cross-fade text and mismatched groups instead of morphing them",
       },
     }, null, 2));
   }
@@ -363,25 +372,6 @@ export class StudioService extends EventEmitter {
   private writeNarrationConfig(project: StudioProject) {
     const projectDir = path.join(this.projectRoot, project.id);
     fs.writeFileSync(path.join(projectDir, "narration-config.json"), JSON.stringify(project.narrationPreferences, null, 2));
-  }
-
-  private seedHouseStyleTemplate(project: StudioProject) {
-    if (project.renderer !== "composite") return;
-    const templateDir = path.join(this.root, "studio", "templates", "fourier-composite");
-    const projectDir = path.join(this.projectRoot, project.id);
-    const referenceDir = path.join(projectDir, "reference-template");
-    fs.mkdirSync(referenceDir, { recursive: true });
-    for (const file of ["video.tsx", "composite.json"]) {
-      const source = path.join(templateDir, file);
-      if (fs.existsSync(source)) fs.copyFileSync(source, path.join(referenceDir, file));
-    }
-    const manimSource = path.join(templateDir, "manim");
-    if (fs.existsSync(manimSource)) fs.cpSync(manimSource, path.join(referenceDir, "manim"), { recursive: true });
-    fs.writeFileSync(path.join(referenceDir, "template-origin.json"), JSON.stringify({
-      id: "cinematic-composite-scaffold-v1",
-      purpose: "internal editable visual scaffold only",
-      rule: "Replace every source-specific teaching element before rendering a different topic.",
-    }, null, 2));
   }
 
   updateReviewPreferences(projectId: string, focus: ReviewFocus, strictness: ReviewStrictness) {
@@ -399,8 +389,8 @@ export class StudioService extends EventEmitter {
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("Wait for the current generation to finish.");
     project.designPreferences = {
-      fontCategory: changes.fontCategory ?? project.designPreferences.fontCategory,
-      colorPalette: changes.colorPalette ?? project.designPreferences.colorPalette,
+      fontCategory: fontCategoryOrDefault(changes.fontCategory ?? project.designPreferences.fontCategory),
+      colorPalette: colorPaletteOrDefault(changes.colorPalette ?? project.designPreferences.colorPalette),
     };
     this.writeDesignConfig(project);
     this.updateProject(project);
@@ -418,7 +408,7 @@ export class StudioService extends EventEmitter {
       && /narration was rejected|speechify/i.test(project.error || "");
     if (narrationOnlyFailure) {
       const projectDir = path.join(this.projectRoot, project.id);
-      const validationError = this.renderValidationError(projectDir, project.renderer, false);
+      const validationError = this.renderValidationError(projectDir, false);
       if (!validationError && this.currentRenderNeedsArchive(project)) {
         const version = this.archiveVersion(project);
         if (version) {
@@ -512,7 +502,7 @@ Files: ${relative}/clean.png and ${relative}/annotated.png
 User note: ${review.note}
 
 First write ${relative}/interpretation.json containing: target (the smallest exact object enclosed or touched by red markup), visualEvidence, requestedPropertyChange, and excludedNearbyObjects. Red marks are spatial pointers only and must not appear in the video. Apply the requested property change only to the identified target. Nearby labels, siblings, and repeated styles must remain unchanged unless they are also explicitly marked. After rerendering, inspect the same timestamp and confirm the target changed while every excluded nearby object stayed unchanged.`;
-    await this.sendMessage(project.id, visibleText, undefined, {
+    await this.sendMessage(project.id, visibleText, {
       agentRequest,
       localImagePaths: [path.join(reviewDir, "clean.png"), path.join(reviewDir, "annotated.png")],
       requestKind: "frame review",
@@ -642,15 +632,13 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["scene.py", "video.tsx", "composite.json", "composite-metadata.json", "generation-request.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
+    const assets = ["scene.py", "generation-request.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
     }
-    for (const directory of ["manim", path.join("public", "assets")]) {
-      const source = path.join(projectDir, directory);
-      if (fs.existsSync(source)) fs.cpSync(source, path.join(versionDir, directory), { recursive: true });
-    }
+    const publicAssets = path.join(projectDir, "public", "assets");
+    if (fs.existsSync(publicAssets)) fs.cpSync(publicAssets, path.join(versionDir, "public", "assets"), { recursive: true });
 
     let render: RenderInfo | undefined;
     try {
@@ -686,11 +674,11 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     return digest(current) !== digest(archived);
   }
 
-  private renderValidationError(projectDir: string, expectedRenderer: RendererKind, narrationEnabled: boolean) {
+  private renderValidationError(projectDir: string, narrationEnabled: boolean) {
     try {
       const metadata = JSON.parse(fs.readFileSync(path.join(projectDir, "metadata.json"), "utf8")) as RenderInfo;
-      if (metadata.renderer !== expectedRenderer) {
-        return `Render metadata reported ${metadata.renderer || "no renderer"}; this project is locked to ${expectedRenderer}.`;
+      if (metadata.renderer !== RENDERER) {
+        return `Render metadata reported ${metadata.renderer || "no renderer"}; every video is rendered with ${RENDERER}.`;
       }
       const narration = metadata.narration;
       if (!narrationEnabled) {
@@ -731,7 +719,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     return this.authState;
   }
 
-  createProject(prompt = "", renderer: RendererKind = DEFAULT_RENDERER, seed: ProjectSeedPreferences = {}, ownerId = "__legacy__") {
+  createProject(prompt = "", seed: ProjectSeedPreferences = {}, ownerId = "__legacy__") {
     const id = randomUUID().slice(0, 8);
     const timestamp = now();
     const project: StudioProject = {
@@ -740,7 +728,9 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       favorite: false,
       title: prompt ? titleFromPrompt(prompt) : "Untitled video",
       prompt,
-      renderer,
+      // Persisted so stored documents keep a stable shape; there is only one
+      // renderer now, so nothing chooses it.
+      renderer: RENDERER,
       createdAt: timestamp,
       updatedAt: timestamp,
       status: "idle",
@@ -751,21 +741,23 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       reviews: [],
       assets: [],
       reviewPreferences: { ...(seed.reviewPreferences || { focus: "balanced", strictness: "normal" }) },
-      designPreferences: { ...(seed.designPreferences || { fontCategory: "modern", colorPalette: "cinematic" }) },
+      designPreferences: {
+        fontCategory: fontCategoryOrDefault(seed.designPreferences?.fontCategory),
+        colorPalette: colorPaletteOrDefault(seed.designPreferences?.colorPalette),
+      },
       narrationPreferences: { ...(seed.narrationPreferences || { enabled: true }) },
       generationPreferences: normalizeGenerationPreferences(seed.generationPreferences),
     };
     fs.mkdirSync(path.join(this.projectRoot, id), { recursive: true });
-    this.seedHouseStyleTemplate(project);
     this.writeReviewConfig(project);
     this.writeDesignConfig(project);
     this.writeNarrationConfig(project);
     this.updateProject(project);
-    if (prompt) void this.sendMessage(id, prompt, renderer).catch(() => undefined);
+    if (prompt) void this.sendMessage(id, prompt).catch(() => undefined);
     return project;
   }
 
-  async sendMessage(projectId: string, text: string, requestedRenderer?: RendererKind, options: SendMessageOptions = {}): Promise<SendMessageResult> {
+  async sendMessage(projectId: string, text: string, options: SendMessageOptions = {}): Promise<SendMessageResult> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("The agent is already working on this project.");
@@ -776,7 +768,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       || (options.intent !== "revise" && (project.versions.length === 0 || looksLikeIndependentVideoRequest(text, project)))
     );
     if (shouldStartFresh) {
-      const freshProject = this.createProject("", requestedRenderer || project.renderer, {
+      const freshProject = this.createProject("", {
         reviewPreferences: project.reviewPreferences,
         designPreferences: project.designPreferences,
         narrationPreferences: project.narrationPreferences,
@@ -784,17 +776,11 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
           ? generationPreferencesFor(options.requestedEffort)
           : project.generationPreferences,
       }, project.ownerId);
-      const result = await this.sendMessage(freshProject.id, text, freshProject.renderer, { ...options, intent: "auto" });
+      const result = await this.sendMessage(freshProject.id, text, { ...options, intent: "auto" });
       return { ...result, startedFresh: true };
     }
     if (options.requestedEffort) project.generationPreferences = generationPreferencesFor(options.requestedEffort);
-    const rendererLocked = Boolean(project.threadId || project.messages.length || project.versions.length);
-    if (!rendererLocked && requestedRenderer) project.renderer = requestedRenderer;
-    if (rendererLocked && requestedRenderer && requestedRenderer !== project.renderer) {
-      throw new Error("A project's renderer is fixed after generation starts. Create a new video to switch renderers.");
-    }
-    if ((project.renderer === "manim" || project.renderer === "composite") && !this.runtimeState.manim) throw new Error("Manim is not installed. Run npm run setup:manim first.");
-    if ((project.renderer === "remotion" || project.renderer === "composite") && !this.runtimeState.remotion) throw new Error("Remotion is not installed. Run npm install first.");
+    if (!this.runtimeState.manim) throw new Error("Manim is not installed. Run npm run setup:manim first.");
 
     const projectDir = path.join(this.projectRoot, project.id);
     const isRevision = Boolean(project.threadId && project.versions.length);
@@ -814,50 +800,32 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       renderer: project.renderer,
       requirements: isRevision
         ? ["Preserve unrelated successful work", "Produce a fresh validated render"]
-        : ["Write a fresh beat-plan.md", "Create active source after this request", "Transform the reference scaffold rather than rendering it unchanged"],
+        : ["Write a fresh beat-plan.md", "Create scene.py after this request"],
     }, null, 2));
     this.updateProject(project);
 
     try {
       if (!project.threadId) {
-        const instructions = project.renderer === "remotion"
-          ? REMOTION_AGENT_INSTRUCTIONS
-          : project.renderer === "composite"
-            ? COMPOSITE_AGENT_INSTRUCTIONS
-            : MANIM_AGENT_INSTRUCTIONS;
-        const response = await this.bridge.startThread(projectDir, instructions, project.generationPreferences.model);
+        const response = await this.bridge.startThread(projectDir, AGENT_INSTRUCTIONS, project.generationPreferences.model);
         project.threadId = response.thread.id;
         this.threadToProject.set(project.threadId, project.id);
       } else {
         await this.bridge.resumeThread(project.threadId, projectDir);
       }
 
-      const referenceFrameDirs = [
-        path.join(this.root, "studio", "references", "fourier-house-style", "frames"),
-        path.join(this.root, "studio", "references", "integral-house-style", "frames"),
-      ];
-      const referenceFrames = isRevision || options.agentRequest
-        ? []
-        : referenceFrameDirs.flatMap((referenceFrameDir) => fs.existsSync(referenceFrameDir)
-          ? fs.readdirSync(referenceFrameDir)
-            .filter((name) => /\.(?:png|jpe?g)$/i.test(name))
-            .sort()
-            .slice(0, 4)
-            .map((name) => path.join(referenceFrameDir, name))
-          : []);
       const productionContext = isRevision
         ? "This is a genuine revision of the current video's content. Preserve unrelated successful work and make the requested change deliberately."
-        : `This is a brand-new independent production in a clean project and thread. Plan the teaching content from scratch even if the user has submitted a similar prompt before. Do not inspect or copy another project's plan or narration. Read generation-request.json and write a new beat-plan.md before authoring. Read ../../references/DEFAULT_VISUAL_LANGUAGE.md before planning. The attached images come from the studio's strongest exemplar lessons: preserve their shared cinematic visual grammar, hierarchy, pacing, spaciousness, and Composite division of labor, but replace every subject-specific idea, label, formula, graphic, and narration passage for the user's topic. The complete integral pacing reference is available at ../../references/integral-house-style/integral-reference.mp4 when transition cadence or motion continuity needs deeper inspection. When reference-template/template-origin.json exists, reference-template/video.tsx, reference-template/composite.json, and reference-template/manim/*.py are an editable structural reference, never active finished source. Create the active files at the project root and treat the user's request as a full transformation, not a minimal patch: replace every source-specific element and every unused clip before rendering. Rendering is intentionally blocked until the request-specific plan and transformed active source are fresh.`;
+        : "This is a brand-new independent production in a clean project and thread. Plan the teaching content from scratch even if the user has submitted a similar prompt before. Do not inspect or copy another project's plan or narration. Read generation-request.json, then read ../../references/DEFAULT_VISUAL_LANGUAGE.md and follow its paper house style exactly, then write a new beat-plan.md before authoring scene.py. Rendering is intentionally blocked until the request-specific plan and fresh source exist.";
       const requestBody = options.agentRequest || (isRevision
         ? `Create revision ${targetVersion} of the existing animation with this request: ${text}`
-        : `Create the first editable ${project.renderer === "manim" ? "Manim" : project.renderer === "remotion" ? "Remotion" : "Remotion-composited Manim + React"} video for this prompt: ${text}`);
+        : `Create the first editable Manim video for this prompt: ${text}`);
       const request = `Current project workflow for this turn:
 - ${productionContext}
 - Read design-config.json and preserve its selected font category and palette.
 - Read narration-config.json. Voice is ${project.narrationPreferences.enabled ? "enabled; create and verify Speechify narration" : "disabled; render and validate a silent video without calling Speechify"}.
 - Read review-config.json and apply ../../skills/educational-video-reviewer/SKILL.md after rendering.
 - If this request introduces a real person, place, artifact, organism, or historical context, reconsider asset-decision.json and use the licensed candidate search workflow. Inspect at least three candidate previews before importing. For a localized revision, preserve existing assets unless the user asks to change them.
-- Keep the renderer locked to ${project.renderer}. The target output is ${generationTarget(project)}.
+- The target output is ${generationTarget(project)}.
 - Begin the final response with "${project.versions.length ? `Revision ${targetVersion} ready:` : "First draft ready:"}" so the user always knows which generation completed.
 
 ${requestBody}`;
@@ -865,7 +833,7 @@ ${requestBody}`;
         project.threadId,
         projectDir,
         request,
-        [...(options.localImagePaths || []), ...referenceFrames],
+        options.localImagePaths || [],
         project.generationPreferences.model,
         project.generationPreferences.reasoningEffort,
       );
@@ -978,7 +946,7 @@ ${requestBody}`;
 
       const output = path.join(this.projectRoot, project.id, "output.mp4");
       const poster = path.join(this.projectRoot, project.id, "poster.png");
-      const renderError = this.renderValidationError(path.join(this.projectRoot, project.id), project.renderer, project.narrationPreferences.enabled);
+      const renderError = this.renderValidationError(path.join(this.projectRoot, project.id), project.narrationPreferences.enabled);
       const hasFreshRender = this.currentRenderNeedsArchive(project);
       if (message.params.turn.status === "completed" && fs.existsSync(output) && hasFreshRender && !renderError) {
         const version = this.archiveVersion(project);
