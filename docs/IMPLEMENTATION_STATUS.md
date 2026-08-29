@@ -8,7 +8,7 @@ This is the current source of truth for implementation and staging status. The d
 
 The SaaS foundation is implemented and the staging website is online at `https://useorune.com`. Authentication, PostgreSQL persistence, Stripe sandbox billing, the private GCP edge, asynchronous jobs, E2B sandbox creation, Codex execution, private artifact storage, credit charging/refunds, and a complete silent generation have all passed real staging tests.
 
-Staging is **release-certified on `b7af3e5` with E2B template `lesson-studio-renderer:7c6ecc6`** (2026-08-29). This is the Manim-only release: Remotion is removed, lessons render in the paper house style with the shipped Orune Serif face (the template smoke now fails without it), and the certification sequence passed in order — template runtime smoke with the font check, ordered migrate/dispatcher/API deploy, clean Terraform apply with zero drift, the silent staging generation smoke (validated private MP4), the paid narrated payment smoke (hosted Checkout, signed webhooks, Customer Portal, narrated generation), and a real staff-account generation producing a narrated 41-second paper-style lesson with internally consistent mathematics.
+Staging is **release-certified on `f42671c` with E2B template `lesson-studio-renderer:f42671c`** (2026-08-29). This is the Manim-only release: Remotion is removed, lessons render in the paper house style with the shipped Orune Serif face (the template smoke now fails without it), and the certification sequence passed in order — template runtime smoke with the font check, ordered migrate/dispatcher/API deploy, clean Terraform apply with zero drift, the silent staging generation smoke (validated private MP4), the paid narrated payment smoke (hosted Checkout, signed webhooks, Customer Portal, narrated generation), and a real staff-account generation producing a narrated 41-second paper-style lesson with internally consistent mathematics.
 
 ## Current staging inventory
 
@@ -19,10 +19,10 @@ Staging is **release-certified on `b7af3e5` with E2B template `lesson-studio-ren
 | Canonical origin | `https://useorune.com` |
 | Load-balancer IP | `136.68.115.171` |
 | TLS | Google-managed certificate is `ACTIVE` |
-| Deployed app image | `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:b7af3e5` |
-| API revision | serves `app:b7af3e5` (see Cloud Run for the live revision name) |
-| Dispatcher revision | serves `app:b7af3e5` |
-| Deployed E2B template | `lesson-studio-renderer:7c6ecc6` (Manim-only, Orune Serif verified) |
+| Deployed app image | `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:f42671c` |
+| API revision | serves `app:f42671c` (see Cloud Run for the live revision name) |
+| Dispatcher revision | serves `app:f42671c` |
+| Deployed E2B template | `lesson-studio-renderer:f42671c` (Manim-only; both Orune Serif optical cuts and the manim_paper typography gate verified) |
 | Stripe | Temporary CLI sandbox; expires 2026-09-04 |
 | Staging capacity | Two active E2B sandboxes, API maximum three instances |
 | GCP budget | $20 monthly alert, not a hard cap; external providers excluded |
