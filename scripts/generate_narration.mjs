@@ -36,9 +36,10 @@ async function main() {
   }
 
   const apiKey = process.env.SPEECHIFY_API_KEY?.trim();
+  const proxyUrl = process.env.NARRATION_PROXY_URL?.trim();
   const callbackUrl = process.env.JOB_CALLBACK_URL?.trim();
   const callbackToken = process.env.JOB_CALLBACK_TOKEN?.trim();
-  if (!apiKey && (!callbackUrl || !callbackToken)) fail("A server-scoped Speechify provider is required. Narration will not use a fallback voice.");
+  if (!apiKey && !proxyUrl && (!callbackUrl || !callbackToken)) fail("A server-scoped Speechify provider is required. Narration will not use a fallback voice.");
 
   let segments;
   try {
@@ -98,9 +99,12 @@ async function main() {
             language: "en-US",
           });
         } else {
-          const providerResponse = await fetch(`${callbackUrl}/narration`, {
+          const providerResponse = await fetch(proxyUrl || `${callbackUrl}/narration`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${callbackToken}`, "Content-Type": "application/json" },
+            headers: {
+              ...(proxyUrl ? {} : { Authorization: `Bearer ${callbackToken}` }),
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({ index, text: segment.text }),
           });
           if (!providerResponse.ok) throw new Error(`Scoped narration failed with HTTP ${providerResponse.status}.`);
