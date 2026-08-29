@@ -19,14 +19,14 @@ COPY package.json package-lock.json ./
 RUN npm ci --include=dev \
     && npx remotion browser ensure \
     && mkdir -p /opt/lesson-studio/app \
-    && python3 -m venv /opt/lesson-studio/app/venv \
-    && /opt/lesson-studio/app/venv/bin/pip install --no-cache-dir --retries 10 --timeout 120 "manim>=0.19,<0.20"
+    && python3 -m venv /opt/lesson-studio/app/.venv \
+    && /opt/lesson-studio/app/.venv/bin/python -m pip install --no-cache-dir --retries 10 --timeout 120 "manim>=0.19,<0.20"
 
 WORKDIR /opt/lesson-studio/app
 COPY . .
 RUN mkdir -p /opt/lesson-studio /workspace studio/projects \
     && mv /opt/lesson-studio/deps/node_modules node_modules \
-    && ln -s venv .venv \
+    && ln -s .venv venv \
     && chmod 0555 e2b/bootstrap.mjs \
     && chown -R node:node /workspace studio/projects \
     && chmod 0770 /workspace studio/projects

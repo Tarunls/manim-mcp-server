@@ -16,3 +16,12 @@ test("runtime prefers the local hidden virtualenv and supports the visible E2B e
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("sandbox renderers invoke Manim through the virtualenv interpreter", () => {
+  const root = path.resolve(import.meta.dirname, "..");
+  for (const script of ["render_scene.py", "render_manim_insert.py"]) {
+    const source = fs.readFileSync(path.join(root, "scripts", script), "utf8");
+    assert.match(source, /str\(python\)[\s\S]{0,100}"-m",[\s\S]{0,40}"manim"/);
+    assert.doesNotMatch(source, /str\(manim\)/);
+  }
+});

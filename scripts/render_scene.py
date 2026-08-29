@@ -118,16 +118,19 @@ def main() -> None:
     if "RoundedRectangle(" in code and "assert_inside(" not in code:
         fail("Panel-based scenes must call assert_inside for every panel's content.")
 
-    # A virtualenv puts executables in Scripts/ on Windows and bin/ elsewhere.
+    # Invoke Manim as a Python module. Console-script shebangs embed the build
+    # path and can become invalid when a sandbox image is snapshotted/mounted.
     venv = root / (".venv" if (root / ".venv").exists() else "venv")
-    manim = (venv / "Scripts" / "manim.exe" if os.name == "nt"
-             else venv / "bin" / "manim")
-    if not manim.exists():
+    python = (venv / "Scripts" / "python.exe" if os.name == "nt"
+              else venv / "bin" / "python")
+    if not python.exists():
         fail("Manim is not installed in the project virtual environment. Run: npm run setup:manim")
 
     media_dir = project_dir / ".media"
     command = [
-        str(manim),
+        str(python),
+        "-m",
+        "manim",
         *QUALITY_ARGS[quality],
         "--disable_caching",
         "--media_dir",
