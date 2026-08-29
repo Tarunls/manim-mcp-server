@@ -36,6 +36,7 @@ import {
   CodexBudgetExceededError,
   ScopedCodexProxy,
 } from "./scoped-codex-proxy.js";
+import { attachScopedCodexWebSocketProxy } from "./scoped-codex-websocket.js";
 import { routeAllowedForService, type ServiceRole } from "./service-role.js";
 import type {
   BillingPlanId,
@@ -1649,6 +1650,7 @@ if (process.env.NODE_ENV === "production") {
 const server = app.listen(port, host, () => {
   console.log(`Lesson Studio is running at http://${host}:${port}`);
 });
+attachScopedCodexWebSocketProxy(server, { generations, proxy: scopedCodex });
 
 if (!generations.configured) void studio.initialize();
 

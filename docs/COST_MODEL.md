@@ -1,6 +1,6 @@
 # Cost and margin model
 
-Updated: 2026-08-24
+Updated: 2026-08-29
 
 This is an operating model, not a guarantee. Provider prices and generation behavior change, so recorded usage and invoices remain the source of truth.
 
@@ -30,10 +30,14 @@ At standard US card rates, approximate revenue after the payment transaction fee
 
 - Faster and Balanced use `gpt-5.6-terra`; Try harder uses `gpt-5.6-sol`.
 - The API overwrites any sandbox-supplied model selection.
-- Each provider response is capped at 12,000 output tokens and a generation is capped at 12 OpenAI calls.
+- Each provider response is capped at 12,000 output tokens. A generation may make up to 64 OpenAI calls so a real agent can complete, but an independent estimated-cost cutoff is the primary spend guard: $2 for Faster/Balanced and $4 for Try harder.
 - Provider-call records store model, status, input tokens, cached tokens, output tokens, and an estimated micro-USD cost without storing provider response content.
 - Staging starts with two concurrent E2B sandboxes and three API instances.
 - The E2B sandbox has a 30-minute lifetime and is terminated on completion, cancellation, or dispatch failure.
 - The project has a $20 monthly GCP alerting budget at 50%, 80%, 100%, and forecasted 100%. Google documents that ordinary budget alerts do not enforce a hard spending cap.
 
 The $20 GCP budget does not include OpenAI, E2B, Speechify, or Stripe. Those providers need their own account-level limits. No public plan should be marketed with an unlimited-generation promise.
+
+One measured 32-turn failed staging generation used 923,724 input tokens, of which 876,410 were cached, plus 12,061 output tokens. The application estimated that run at $0.518306. This is useful evidence that the 64-call ceiling is not itself an uncontrolled retry loop, but it is not a successful-video cost estimate. Record and compare successful silent and narrated jobs before changing allowances, pricing, or margin claims.
+
+The temporary Stripe CLI sandbox expires on 2026-09-04. Its test transactions do not validate live card economics, disputes, refunds, taxes, or operational support cost.

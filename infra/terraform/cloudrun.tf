@@ -17,6 +17,10 @@ locals {
     E2B_MAX_CONCURRENT_SANDBOXES              = tostring(var.max_concurrent_sandboxes)
     E2B_TEMPLATE                              = "lesson-studio-renderer"
     E2B_TEMPLATE_VERSION                      = var.e2b_template_version
+    # The estimated-cost ceiling is the primary per-job budget; the call count
+    # is a generous backstop. A complete video commonly needs far more than a
+    # dozen agent turns for planning, authoring, rendering, inspection, and
+    # repair, so keep the ceiling finite without cutting normal work short.
     CODEX_MAX_API_CALLS_PER_JOB               = tostring(var.codex_max_api_calls_per_job)
     CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB = tostring(var.codex_max_estimated_cost_microusd_per_job)
     CODEX_MAX_OUTPUT_TOKENS_PER_CALL          = "12000"

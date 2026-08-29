@@ -17,6 +17,7 @@
     "smoke:identity": "node --env-file-if-exists=.env --import tsx scripts/smoke_identity.ts",
     "smoke:stripe": "node --env-file-if-exists=.env --import tsx scripts/smoke_stripe.ts",
     "smoke:staging": "node --env-file-if-exists=.env --import tsx scripts/smoke_staging_e2e.ts",
+    "smoke:staging-payment": "node --env-file-if-exists=.env --import tsx scripts/smoke_staging_payment.ts",
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
     "test:e2e": "playwright test",
     "setup:manim": "node scripts/setup_manim.mjs",
@@ -50,7 +51,8 @@
     "react-dom": "^19.1.1",
     "remotion": "^4.0.514",
     "stripe": "^22.5.0",
-    "tsx": "^4.20.5"
+    "tsx": "^4.20.5",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -61,6 +63,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.2",
     "typescript": "^5.9.2",
     "vite": "^7.1.3"

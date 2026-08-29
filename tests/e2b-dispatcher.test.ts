@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { Sandbox } from "e2b";
-import { E2BDispatcher } from "../server/e2b-dispatcher.js";
+import { E2BDispatcher, e2bExecutionTimeouts } from "../server/e2b-dispatcher.js";
 import type { ArtifactService } from "../server/artifact-service.js";
 import type { HostedGenerationService, HostedJob } from "../server/hosted-generation-service.js";
 
@@ -10,6 +10,7 @@ const previous = {
   E2B_TEMPLATE: process.env.E2B_TEMPLATE,
   E2B_TEMPLATE_VERSION: process.env.E2B_TEMPLATE_VERSION,
   JOB_CALLBACK_BASE_URL: process.env.JOB_CALLBACK_BASE_URL,
+  E2B_SANDBOX_TIMEOUT_MS: process.env.E2B_SANDBOX_TIMEOUT_MS,
 };
 
 afterEach(() => {
@@ -73,6 +74,7 @@ test("dispatcher always starts the exact immutable template and records its leas
   const job = activeJob();
   let template = "";
   let started: string[] = [];
+  let commandOptions: Record<string, unknown> | undefined;
   const generations = {
     configured: true,
     claimDispatch: async () => job,
@@ -100,7 +102,10 @@ test("dispatcher always starts the exact immutable template and records its leas
     sandboxId: "sandbox-1",
     files: { write: async () => undefined },
     commands: {
-      run: async () => ({ disconnect: async () => undefined }),
+      run: async (_command: string, options: Record<string, unknown>) => {
+        commandOptions = options;
+        return { disconnect: async () => undefined };
+      },
     },
     kill: async () => undefined,
   };
@@ -115,7 +120,23 @@ test("dispatcher always starts the exact immutable template and records its leas
   const result = await new E2BDispatcher(generations, artifacts, sandboxApi).dispatch(job.id);
   assert.equal(template, "lesson-studio-renderer:release-abc123");
   assert.deepEqual(started, [job.id, job.dispatchLeaseId, "sandbox-1"]);
+  assert.deepEqual(commandOptions, {
+    background: true,
+    cwd: "/workspace",
+    timeoutMs: 44 * 60_000,
+    requestTimeoutMs: 30_000,
+  });
   assert.equal(result.status, "running");
+});
+
+test("E2B execution timeout keeps the bootstrap alive beyond the request timeout", () => {
+  process.env.E2B_SANDBOX_TIMEOUT_MS = String(30 * 60_000);
+  assert.deepEqual(e2bExecutionTimeouts(), {
+    sandboxMs: 30 * 60_000,
+    agentMs: 28 * 60_000,
+    commandMs: 29 * 60_000,
+    requestMs: 30_000,
+  });
 });
 
 test("reconcile terminates and clears every terminal sandbox", async () => {

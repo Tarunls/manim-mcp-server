@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { randomBytes, randomUUID } from "node:crypto";
+import { GoogleAuth } from "google-auth-library";
 import type { StudioEvent, StudioProject } from "../server/types.js";
 
-const execFileAsync = promisify(execFile);
 const baseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
 const projectId = process.env.GCP_PROJECT?.trim();
 if (!baseUrl?.startsWith("https://")) throw new Error("APP_BASE_URL must be the staging HTTPS origin.");
@@ -17,6 +15,9 @@ let csrfToken = "";
 let identityId = "";
 let project: StudioProject | undefined;
 let authenticated = false;
+const googleAuth = new GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+});
 
 function captureCookies(response: Response) {
   const values = response.headers.getSetCookie?.() || [];
@@ -45,8 +46,11 @@ async function appRequest<T>(path: string, init: RequestInit = {}) {
 }
 
 async function accessToken() {
-  const { stdout } = await execFileAsync("gcloud", ["auth", "print-access-token"]);
-  return stdout.trim();
+  const client = await googleAuth.getClient();
+  const result = await client.getAccessToken();
+  const token = typeof result === "string" ? result : result.token;
+  if (!token) throw new Error("Google application-default credentials did not return an access token.");
+  return token;
 }
 
 async function identityRequest(path: string, body: unknown) {
@@ -71,6 +75,7 @@ async function forceDeleteIdentity() {
 }
 
 async function main() {
+  console.log("Staging smoke: checking public auth status.");
   const status = await appRequest<{ csrfToken: string }>("/api/auth/status");
   csrfToken = status.csrfToken;
   const signup = await appRequest<{ user: { uid: string }; verificationRequired: boolean }>("/api/auth/signup", {
@@ -79,15 +84,18 @@ async function main() {
   });
   identityId = signup.user.uid;
   assert.equal(signup.verificationRequired, true);
+  console.log("Staging smoke: disposable signup created and verification required.");
   await identityRequest("update", { localId: identityId, emailVerified: true });
   await appRequest("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   authenticated = true;
+  console.log("Staging smoke: email verified and session established.");
 
   const checkout = await appRequest<{ url: string }>("/api/billing/checkout", {
     method: "POST",
     body: JSON.stringify({ plan: "creator" }),
   });
   assert.match(checkout.url, /^https:\/\/checkout\.stripe\.com\//);
+  console.log("Staging smoke: Stripe test checkout session created.");
 
   project = await appRequest<StudioProject>("/api/projects", { method: "POST", body: "{}" });
   const accepted = await appRequest<{ jobId: string }>(`/api/projects/${project.id}/messages`, {
@@ -101,13 +109,20 @@ async function main() {
     }),
   });
   assert.match(accepted.jobId, /^[0-9a-f-]{36}$/i);
+  console.log(`Staging smoke: generation accepted (${accepted.jobId}).`);
 
   const deadline = Date.now() + Number(process.env.STAGING_SMOKE_TIMEOUT_MS || 20 * 60_000);
+  let lastProgress = "";
   while (Date.now() < deadline) {
     const event = await appRequest<StudioEvent>("/api/state");
     if (event.type !== "snapshot") throw new Error("Staging state did not return a snapshot.");
     project = event.projects.find((candidate) => candidate.id === project!.id);
     if (!project) throw new Error("Smoke project disappeared.");
+    const progress = `${project.status}:${project.stage}`;
+    if (progress !== lastProgress) {
+      console.log(`Staging smoke: project ${progress}.`);
+      lastProgress = progress;
+    }
     if (project.status === "error" || project.status === "cancelled")
       throw new Error(project.error || `Generation ended as ${project.status}.`);
     if (project.status === "complete") break;
@@ -128,6 +143,21 @@ async function main() {
 
 try {
   await main();
+} catch (error) {
+  if (authenticated) {
+    const exported = await appRequest<{
+      providerUsage?: {
+        input_tokens?: string;
+        cached_input_tokens?: string;
+        output_tokens?: string;
+        estimated_cost_microusd?: string;
+      };
+    }>("/api/account/export").catch(() => undefined);
+    if (exported?.providerUsage) {
+      console.error(`Staging smoke: provider usage before cleanup ${JSON.stringify(exported.providerUsage)}.`);
+    }
+  }
+  throw error;
 } finally {
   if (authenticated) {
     if (project?.status === "running")

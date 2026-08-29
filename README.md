@@ -2,7 +2,9 @@
 
 ## Lesson Studio MVP
 
-The production foundation is implemented; staging and launch certification remain. The trust boundaries, data flow, and security requirements are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), with current progress in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+The production foundation and custom-domain staging infrastructure are implemented; final narrated-generation and launch certification remain. The trust boundaries and data flow are documented in [docs/PRODUCTION_ARCHITECTURE.md](docs/PRODUCTION_ARCHITECTURE.md), current evidence and blockers are in [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md), and the exact next-agent continuation is in [docs/GCP_ADMIN_LLM_HANDOFF.md](docs/GCP_ADMIN_LLM_HANDOFF.md).
+
+Current staging is online at `https://useorune.com`. Auth, Stripe sandbox provisioning/Portal, private PostgreSQL/GCS data, E2B/Codex execution, and a complete silent video have passed real staging tests. The deployed release `004c9c7` is **not** fully certified: its paid narrated test exposed a relocatable Manim launcher path. Commit `c74eb0d` fixes the renderer and has a successfully built application image, but its matching E2B template still must be built, smoked, deployed, and retested. Do not treat the current staging environment as public-production ready.
 
 Hosted mode uses `EXECUTION_MODE=e2b`, PostgreSQL, Cloud Tasks, private GCS artifacts, and a pinned E2B template. Build that template with `npm run e2b:build-template`; production startup intentionally fails if any required hosted dependency is missing.
 
@@ -61,7 +63,7 @@ Never put the key in a `VITE_*` variable. Vite exposes those values to browser c
 
 Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
 
-Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. Hosted E2B workers instead receive an active-job-scoped proxy token in `.env`; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Internally, Faster uses a cost-conscious configuration, Balanced preserves the studio's established high-quality default, and Try harder adds deeper reasoning for difficult generations.
+Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. Hosted E2B workers instead receive an active-job-scoped proxy token in `.env`; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. Codex uses the current Responses WebSocket transport through the same authenticated relay. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Lesson Studio presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Jobs may make up to 64 provider calls, but independent estimated-cost limits stop normal work at $2 and Try harder work at $4.
 
 ### Billing
 
@@ -126,9 +128,11 @@ npm run gcp:storage # attach persistent Cloud Storage data
 npm run smoke:identity # temporary real Identity Platform account/session test
 npm run smoke:stripe # real sandbox Checkout creation against a disposable DB user
 npm run smoke:e2b # pinned no-internet E2B runtime test with guaranteed teardown
+npm run smoke:staging # public auth, Checkout-session, E2B, artifact, and cleanup smoke
+npm run smoke:staging-payment # hosted Checkout, webhook, Portal, paid narration, and cleanup gate
 ```
 
-If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.
+If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/python -m manim --version`, `ffmpeg -version`, and `ffprobe -version` work from the repository root. Render helpers use `python -m manim` because a console-script shebang can become invalid when an E2B image is snapshotted or mounted. The MVP binds to `127.0.0.1:4321` by default; set `PORT` to use another local port.
 
 ### How generation works
 
@@ -140,7 +144,7 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/manim
 6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
 7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
 
-The server binds to `127.0.0.1` for local MVP use. Do not expose it directly to the internet. A hosted version should move rendering into isolated workers and add application authentication, rate limits, object storage, and per-user project authorization.
+Local mode binds to `127.0.0.1` and should not be exposed directly. Hosted mode already places rendering in isolated E2B workers and uses Identity Platform, rate limits, PostgreSQL ownership checks, Cloud Tasks, and private object storage. Follow the production architecture and checklist rather than exposing the local mode.
 
 ### Production build
 

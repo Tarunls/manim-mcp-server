@@ -29,6 +29,11 @@ export class CodexBudgetExceededError extends Error {
   readonly terminal = true;
 }
 
+type ReservedCall = {
+  callId: string;
+  model: string;
+};
+
 export function codexPolicy(effort: HostedJob["effort"]) {
   return {
     model: effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
@@ -39,6 +44,16 @@ export function codexPolicy(effort: HostedJob["effort"]) {
       32_000,
     ),
   } as const;
+}
+
+export function codexCostLimitMicrousd(effort: HostedJob["effort"]) {
+  const base = boundedInteger(
+    process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB,
+    2_000_000,
+    100_000,
+    20_000_000,
+  );
+  return effort === "thorough" ? base * 2 : base;
 }
 
 export function constrainCodexRequest(
@@ -151,20 +166,8 @@ export class ScopedCodexProxy {
     return Boolean(this.db.configured && process.env.OPENAI_API_KEY?.trim());
   }
 
-  async responses(
-    job: HostedJob,
-    body: unknown,
-    options: {
-      headers?: Record<string, string | undefined>;
-      compact?: boolean;
-    } = {},
-  ) {
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!apiKey) throw new Error("OpenAI is not configured.");
-    const constrained = constrainCodexRequest(job, body, options.compact);
-    const serialized = JSON.stringify(constrained);
-    if (!serialized || serialized.length > 16 * 1024 * 1024)
-      throw new Error("OpenAI request is invalid.");
+  private async reserve(job: HostedJob, serialized: string): Promise<ReservedCall> {
+    const constrained = JSON.parse(serialized) as Record<string, unknown>;
     const callId = randomUUID();
     const requestHash = createHash("sha256").update(serialized).digest("hex");
     await this.db.transaction(async (client) => {
@@ -187,17 +190,12 @@ export class ScopedCodexProxy {
       // the generous call-count clamp below is the backstop.
       const usage = await client.query<{ count: string; cost: string }>(
         `SELECT count(*)::text AS count,
-                COALESCE(SUM(estimated_cost_microusd), 0)::text AS cost
-           FROM job_provider_calls WHERE job_id = $1 AND provider = 'openai'`,
+                COALESCE(sum(estimated_cost_microusd), 0)::text AS cost
+           FROM job_provider_calls
+          WHERE job_id = $1 AND provider = 'openai'`,
         [job.id],
       );
-      const budget = boundedInteger(
-        process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB,
-        2_000_000,
-        100_000,
-        20_000_000,
-      );
-      if (Number(usage.rows[0]?.cost || 0) >= budget)
+      if (Number(usage.rows[0]?.cost || 0) >= codexCostLimitMicrousd(job.effort))
         throw new CodexBudgetExceededError(
           "OpenAI cost budget reached for this generation.",
         );
@@ -223,6 +221,68 @@ export class ScopedCodexProxy {
         ],
       );
     });
+    return { callId, model: String(constrained.model) };
+  }
+
+  async completeCall(call: ReservedCall, status: number, body: unknown) {
+    const usage = usageFrom(body);
+    await this.db.query(
+      `UPDATE job_provider_calls SET response_status = $2, completed_at = now(),
+       input_tokens = $3, cached_input_tokens = $4, output_tokens = $5,
+       estimated_cost_microusd = $6
+       WHERE id = $1`,
+      [
+        call.callId,
+        status,
+        usage?.inputTokens || 0,
+        usage?.cachedInputTokens || 0,
+        usage?.outputTokens || 0,
+        usage ? estimatedCostMicrousd(call.model, usage) : 0,
+      ],
+    );
+  }
+
+  async discardCall(call: ReservedCall) {
+    await this.db
+      .query("DELETE FROM job_provider_calls WHERE id = $1", [call.callId])
+      .catch(() => undefined);
+  }
+
+  async prepareWebSocketMessage(job: HostedJob, body: unknown) {
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new Error("OpenAI request is invalid.");
+    const incoming = body as Record<string, unknown>;
+    if (incoming.type !== "response.create")
+      throw new Error("Unsupported OpenAI WebSocket event.");
+    const constrained = constrainCodexRequest(job, incoming);
+    constrained.type = "response.create";
+    const serialized = JSON.stringify(constrained);
+    if (!serialized || serialized.length > 16 * 1024 * 1024)
+      throw new Error("OpenAI request is invalid.");
+    // Codex sends a generate:false prewarm event when the socket opens. It does
+    // not create a billable model response, so it is bounded by the socket
+    // message limit but intentionally omitted from provider-call accounting.
+    const call = incoming.generate === false
+      ? undefined
+      : await this.reserve(job, serialized);
+    return { serialized, call };
+  }
+
+  async responses(
+    job: HostedJob,
+    body: unknown,
+    options: {
+      headers?: Record<string, string | undefined>;
+      compact?: boolean;
+    } = {},
+  ) {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) throw new Error("OpenAI is not configured.");
+    const constrained = constrainCodexRequest(job, body, options.compact);
+    const serialized = JSON.stringify(constrained);
+    if (!serialized || serialized.length > 16 * 1024 * 1024)
+      throw new Error("OpenAI request is invalid.");
+    const call = await this.reserve(job, serialized);
     try {
       const headers: Record<string, string> = {
         Authorization: `Bearer ${apiKey}`,
@@ -262,29 +322,16 @@ export class ScopedCodexProxy {
       void boundedResponseBody(copy, 2 * 1024 * 1024)
         .then(async (responseBody) => {
           const usage = usageFromResponseBody(responseBody);
-          await this.db.query(
-            `UPDATE job_provider_calls SET response_status = $2, completed_at = now(),
-             input_tokens = $3, cached_input_tokens = $4, output_tokens = $5,
-             estimated_cost_microusd = $6
-           WHERE id = $1`,
-            [
-              callId,
-              upstream.status,
-              usage?.inputTokens || 0,
-              usage?.cachedInputTokens || 0,
-              usage?.outputTokens || 0,
-              usage
-                ? estimatedCostMicrousd(String(constrained.model), usage)
-                : 0,
-            ],
-          );
+          await this.completeCall(call, upstream.status, usage ? { usage: {
+            input_tokens: usage.inputTokens,
+            input_tokens_details: { cached_tokens: usage.cachedInputTokens },
+            output_tokens: usage.outputTokens,
+          } } : {});
         })
         .catch(() => undefined);
       return upstream;
     } catch (error) {
-      await this.db
-        .query("DELETE FROM job_provider_calls WHERE id = $1", [callId])
-        .catch(() => undefined);
+      await this.discardCall(call);
       throw error;
     }
   }

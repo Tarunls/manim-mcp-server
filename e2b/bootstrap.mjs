@@ -6,6 +6,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { Codex } from "@openai/codex-sdk";
+import { startNarrationProxy } from "./narration-proxy.mjs";
 
 const execFileAsync = promisify(execFile);
 const job = JSON.parse(await fs.readFile("/workspace/job.json", "utf8"));
@@ -16,10 +17,25 @@ const callbackUrl = process.env.JOB_CALLBACK_URL;
 const callbackToken = process.env.JOB_CALLBACK_TOKEN;
 const apiKey = process.env.OPENAI_API_KEY;
 const openaiBaseUrl = process.env.OPENAI_BASE_URL;
+let narrationProxy;
 
 function required(value, name) {
   if (!value) throw new Error(`${name} is missing from the sandbox environment.`);
   return value;
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function callback(suffix, body) {
@@ -183,14 +199,17 @@ Lesson brief:
 <lesson_brief>
 ${String(job.prompt).slice(0, 12000)}
 </lesson_brief>`;
+  narrationProxy = job.narrationPreferences?.enabled
+    ? await startNarrationProxy({ callbackUrl, callbackToken })
+    : undefined;
   const codex = new Codex({
     apiKey,
     baseUrl: openaiBaseUrl,
-    config: { features: { responses_websockets: false } },
     env: {
-      PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+      PATH: `${appRoot}/.venv/bin:${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}`,
       HOME: process.env.HOME || "/home/user",
       TMPDIR: "/tmp",
+      ...(narrationProxy ? { NARRATION_PROXY_URL: narrationProxy.url } : {}),
     },
   });
   const thread = codex.startThread({
@@ -203,7 +222,17 @@ ${String(job.prompt).slice(0, 12000)}
     model: job.effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
     modelReasoningEffort: job.effort === "thorough" ? "xhigh" : job.effort === "balanced" ? "high" : "medium",
   });
-  const turn = await thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions);
+  const requestedAgentTimeout = Number(process.env.GENERATION_AGENT_TIMEOUT_MS);
+  const agentTimeoutMs = Number.isSafeInteger(requestedAgentTimeout) && requestedAgentTimeout >= 60_000
+    ? Math.min(requestedAgentTimeout, 58 * 60_000)
+    : 25 * 60_000;
+  const turn = await withTimeout(
+    thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions),
+    agentTimeoutMs,
+    "Codex generation exceeded its execution deadline.",
+  );
+  await narrationProxy?.close();
+  narrationProxy = undefined;
   for (const filename of ["output.mp4", "metadata.json"]) {
     if (!await exists(path.join(projectRoot, filename))) {
       throw new Error(`Codex completed without ${filename}. Agent response: ${redactSecrets(turn.finalResponse, 2_000)}`);
@@ -224,6 +253,8 @@ ${String(job.prompt).slice(0, 12000)}
   if (await exists(path.join(projectRoot, "contact-sheet.png"))) uploaded.push(await upload("contact_sheet", path.join(projectRoot, "contact-sheet.png")));
   await callback("/complete", { artifacts: uploaded, assistantMessage: redactSecrets(turn.finalResponse) });
 } catch (error) {
+  await narrationProxy?.close().catch(() => undefined);
+  narrationProxy = undefined;
   const diagnostic = redactSecrets(error instanceof Error ? error.stack || error.message : "Sandbox generation failed.");
   await fs.writeFile("/workspace/failure.log", `${diagnostic}\n`, { mode: 0o600 }).catch(() => undefined);
   await fs.rm(sandboxEnvPath, { force: true }).catch(() => undefined);

@@ -36,14 +36,14 @@ def main() -> None:
         fail("Insert output must stay inside the project.")
     transparent = sys.argv[5].lower() == "true"
     venv = root / (".venv" if (root / ".venv").exists() else "venv")
-    manim = venv / ("Scripts/manim.exe" if os.name == "nt" else "bin/manim")
-    if not manim.exists():
+    python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if not python.exists():
         fail("Manim is not installed in the project virtual environment.")
     media_dir = project_dir / ".composite-media" / output_dir.name
     if media_dir.exists():
         shutil.rmtree(media_dir)
     command = [
-        str(manim), "-r", "1920,1080", "--fps", "30", "--disable_caching", "--save_pngs", "--zero_pad", "6",
+        str(python), "-m", "manim", "-r", "1920,1080", "--fps", "30", "--disable_caching", "--save_pngs", "--zero_pad", "6",
         "--media_dir", str(media_dir),
     ]
     if transparent:

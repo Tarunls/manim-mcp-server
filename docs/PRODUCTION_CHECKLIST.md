@@ -1,49 +1,93 @@
 # Production launch checklist
 
-## Security
+Updated: 2026-08-29
 
-- Identity Platform authorized domains contain only staging and production domains.
-- Session cookies are `Secure`, host-only, `httpOnly`, and revocation-tested.
-- Cross-user project, job, artifact, review, and billing requests return `404` or `401` without leaking existence.
-- Cloud Run dispatcher rejects public callers and accepts only the Cloud Tasks OIDC service account.
-- The API `run.app` URL cannot bypass the HTTPS load balancer or Cloud Armor, and HTTP redirects to the canonical HTTPS origin. Satisfied for staging on 2026-08-28: the external edge and `useorune.com` certificate are live, the canonical origin is `https://useorune.com`, and API ingress is internal-and-cloud-load-balancing.
-- E2B egress tests prove arbitrary hosts and direct OpenAI access are blocked; `.env` contains only a job-scoped proxy token, is mode `0600`, excluded from archives, and deleted.
-- A completed/cancelled job and another job's proxy token cannot call the OpenAI proxy; the per-job budget remains enforced under concurrency. The estimated-cost ceiling (`CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB`) is the primary enforced budget, the call count (`CODEX_MAX_API_CALLS_PER_JOB`) is a backstop, and exhaustion returns a terminal `400`.
-- GCS public access prevention and uniform bucket-level access are enabled.
-- Secret Manager access logs show the API/dispatcher split described in the runbook.
-- Dependency audit reports no high or critical vulnerabilities; SAST and container scanning pass.
-- Only protected, reviewed release branches can invoke the privileged build/deploy identity; untrusted pull requests cannot run with it.
-- Every deployed image tag corresponds to a pushed commit in this repository. Currently unmet: the staging image/template tag `004c9c7` is not a commit here; rebuild from a pushed commit before certification.
+Unchecked items are blockers. Staging evidence is not automatically production evidence.
 
-## Reliability
+## Current staging acceptance
 
-- Cloud SQL regional HA, PITR, automated backups, deletion protection, and a restore drill are verified.
-- Duplicate browser requests, Stripe webhooks, Cloud Tasks deliveries, and sandbox callbacks do not double-charge or create duplicate versions.
-- Queue pause/resume, E2B quota exhaustion, OpenAI throttling, sandbox timeout, callback timeout, and invalid artifact paths are exercised.
-- Failed or cancelled generations refund credits exactly once.
-- A failure at every pre-sandbox dispatch step leaves no job in `dispatching`; retryable failures release the lease and terminal failures store only a generic user message.
-- The scheduled reconciler is invoked with its OIDC identity, expires stale dispatch/running/upload leases, drains durable sandbox-cleanup outbox entries after complete/fail/cancel, and remains idempotent on replay and account deletion.
-- MP4, PNG, gzip, and metadata validation reject content-type spoofing, malformed metadata, oversized input, unsafe archives, links, special files, and secret material.
-- A prior API image and prior E2B template can be restored independently.
+- [x] `useorune.com` DNS points to the managed edge.
+- [x] Google-managed TLS certificate is active.
+- [x] HTTP redirects to HTTPS.
+- [x] Direct `run.app` access cannot bypass the edge.
+- [x] Identity Platform authorizes the custom domain.
+- [x] Disposable signup, verification, login/session, and cleanup passed.
+- [x] Stripe-hosted sandbox Checkout, signed webhook provisioning, Creator credits, Customer Portal, cancellation, and cleanup passed.
+- [x] A silent public E2B/Codex generation produced and privately downloaded a validated MP4.
+- [x] Failed narrated generation restored the credit and hid private diagnostics.
+- [x] Candidate renderer fix `c74eb0d` passed local/Cloud Build gates and its app image was published.
+- [ ] Build and smoke `lesson-studio-renderer:c74eb0d`.
+- [ ] Deploy `app:c74eb0d` and pin both services to the matching template.
+- [ ] Complete paid narrated generation with Speechify audio and a private MP4.
+- [ ] Rerun silent generation, Playwright, dependency audit, and no-drift Terraform plan after the final deploy.
+- [ ] Remove obsolete temporary E2B release/smoke/diagnostic jobs.
 
-## Scale gate
+## Authentication and privacy
 
-- Load test at least the target submission rate with realistic authenticated sessions and SSE connections.
-- Confirm API p95 latency, Cloud SQL connection count/CPU, outbox age, queue age, task retries, active sandboxes, job completion latency, and provider error rate remain within the launch SLO.
-- Cloud Tasks concurrency is at or below contracted E2B concurrency and verified OpenAI throughput.
-- Per-plan active-job limits and global concurrency remain enforced under concurrent submissions.
-- Do not claim thousands of simultaneous renders unless E2B and OpenAI have confirmed that active capacity; thousands of durable queued submissions are a separate claim.
+- [x] Verified email is required before an application session is created.
+- [x] Session cookies are `Secure`, host-only, `httpOnly`, `SameSite=Lax`, and exact-name parsed.
+- [x] CSRF double-submit and exact-origin checks fail closed.
+- [x] Password reset is enumeration-safe.
+- [x] User-owned repositories scope project/job/artifact/billing reads and writes by owner.
+- [x] Data export and account deletion are implemented.
+- [ ] Manually retest cross-user project, job, artifact, review, billing, export, and deletion IDs against staging.
+- [ ] Review production email verification/reset sender, templates, localization, and action links.
+- [ ] Publish reviewed privacy, terms, retention, deletion, subprocessor, support, and abuse policies.
+- [ ] Rotate credentials ever shared outside Secret Manager before production.
 
-## Product and operations
+## Billing
 
-- Production Stripe prices, Customer Portal, tax/legal settings, webhook destination, and refund/support process are verified.
-- Privacy policy, terms, retention/deletion process, support contact, and abuse response are published.
-- Monitoring notification channels and on-call ownership are configured; alert tests reach a human. Terraform now defines an email channel (`alert_email`) wired into all alert policies; it takes effect at the next deliberate `terraform apply`.
-- Staging end-to-end silent and narrated videos pass visual, audio, artifact, and download checks.
+- [x] Server-enforced staging prices/credits are Creator $20/10, Pro $50/30, Studio $100/70.
+- [x] Entitlement activates only from a verified Stripe webhook.
+- [x] Webhook replay/idempotency has automated coverage.
+- [x] Customer Portal is owner-scoped.
+- [x] Account deletion cancels an active subscription.
+- [ ] Replace or claim the temporary sandbox before 2026-09-04.
+- [ ] Create distinct live restricted Stripe and webhook secrets.
+- [ ] Verify production products, prices, Portal configuration, upgrade/downgrade, renewal, failed invoice, cancellation, refund, and dispute flows.
+- [ ] Keep `ALLOW_TEST_CHECKOUT=false` and require live billing mode in production.
+- [ ] Complete tax registration/policy decisions before enabling Stripe Tax.
 
-## Current release blockers (2026-08-28)
+## Sandbox and generation security
 
-- `npm run smoke:staging` passed disposable signup, administrator verification, login/session creation, PostgreSQL persistence, Stripe sandbox Checkout creation, Cloud Tasks dispatch, E2B creation, scoped Codex callback authentication, safe failure handling, refund, and account cleanup. A full narrated staging generation through the callback-to-artifact path has still not passed end to end.
-- A distinct live restricted Stripe key for production has not been selected or stored; the current isolated key is staging-only.
-- Load, restore, and rollback certification remain outstanding.
-- Rerun both silent and narrated staging generation before checking the final product-and-operations item.
+- [x] API and dispatcher have separate service accounts, routes, and secret grants.
+- [x] Dispatcher is private and Cloud Tasks uses OIDC.
+- [x] One disposable E2B sandbox is created per job from an immutable tag.
+- [x] The upstream OpenAI key remains in the API service.
+- [x] Codex receives a job-scoped relay credential, not OpenAI/GCP/database/Stripe/E2B/Speechify credentials.
+- [x] Responses WebSocket relay enforces active-job, model, request, output, and estimated-cost policy.
+- [x] Narration uses a loopback bridge so Codex does not receive the callback token.
+- [x] E2B arbitrary internet access is denied.
+- [x] Source archives reject links, special files, unsafe paths, excessive expansion, and credential material.
+- [x] GCS uploads validate owner prefix, generation, content type, size, checksum, signature, and metadata.
+- [x] Downloads require ownership and use short-lived signed URLs.
+- [ ] Prove the `c74eb0d` exact Manim interpreter path in a real E2B runtime.
+- [ ] Complete live narrated render, Speechify metadata validation, audio-track validation, mux, upload, playback, and download.
+- [ ] Exercise cancellation during generation, invalid callback token, expired signed URL, malformed artifact, provider throttling, E2B quota exhaustion, timeout, and duplicate callback delivery.
+- [ ] Verify no orphan sandbox remains after every success/failure/cancellation case.
+
+## Reliability and recovery
+
+- [x] Generation reservation, job, credit ledger, and outbox changes are transactional.
+- [x] Named Cloud Tasks, Stripe events, submissions, and callbacks are idempotent.
+- [x] Retryable failures release leases; terminal failures refund once.
+- [x] Scheduled reconciliation expires stale work and drains durable sandbox cleanup.
+- [x] Migration runner uses a PostgreSQL advisory lock.
+- [ ] Configure regional HA and a non-shared-core production Cloud SQL tier.
+- [ ] Perform and record a Cloud SQL restore drill into a separate recovery target.
+- [ ] Verify artifact version recovery.
+- [ ] Rehearse application, E2B template, queue, and secret rollback.
+- [ ] Define recovery-time and recovery-point objectives.
+
+## Scale and operations
+
+- [ ] Confirm contracted E2B concurrency and OpenAI/Speechify throughput.
+- [ ] Load-test authenticated submission, status polling/SSE, queueing, and database behavior.
+- [ ] Separately load-test the approved number of simultaneous renders.
+- [ ] Verify API p95 latency, Cloud SQL connections/CPU, queue age/retries, active sandboxes, job latency/failure rate, tokens, and provider cost.
+- [ ] Configure Monitoring notification channels and prove alerts reach a named person.
+- [ ] Assign support and on-call owners and document incident handling.
+- [ ] Protect release branches and ensure untrusted changes cannot use the release service account.
+- [ ] Approve a realistic production budget including GCP and external providers.
+
+Current staging supports two simultaneous renders. It may durably queue more requests, but it is not certified for thousands of concurrent renders.

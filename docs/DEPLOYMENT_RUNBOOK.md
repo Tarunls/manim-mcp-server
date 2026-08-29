@@ -1,67 +1,147 @@
 # GCP deployment runbook
 
-## Current project inventory
+Updated: 2026-08-29
 
-Read-only inventory on 2026-08-23 found project `educationalvideo-506219` in `us-central1` with:
+Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact current release and the incomplete narrated-generation certification.
 
-- one public `lesson-studio` Cloud Run service, session affinity enabled, effective max scale 1, and GCS-FUSE mounted as application state;
-- Artifact Registry repository `lesson-studio`;
-- an existing uniform-access data bucket;
-- Identity Platform, Cloud Run, Artifact Registry, Cloud Build, Secret Manager, Logging, and Monitoring APIs enabled;
-- no Cloud SQL Admin or Cloud Tasks API enabled yet;
-- existing Identity Platform, OpenAI, Speechify, staff-email, Stripe sandbox/test-key, Stripe webhook, and E2B API-key secrets;
-- no live Stripe-key secret identifiable by name. Staging must use `stripe_sandbox_api_key`; production must use a separate live restricted key.
+## Environment
 
-Do not convert the existing singleton in place. Build staging beside it, validate end to end, and cut traffic only after data migration and rollback rehearsal.
+- Project: `educationalvideo-506219`
+- Region: `us-central1`
+- Canonical staging origin: `https://useorune.com`
+- Edge IP: `136.68.115.171`
+- Managed TLS: active
+- Terraform: protected remote GCS state
+- Runtime services: `lesson-studio-staging-api` and `lesson-studio-staging-dispatcher`
+- Migration job: `lesson-studio-staging-migrate`
+- Legacy service `lesson-studio`: do not modify
 
-## Staging apply status (2026-08-28)
+The deployed image/template are currently `004c9c7`. Candidate application image `c74eb0d` is built but not deployed; its E2B template must be built and smoked first.
 
-The canonical staging origin is `https://useorune.com`, served by the live external HTTPS load balancer (IP `136.68.115.171`), an ACTIVE Google-managed certificate, and Cloud Armor policy `lesson-studio-staging-edge`; the legacy `lesson-studio` service is not modified. API ingress is `internal-and-cloud-load-balancing`, so direct `run.app` access is blocked. The staging API and dispatcher run application image `app:004c9c7` and pin generation jobs to `lesson-studio-renderer:004c9c7`. Provenance caveat: the `004c9c7` tag does not correspond to a commit in this repository; fix by building images only from pushed commits so each deployed tag is traceable.
+## Release invariants
 
-The remote-state-backed Terraform stack is fully applied for staging with the external edge enabled, and `staging.auto.tfvars` matches the live configuration (edge on, `app_base_url = https://useorune.com`, image and E2B template `004c9c7`). A Terraform email notification channel (`alert_email`) is now defined and wired into the alert policies but requires a deliberate `terraform apply` to take effect. The stack includes the managed HTTPS edge plus the private VPC and Cloud SQL instance, API/dispatcher/migration Cloud Run resources, Cloud Tasks queue, private versioned artifact bucket, runtime and release identities, secret bindings, alert policies, operations dashboard, and the $20 monthly GCP budget alert. The budget is an alert, not a spending lock.
+1. Application and E2B releases use immutable commit tags, never only `latest`.
+2. If `e2b/`, renderer code, renderer dependencies, or the Codex bootstrap changes, build and smoke the matching E2B template before deploying the application.
+3. Run migrations before dispatcher and API.
+4. API and dispatcher must receive the same `E2B_TEMPLATE_VERSION`; the API persists it on job submission and the dispatcher starts that exact version.
+5. Review every Terraform plan. Do not accept unexpected replacement/destruction of Cloud SQL, GCS, networking, edge, IAM, secrets, or state.
+6. Keep secret values out of source, tfvars, Cloud Build substitutions, terminal output, and documentation.
 
-The migration, Identity Platform smoke, Stripe hosted-Checkout smoke, E2B runtime smoke, signed-out security checks, automated tests, and application build pass. A full signed-in smoke reached E2B and the scoped Codex proxy but OpenAI rejected generation because the API project's quota/billing is exhausted. Restore or replace the `openai_api_key` secret and restart the API before retrying. The custom domain and managed edge are now live (`https://useorune.com`). The remaining staging acceptance work is a successful silent and narrated generation through the full callback-to-artifact path, applying the Terraform email notification channel, load/restore/rollback certification, and a live restricted Stripe key for production.
+## Application image build
 
-## Release sequence
+`cloudbuild.yaml` runs type checking, tests, the production build, and dependency audit before publishing the commit and convenience tags.
 
-1. Create or verify the E2B and environment-appropriate Stripe secrets. Never print secret payloads into a terminal log.
-2. Verify that the E2B secret resolves to the team that owns `lesson-studio-renderer`. Build an immutable E2B template with the same release identifier used in Terraform.
-   Run `npm run smoke:e2b` against that exact tag before deploying it.
-3. Submit `cloudbuild.yaml` from a pushed commit; it runs typecheck, tests, build, and a production-dependency audit before publishing the immutable commit-SHA image tag (plus a cache-only `buildcache` tag that nothing deploys from). The mutable `latest` tag is no longer published because the legacy `lesson-studio` service deploys from `latest`.
-4. Review and apply `infra/terraform` for `staging`. The staging configuration now enables the global edge with `app_domain = useorune.com`; keep `staging.auto.tfvars` converged with live reality before every apply. Terraform application is intentionally manual because it creates billable resources.
-5. Run the Cloud Run migration job. It uses a PostgreSQL advisory lock and can be invoked again safely.
-6. Deploy the commit-SHA image with `cloudbuild.deploy.yaml`.
-7. Verify readiness, sign-up/email verification/login/logout, ownership isolation, checkout/webhook idempotency, one silent and one narrated E2B generation, cancellation/refund, artifact access expiry, and a failed-job retry.
-   Also wait at least one reconciliation interval and prove that an intentionally expired job is failed, its sandbox is terminated, and its credit refund appears exactly once.
-8. Run the load and security gates in `docs/PRODUCTION_CHECKLIST.md` before creating production traffic.
+```sh
+gcloud builds submit \
+  --config cloudbuild.yaml \
+  --project educationalvideo-506219 \
+  --substitutions=COMMIT_SHA=<commit>,_REGION=us-central1,_REPOSITORY=lesson-studio,_ENVIRONMENT=staging \
+  .
+```
 
-The $20 project budget is an alerting threshold, not a guaranteed stop. The initial staging database is a zonal shared-core instance without an SLA; production validation rejects that tier and requires regional availability, a non-shared-core database, the managed HTTPS edge, and a real domain.
+The `c74eb0d` build already succeeded as Cloud Build `4d198cda-fbbb-468c-b903-fbac489fdc8a`; do not rebuild it unless registry verification shows the image is missing.
+
+## E2B template release
+
+Build the exact tag using the existing E2B Secret Manager secret in a short-lived, narrowly scoped job. Do not copy the key to a local file or command line.
+
+The build command inside that trusted job is:
+
+```sh
+E2B_TEMPLATE=lesson-studio-renderer \
+E2B_TEMPLATE_VERSION=<commit> \
+npm run e2b:build-template
+```
+
+Then run the matching smoke:
+
+```sh
+E2B_TEMPLATE=lesson-studio-renderer \
+E2B_TEMPLATE_VERSION=<commit> \
+npm run smoke:e2b
+```
+
+The smoke must use the exact immutable tag, disable arbitrary internet access, execute `/opt/lesson-studio/app/.venv/bin/python -m manim --version`, import the Codex SDK, find FFmpeg, write/read the workspace, and terminate the sandbox in all outcomes.
+
+Do not treat an existence check of `.venv/bin/manim` as sufficient. E2B image mounting can invalidate console-script shebangs; production renderers intentionally use `python -m manim`.
+
+## Ordered deployment
+
+After the E2B smoke passes, deploy the matching application image:
+
+```sh
+gcloud builds submit \
+  --config cloudbuild.deploy.yaml \
+  --project educationalvideo-506219 \
+  --substitutions=COMMIT_SHA=<commit>,_REGION=us-central1,_REPOSITORY=lesson-studio,_ENVIRONMENT=staging \
+  .
+```
+
+The pipeline updates and executes the migration job, updates the dispatcher, and then updates the API. Verify each service routes 100% to a ready revision using the exact image.
+
+Update the ignored `infra/terraform/staging.auto.tfvars`:
+
+```hcl
+image                = "us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:<commit>"
+e2b_template_version = "<commit>"
+```
+
+Plan and apply:
+
+```sh
+terraform -chdir=infra/terraform plan -out=staging.tfplan -input=false
+terraform -chdir=infra/terraform show staging.tfplan
+terraform -chdir=infra/terraform apply -input=false staging.tfplan
+```
+
+On this host the Google provider may require both `GOOGLE_PROJECT` and `GOOGLE_CLOUD_QUOTA_PROJECT` set to `educationalvideo-506219`. The tfvars and saved plan are ignored and must remain uncommitted.
+
+## Post-deploy verification
+
+Verify:
+
+- `https://useorune.com/api/health` and `/api/health/ready` return success;
+- HTTP redirects to HTTPS;
+- the managed certificate remains active;
+- the direct API `run.app` URL does not serve the application;
+- API and dispatcher use the intended image and E2B tag;
+- dispatcher remains private and accepts only the Cloud Tasks identity;
+- no secrets are present in logs or uploaded source archives.
+
+Run:
+
+```sh
+npm run check
+npm test
+npm run build
+npm audit --audit-level=high
+npm run test:e2e
+E2B_TEMPLATE_VERSION=<commit> npm run smoke:e2b
+APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 npm run smoke:staging
+APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 STAGING_SMOKE_TIMEOUT_MS=1200000 npm run smoke:staging-payment
+```
+
+`smoke:staging-payment` is the release gate for hosted payment plus narration. It must prove hosted Checkout, signed webhook activation, Customer Portal, credit debit, narrated E2B generation, Speechify metadata/audio, private MP4 download, cancellation, and account cleanup.
+
+After a failed smoke, confirm that the subscription, test identity, project, job, and E2B sandbox were removed or terminated. Failure cleanup is implemented but must be verified.
 
 ## Rollback
 
-- Application rollback: route the API and dispatcher to the prior immutable image together. Do not use `latest` as a rollback target.
-- Database rollback: migrations are forward-only. Deploy a compatibility fix or a new corrective migration; never restore the whole database merely to roll back application code.
-- Queue rollback: pause the generation queue before changing dispatcher behavior. Existing jobs remain durable in PostgreSQL.
-- E2B rollback: point `E2B_TEMPLATE_VERSION` at the last certified immutable template, then deploy the dispatcher revision.
+- Application: route both API and dispatcher back to the prior known-good immutable image.
+- E2B: restore the prior certified immutable template tag independently.
+- Database: migrations are forward-only; deploy a compatibility fix or corrective migration. Do not restore the entire database merely to roll back code.
+- Queue: pause dispatch before changing worker behavior; durable jobs remain in PostgreSQL.
+- Secrets: add a replacement Secret Manager version, deploy and verify it, then disable the old version and audit access.
+- Never destroy Cloud SQL, Terraform state, or the artifact bucket during rollback.
 
-## Secrets and logs
+The prior `004c9c7` release is not a fully certified rollback for narrated generation because its Manim launcher failed in the paid narrated smoke. It remains evidence for payment, auth, secure failure handling, and the silent path.
 
-API and dispatcher service accounts have disjoint secret access. The API owns the upstream OpenAI key for its job-scoped proxy but cannot read the E2B key; the dispatcher cannot read OpenAI, Stripe, Identity Platform, Speechify, or staff secrets. Generated code receives only a job-scoped proxy token in `.env`; the bootstrap separately holds a callback credential and expiring upload URLs inside the disposable E2B boundary.
+## Logging and diagnostics
 
-Application logs must contain IDs, state transitions, latency, and safe error codes—not prompts, emails, cookies, provider responses, signed URLs, or secret values. `generation_jobs.error_message` is user-facing; `error_detail` is private operational data and must never be returned by user APIs or exports.
+Log request/job/sandbox IDs, safe state changes, latency, provider status, token counts, and estimated cost. Do not log prompts, emails, cookies, provider response bodies, signed URLs, callback tokens, or secret values.
 
-## Release smoke commands
+`generation_jobs.error_message` is public and generic. `error_detail` and server logs are operational only and must not appear in user APIs or exports.
 
-The commands below require their named environment variables but never need secrets in repository files:
+## Capacity and cost
 
-```sh
-npm run smoke:identity
-npm run smoke:stripe
-E2B_TEMPLATE_VERSION=<immutable-release-id> npm run smoke:e2b
-APP_BASE_URL=<staging-origin> GCP_PROJECT=<gcp-project> npm run smoke:staging
-npm run test:e2e
-```
-
-`smoke:identity` creates and deletes a uniquely named temporary Identity Platform user. `smoke:stripe` creates a hosted sandbox Checkout session and deletes its temporary database user. `smoke:e2b` disables internet access, checks the pinned runtime, and always kills the disposable sandbox. `smoke:staging` creates a disposable verified user, checks Stripe Checkout, submits a real generation, validates the private MP4 signature, and deletes the account and Identity Platform user in a `finally` block.
-
-The 2026-08-28 runtime certification passed on `lesson-studio-renderer:df61e03`. The currently deployed template is `lesson-studio-renderer:004c9c7`; rerun `smoke:e2b` against the deployed tag if it has not been certified. This certifies the worker runtime, not successful provider generation; complete the signed-in silent and narrated generation checks before treating staging as fully accepted. Note the codex budget redesign: the estimated-cost ceiling (`CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB`) is the enforced primary per-job budget, the call count (`CODEX_MAX_API_CALLS_PER_JOB`) is a backstop, and exhaustion returns a terminal `400` to the sandbox.
+Staging is intentionally limited to two active sandboxes, three API instances, a zonal shared-core database, and a $20 GCP alert. The budget does not stop spend and excludes external providers. Production requires a separate state, regional non-shared-core Cloud SQL, provider quota confirmation, load testing, alert recipients, and a larger approved budget.
