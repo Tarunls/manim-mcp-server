@@ -226,6 +226,20 @@ function hostedRuntime() {
   return { codex: ready, manim: ready, ffmpeg: ready };
 }
 
+// What the browser needs to know is whether this service can ACCEPT a
+// generation. The API role submits through Cloud Tasks and never holds the
+// E2B key, so gating the composer on dispatcher.configured blocked every
+// hosted user with "Generation service needs configuration".
+function hostedAuthState() {
+  return {
+    connected:
+      generations.configured &&
+      generationQueue.configured &&
+      artifacts.configured,
+    mode: "hosted-e2b",
+  };
+}
+
 async function ownedProject(request: express.Request) {
   const project = generations.configured
     ? await projects.get(String(request.params.id), userId(request))
@@ -664,7 +678,7 @@ app.get("/api/state", async (request, response) => {
       studio.restoreProject(project),
     );
     snapshot.runtime = hostedRuntime();
-    snapshot.auth = { connected: dispatcher.configured, mode: "hosted-e2b" };
+    snapshot.auth = hostedAuthState();
   }
   response.json(snapshot);
 });
@@ -919,7 +933,7 @@ app.get("/api/events", async (request, response) => {
       studio.restoreProject(project),
     );
     initial.runtime = hostedRuntime();
-    initial.auth = { connected: dispatcher.configured, mode: "hosted-e2b" };
+    initial.auth = hostedAuthState();
   }
   send(initial);
   if (!generations.configured) studio.on("event", send);
