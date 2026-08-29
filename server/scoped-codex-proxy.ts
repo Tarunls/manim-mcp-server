@@ -37,6 +37,16 @@ export function codexPolicy(effort: HostedJob["effort"]) {
   } as const;
 }
 
+export function codexCostLimitMicrousd(effort: HostedJob["effort"]) {
+  const base = boundedInteger(
+    process.env.CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB,
+    2_000_000,
+    100_000,
+    20_000_000,
+  );
+  return effort === "thorough" ? base * 2 : base;
+}
+
 export function constrainCodexRequest(
   job: HostedJob,
   body: unknown,
@@ -164,8 +174,11 @@ export class ScopedCodexProxy {
         )
       )
         throw new Error("Generation is no longer active.");
-      const count = await client.query<{ count: string }>(
-        "SELECT count(*)::text AS count FROM job_provider_calls WHERE job_id = $1 AND provider = 'openai'",
+      const usage = await client.query<{ count: string; estimated_cost_microusd: string }>(
+        `SELECT count(*)::text AS count,
+                COALESCE(sum(estimated_cost_microusd), 0)::text AS estimated_cost_microusd
+           FROM job_provider_calls
+          WHERE job_id = $1 AND provider = 'openai'`,
         [job.id],
       );
       const limit = boundedInteger(
@@ -174,8 +187,13 @@ export class ScopedCodexProxy {
         1,
         64,
       );
-      if (Number(count.rows[0]?.count || 0) >= limit)
+      if (Number(usage.rows[0]?.count || 0) >= limit)
         throw new Error("OpenAI request limit reached for this generation.");
+      if (
+        Number(usage.rows[0]?.estimated_cost_microusd || 0) >=
+        codexCostLimitMicrousd(job.effort)
+      )
+        throw new Error("OpenAI cost limit reached for this generation.");
       await client.query(
         `INSERT INTO job_provider_calls (id, job_id, provider, idempotency_key, request_hash, model)
          VALUES ($1, $2, 'openai', $3, $4, $5)`,
