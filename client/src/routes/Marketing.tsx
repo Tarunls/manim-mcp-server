@@ -1,66 +1,26 @@
 import { useEffect } from "react";
 import { MarketingChrome } from "./MarketingChrome";
 
-type Lesson = {
-  id: string;
-  claim: string;
-  note: string;
-  poster: string;
-  video: string;
-};
-
-const LEAD: Lesson = {
-  id: "slope",
-  claim: "That line's steepness is the derivative.",
-  note: "The tangent is placed by evaluating the derivative at the marked point, so its slope is the number under discussion rather than a line that looks about right.",
-  poster: "/showcase/slope.jpg",
-  video: "/showcase/slope.mp4",
-};
-
-const SIDE: Lesson[] = [
-  {
-    id: "rotation",
-    claim: "A rotation casts a wave.",
-    note: "A hand turning at a steady rate, and the height it traces plotted beside it.",
-    poster: "/showcase/rotation.jpg",
-    video: "/showcase/rotation.mp4",
-  },
+// each still already carries its claim as the frame's own typography, so the
+// caption gives the other half of the pair: the sentence it was rendered from
+const STRIP = [
   {
     id: "accumulation",
-    claim: "The estimate stops being an estimate.",
-    note: "Rectangles narrowing under a curve until the sum and the integral agree.",
-    poster: "/showcase/accumulation.jpg",
-    video: "/showcase/accumulation.mp4",
+    sentence: "“Show me how adding up rectangles becomes the integral.”",
+    alt: "A lesson frame titled “The estimate stops being an estimate.”: the area under a curve, shaded, above the identity area equals the integral of f.",
   },
-];
-
-function LessonFigure({
-  lesson,
-  className,
-}: {
-  lesson: Lesson;
-  className?: string;
-}) {
-  return (
-    <figure className={`lesson ${className || ""}`} id={`lesson-${lesson.id}`}>
-      <div className="lesson-media">
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          poster={lesson.poster}
-          src={lesson.video}
-          aria-label={`${lesson.claim} A lesson rendered by Orune.`}
-        />
-      </div>
-      <figcaption>
-        <p className="lesson-note">{lesson.note}</p>
-      </figcaption>
-    </figure>
-  );
-}
+  {
+    id: "rotation",
+    sentence:
+      "“Show me why a sine wave is just something going round a circle.”",
+    alt: "A lesson frame titled “A rotation casts a wave.”: a hand turning on a circle beside the sine wave its height traces.",
+  },
+  {
+    id: "slope",
+    sentence: "“Show me what the derivative means at one point.”",
+    alt: "A lesson frame titled “That line's steepness is the derivative.”: a parabola with a tangent line touching at a marked point.",
+  },
+] as const;
 
 export default function Marketing() {
   useEffect(() => {
@@ -85,173 +45,200 @@ export default function Marketing() {
 
   return (
     <MarketingChrome>
-      {/* 1 — hero: type across the top, the render taking the rest of the screen */}
+      {/* 1 — hero: centered stacked type, two unframed fragments floating
+             as marginalia, and the pen circling one word */}
       <section className="hero" aria-labelledby="hero-title">
+        <img
+          className="hero-frag hero-frag-rotation"
+          src="/showcase/frag-rotation.jpg"
+          alt=""
+          aria-hidden="true"
+        />
+        <img
+          className="hero-frag hero-frag-slope"
+          src="/showcase/frag-slope.jpg"
+          alt=""
+          aria-hidden="true"
+        />
         <div className="hero-copy">
-          <h1 id="hero-title">Hard ideas, made obvious.</h1>
-          <div className="hero-aside">
-            <p className="hero-lede">
-              Write one sentence about what you are trying to understand. Orune
-              renders it as a narrated lesson you can stop, mark up, and have
-              rebuilt.
-            </p>
-            <div className="hero-actions">
-              <a className="button button-primary" href="/studio">
-                Start with one free lesson
-              </a>
-              <a className="text-link" href="#examples">
-                See what it makes &rarr;
-              </a>
-            </div>
+          <h1 id="hero-title">
+            Hard ideas, made{" "}
+            <span className="pen-word">
+              obvious.
+              {/* the pen: a quick sienna circle, drawn once on load */}
+              <svg
+                className="pen-circle"
+                viewBox="0 0 230 80"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  className="pen-stroke pen-stroke-1"
+                  pathLength={1}
+                  d="M 14,42 C 20,14 92,2 150,5 C 202,8 226,24 224,44 C 222,64 176,77 116,76 C 56,75 8,66 10,44 C 12,28 34,15 66,10"
+                />
+                <path
+                  className="pen-stroke pen-stroke-2"
+                  pathLength={1}
+                  d="M 30,26 C 52,13 104,6 152,9"
+                />
+              </svg>
+            </span>
+          </h1>
+          <p className="hero-lede">
+            Write one sentence about what you want to understand. Orune renders
+            it as a narrated lesson you can stop, mark up, and have rebuilt.
+          </p>
+          <div className="hero-actions">
+            <a className="button button-primary" href="/studio">
+              Start with one free lesson
+            </a>
+            <a className="text-link" href="#watch">
+              Watch a lesson &rarr;
+            </a>
           </div>
-        </div>
-        <div className="hero-media">
-          <div className="hero-stage">
-            <video
-              className="reel-video"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              poster="/showcase/accumulation.jpg"
-              src="/showcase/accumulation.mp4"
-              aria-label="An Orune lesson: rectangles under a curve narrowing until the estimate becomes the integral."
-            />
-          </div>
+          <p className="hero-note">One lesson free. No card.</p>
         </div>
       </section>
 
-      {/* 2 — examples: a full-bleed spread, one large and two small */}
-      <section className="spread" id="examples" aria-labelledby="examples-title">
-        <div className="spread-head">
-          <h2 id="examples-title">Three lessons</h2>
-          <p>
-            Each of these came out of the renderer from a single written prompt.
-            Nothing here was drawn by hand or touched up afterwards.
+      {/* 2 — watch one: a full-bleed lesson between two hairlines */}
+      <section className="watch" id="watch" aria-label="Watch one lesson">
+        <div className="watch-frame">
+          <video
+            className="watch-video"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            poster="/showcase/accumulation.jpg"
+            src="/showcase/accumulation.mp4"
+            aria-label="An Orune lesson: rectangles under a curve narrowing until the estimate becomes the integral."
+          />
+        </div>
+        <p className="watch-note">
+          Rendered by Orune from one sentence. Twelve seconds, exactly as it
+          came out of the renderer.
+        </p>
+      </section>
+
+      {/* 3 — ask, then get: one vertical typographic sequence */}
+      <section
+        className="ask"
+        id="how-it-works"
+        aria-label="From a sentence to a lesson"
+        data-reveal
+      >
+        <p className="ask-label">You write</p>
+        <blockquote className="ask-quote">
+          &ldquo;Show me why a sine wave is just something going round a
+          circle.&rdquo;
+        </blockquote>
+        <p className="ask-label">Orune renders</p>
+        <video
+          className="ask-video"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          poster="/showcase/frag-rotation.jpg"
+          src="/showcase/frag-rotation.mp4"
+          aria-label="The rendered answer: a hand turning on a circle beside the sine wave its height traces."
+        />
+      </section>
+
+      {/* 4 — the pen: the only annotated frame on the page */}
+      <section className="pen" aria-label="Correct it like a page proof">
+        <div className="pen-inner" data-reveal>
+          <span className="kicker">Correct it like a page proof</span>
+          <div className="pen-figure">
+            {/* the overlay maps onto the image alone, so the note must live
+                outside this frame */}
+            <div className="pen-frame">
+              <img
+                src="/showcase/slope.jpg"
+                alt="A lesson frame: a parabola with a sienna tangent line touching at a marked point."
+              />
+              <svg
+                className="pen-annotation"
+                viewBox="0 0 1440 810"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                focusable="false"
+              >
+                {/* the circle around the tangent point */}
+                <path
+                  className="pen-stroke"
+                  d="M 752,562 C 758,504 846,476 928,501 C 990,520 1004,576 960,614 C 912,655 800,657 760,613 C 735,586 740,553 760,530"
+                />
+                {/* the connector out to the margin note, stopping just short
+                    of the circle */}
+                <path
+                  className="pen-stroke pen-connector"
+                  d="M 1502,398 C 1400,386 1160,408 1010,480"
+                />
+              </svg>
+            </div>
+            <p className="pen-margin-note">let the tangent settle slower</p>
+          </div>
+          <p className="pen-body">
+            Pause any frame, draw on what is wrong, and say what you want.
+            Orune re-renders only the scenes you touched.
           </p>
         </div>
-        <div className="spread-grid" data-reveal>
-          <LessonFigure lesson={LEAD} className="spread-lead" />
-          <div className="spread-side">
-            {SIDE.map((lesson) => (
-              <LessonFigure key={lesson.id} lesson={lesson} />
-            ))}
-          </div>
+      </section>
+
+      {/* 5 — three lessons: a contact strip, whitespace-separated */}
+      <section className="strip" id="examples" aria-label="Three lessons">
+        <span className="kicker strip-kicker">
+          Every one of these was a sentence first.
+        </span>
+        {/* on small screens this row scrolls, so it must be keyboard-reachable */}
+        <div
+          className="strip-row"
+          data-reveal
+          role="region"
+          aria-label="Three rendered lessons"
+          tabIndex={0}
+        >
+          {STRIP.map((lesson) => (
+            <figure
+              className="strip-item"
+              key={lesson.id}
+              id={`lesson-${lesson.id}`}
+            >
+              <img src={`/showcase/${lesson.id}.jpg`} alt={lesson.alt} />
+              <figcaption>{lesson.sentence}</figcaption>
+            </figure>
+          ))}
         </div>
       </section>
 
-      {/* 3 — how it works: sticky steps on the left, the lesson on the right */}
-      <section className="how" id="how-it-works" aria-labelledby="how-title">
-        <div className="how-inner">
-          <div className="how-rail">
-            <span className="kicker">How it works</span>
-            <h2 id="how-title">From a sentence to a finished lesson.</h2>
-            <p>
-              You write the description. Everything between that and the
-              rendered file is automatic, until you want something changed.
-            </p>
-            <ol className="how-steps">
-              <li>
-                <div>
-                  <h3>Describe the idea</h3>
-                  <p>
-                    Say what you are trying to understand and who it is for. No
-                    storyboard, no script, no scene list.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <div>
-                  <h3>Orune builds it</h3>
-                  <p>
-                    It plans the beats, writes the Manim scenes, narrates them
-                    against the animation, and renders the video.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <div>
-                  <h3>Correct what is wrong</h3>
-                  <p>
-                    Pause on a frame, draw on it, and say what should be
-                    different. Only the scenes you touched are rendered again.
-                  </p>
-                </div>
-              </li>
-            </ol>
-          </div>
-          <figure className="how-figure">
-            <div className="lesson-media">
-              <video
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="metadata"
-                poster="/showcase/rotation.jpg"
-                src="/showcase/rotation.mp4"
-                aria-label="An Orune lesson: a hand turning on a circle and the wave its height traces."
-              />
-            </div>
-            <figcaption>
-              <p className="how-prompt">
-                &ldquo;Show me why a sine wave is just something going round a
-                circle.&rdquo;
-              </p>
-              <p className="how-prompt-note">
-                The prompt, and the lesson it produced.
-              </p>
-            </figcaption>
-          </figure>
-        </div>
-      </section>
-
-      {/* 4 — precision: the one sunken band, no imagery */}
-      <section className="tenet" aria-labelledby="tenet-title">
-        <div className="tenet-inner" data-reveal>
-          <span className="kicker">Why Manim</span>
-          <h2 id="tenet-title">
+      {/* 6 — close: the one sunken band, type only */}
+      <section className="close" aria-labelledby="close-title">
+        <div className="close-inner" data-reveal>
+          <h2 id="close-title">
             Every diagram is <em>computed</em>, not drawn.
           </h2>
-          <div className="tenet-notes">
-            <div>
-              <h3>The picture is the function.</h3>
-              <p>
-                A curve is the function sampled along its own domain. A tangent
-                is placed by the derivative at the point it touches. An area is
-                the integral it is claiming to be. Nothing on screen is an
-                artist&rsquo;s impression of the maths.
-              </p>
-            </div>
-            <div>
-              <h3>One renderer, no shortcuts.</h3>
-              <p>
-                Orune renders with Manim and nothing else. The symbols beneath a
-                figure are set from the same expression that drew it, so the
-                notation and the shape cannot drift apart.
-              </p>
-            </div>
+          <p>
+            A curve is its function sampled along its own domain, and a tangent
+            sits where the derivative puts it. Pick the idea you never quite
+            got, and watch it get built.
+          </p>
+          <div className="hero-actions close-actions">
+            <a className="button button-primary" href="/studio">
+              Start with one free lesson
+            </a>
+            <a className="text-link" href="/pricing">
+              See the plans &rarr;
+            </a>
           </div>
+          <p className="close-note">
+            One lesson free, no card. Paid plans start at $20 a month.
+          </p>
         </div>
-      </section>
-
-      {/* 5 — close */}
-      <section className="closing" aria-labelledby="closing-title" data-reveal>
-        <h2 id="closing-title">
-          Pick the idea you never quite got, and watch it get built.
-        </h2>
-        <div className="hero-actions">
-          <a className="button button-primary" href="/studio">
-            Start with one free lesson
-          </a>
-          <a className="text-link" href="/pricing">
-            See the plans &rarr;
-          </a>
-        </div>
-        <p className="closing-note">
-          One lesson free, no card. Paid plans start at $20 a month.
-        </p>
       </section>
     </MarketingChrome>
   );

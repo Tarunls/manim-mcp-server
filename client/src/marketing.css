@@ -241,46 +241,43 @@ body:has(.access-page) {
   padding: 9px 15px;
 }
 
-/* --- 1. hero: one viewport, type on top, the render filling the rest - */
+/* --- 1. hero: centered stacked type, marginalia floating unframed ---- */
 
 .hero {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   min-height: calc(100svh - var(--nav-height));
-  padding: clamp(30px, 5vh, 62px) var(--gutter) clamp(26px, 4.4vh, 52px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: clamp(40px, 7vh, 88px) var(--gutter);
 }
 
 .hero-copy {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
-  align-items: end;
-  column-gap: clamp(32px, 6vw, 96px);
-  row-gap: 26px;
-  padding-bottom: clamp(26px, 4.2vh, 52px);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 28px;
+  max-width: 880px;
 }
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(52px, 6.5vw, 96px);
-  line-height: 0.93;
+  font-size: clamp(56px, 7.5vw, 108px);
+  line-height: 0.98;
   letter-spacing: -0.028em;
-  font-variation-settings: "opsz" 96, "SOFT" 20, "WONK" 1;
-  max-width: 12ch;
-}
-
-.hero-aside {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  padding-bottom: 6px;
+  font-variation-settings: "opsz" 144, "SOFT" 20, "WONK" 1;
 }
 
 .hero-lede {
   margin: 0;
   font-size: 18px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--ink-2);
-  max-width: 34ch;
+  max-width: 52ch;
 }
 
 .hero-actions {
@@ -288,328 +285,304 @@ body:has(.access-page) {
   align-items: center;
   gap: 22px;
   flex-wrap: wrap;
-}
-
-/* the media slot eats whatever height is left; the stage stretches to it
-   and derives its width from the ratio, so the player can never be cut */
-.hero-media {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
   justify-content: center;
 }
 
-.hero-stage {
-  align-self: stretch;
-  aspect-ratio: 16 / 9;
-  max-width: 100%;
-  overflow: hidden;
+.hero-note {
+  margin: -12px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
-.hero-stage video,
-.hero-stage img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: var(--paper);
+/* the two fragments: unframed mathematics floating as marginalia; they
+   sit on the exact page ground, so only the ink shows */
+.hero-frag {
+  position: absolute;
+  z-index: 0;
+  opacity: 0.9;
+  pointer-events: none;
+  user-select: none;
+  height: auto;
 }
 
-/* --- 2. examples: a full-bleed spread, hairlines instead of frames --- */
+.hero-frag-rotation {
+  width: min(420px, 29vw);
+  top: clamp(20px, 5vh, 48px);
+  left: calc(50% + 350px);
+  transform: rotate(-2deg);
+}
 
-.spread {
-  padding: clamp(72px, 9vh, 132px) var(--gutter) clamp(76px, 10vh, 140px);
+/* anchored off the left page edge, never cropped: a cut label would read
+   as a bug rather than marginalia */
+.hero-frag-slope {
+  width: min(340px, 24vw);
+  bottom: clamp(24px, 6vh, 64px);
+  left: max(28px, calc(50% - 670px));
+  transform: rotate(1.5deg);
+}
+
+/* --- the pen: sienna, hand-drawn, used three times on the page ------- */
+
+.pen-word {
+  position: relative;
+  display: inline-block;
+}
+
+.pen-circle {
+  position: absolute;
+  left: -4.5%;
+  top: -12%;
+  width: 111%;
+  height: 126%;
+  overflow: visible;
+  pointer-events: none;
+  transform: rotate(-2deg);
+}
+
+.pen-stroke {
+  fill: none;
+  stroke: var(--warm);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* drawn once on load: 600ms across the two passes */
+.pen-stroke-1 {
+  stroke-dasharray: 1;
+  animation: pen-draw 430ms ease-out 250ms backwards;
+}
+
+.pen-stroke-2 {
+  stroke-dasharray: 1;
+  animation: pen-draw 170ms ease-out 680ms backwards;
+}
+
+@keyframes pen-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pen-stroke-1,
+  .pen-stroke-2 {
+    animation: none;
+  }
+}
+
+/* --- 2. watch one: a full-bleed lesson between two hairlines --------- */
+
+.watch-frame {
   border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: clamp(28px, 5vh, 56px) 0;
 }
 
-.spread-head {
+.watch-video {
+  display: block;
+  width: 100%;
+  max-height: 76vh;
+  object-fit: contain;
+}
+
+.watch-note {
+  margin: 14px 0 0;
+  padding: 0 var(--gutter);
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* --- 3. ask, then get: one vertical typographic sequence ------------- */
+
+.ask {
+  margin-top: clamp(160px, 20vh, 220px);
+  padding: 0 var(--gutter);
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 40px;
-  flex-wrap: wrap;
-  padding-bottom: 30px;
-  border-bottom: 1px solid var(--ink);
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 26px;
 }
 
-.spread-head h2 {
+.ask-label {
   margin: 0;
-  font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 1.2;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--ink);
-}
-
-.spread-head p {
-  margin: 0;
-  font-size: 16px;
   color: var(--ink-2);
-  max-width: 46ch;
 }
 
-.spread-grid {
-  display: grid;
-  row-gap: clamp(44px, 6vh, 72px);
-  padding-top: clamp(36px, 5vh, 56px);
+.ask-quote {
+  margin: 0 0 14px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(28px, 3vw, 34px);
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  font-variation-settings: "opsz" 34, "SOFT" 20, "WONK" 1;
+  color: var(--ink);
+  max-width: 30ch;
+  text-wrap: balance;
 }
 
-/* the lead runs wide with its caption set beside it, bottom-aligned to the
-   hairline under the frame; the pair beneath caption underneath instead */
-.lesson.spread-lead {
-  display: grid;
-  grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr);
-  column-gap: clamp(28px, 3.4vw, 56px);
-  row-gap: 18px;
-  align-items: end;
+.ask-video {
+  display: block;
+  width: min(780px, 92vw);
+  height: auto;
+  margin-top: 6px;
 }
 
-.spread-side {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(28px, 3.4vw, 56px);
-  align-items: start;
+/* --- 4. the pen section: one annotated frame, note in the margin ----- */
+
+.pen {
+  margin-top: clamp(160px, 20vh, 220px);
+  padding: 0 var(--gutter);
 }
 
-.lesson {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin: 0;
+.pen-inner {
+  max-width: var(--page);
+  margin: 0 auto;
 }
 
-.lesson-media {
-  border-bottom: 1px solid var(--line);
+.pen-inner > .kicker {
+  margin-bottom: clamp(36px, 5vh, 56px);
 }
 
-.lesson-media video,
-.lesson-media img {
+.pen-figure {
+  position: relative;
+  width: min(880px, calc(100% - 270px));
+}
+
+.pen-frame {
+  position: relative;
+}
+
+.pen-frame img {
+  display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  background: var(--paper);
 }
 
-.lesson figcaption {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+.pen-annotation {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
-.lesson-note {
-  font-size: 14px;
+.pen-margin-note {
+  position: absolute;
+  left: calc(100% + 44px);
+  top: 42%;
+  width: 220px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  font-variation-settings: "opsz" 24, "SOFT" 20, "WONK" 1;
+  color: var(--warm);
+}
+
+.pen-body {
+  margin: clamp(32px, 5vh, 48px) 0 0;
+  font-size: 16px;
   line-height: 1.62;
   color: var(--ink-2);
   max-width: 52ch;
 }
 
-.spread-lead .lesson-note {
-  font-size: 16px;
+/* --- 5. three lessons: a contact strip, whitespace-separated --------- */
+
+.strip {
+  margin-top: clamp(160px, 20vh, 220px);
+  padding: 0 var(--gutter);
+  text-align: center;
 }
 
-/* --- 3. how it works: sticky steps left, one lesson right ------------ */
-
-.how {
-  border-top: 1px solid var(--line);
-  padding: clamp(72px, 9vh, 132px) var(--gutter) clamp(80px, 10vh, 144px);
+.strip-kicker {
+  margin-bottom: clamp(36px, 5vh, 52px);
 }
 
-.how-inner {
-  max-width: var(--page);
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
-  column-gap: clamp(40px, 6vw, 104px);
-  row-gap: 52px;
-  align-items: start;
+.strip-row {
+  display: flex;
+  gap: clamp(24px, 3vw, 48px);
+  justify-content: center;
 }
 
-.how-rail {
+.strip-item {
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
-.how-rail h2 {
-  margin: 0;
-  font-size: clamp(30px, 3vw, 40px);
-  line-height: 1.02;
-  font-variation-settings: "opsz" 40, "SOFT" 20, "WONK" 1;
-  max-width: 15ch;
+.strip-item img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-.how-rail p {
-  font-size: 16px;
-  color: var(--ink-2);
-  max-width: 38ch;
-}
-
-.how-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  counter-reset: step;
-  border-top: 1px solid var(--line);
-}
-
-.how-steps li {
-  counter-increment: step;
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 24px;
-  padding: 30px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.how-steps li::before {
-  content: "0" counter(step);
-  font-family: var(--font-display);
-  font-size: 28px;
-  font-weight: 400;
-  line-height: 1;
-  font-variation-settings: "opsz" 28, "SOFT" 20, "WONK" 1;
-  color: var(--ink-3);
-}
-
-.how-steps h3 {
-  margin: 0 0 8px;
-  font-family: var(--font-ui);
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-  color: var(--ink);
-}
-
-.how-steps p {
+.strip-item figcaption {
   font-size: 14px;
-  line-height: 1.62;
-  color: var(--ink-2);
-  max-width: 50ch;
-}
-
-/* the figure pins while the three steps scroll past it */
-.how-figure {
-  position: sticky;
-  top: calc(var(--nav-height) + 56px);
-  margin: 44px 0 0;
-}
-
-/* cropped past the lesson's own title band so this reads as a detail from a
-   render rather than a second copy of a slide shown further up the page */
-.how-figure video {
-  aspect-ratio: 5 / 2;
-  object-fit: cover;
-  object-position: 50% 100%;
-}
-
-.how-prompt {
-  margin: 20px 0 0;
-  padding-left: 20px;
-  border-left: 1px solid var(--line-strong);
-  font-family: var(--font-display);
-  font-style: italic;
-  font-size: 22px;
-  line-height: 1.34;
-  letter-spacing: -0.012em;
-  font-variation-settings: "opsz" 22, "SOFT" 20, "WONK" 1;
-  color: var(--ink);
-  max-width: 34ch;
-}
-
-.how-prompt-note {
-  margin-top: 12px;
-  font-size: 13px;
-  letter-spacing: 0.02em;
   color: var(--ink-2);
 }
 
-/* --- 4. precision: the one sunken band, type only -------------------- */
+/* --- 6. close: the one sunken band, type only ------------------------ */
 
-.tenet {
+.close {
+  margin-top: clamp(160px, 20vh, 220px);
   background: var(--paper-sunken);
   border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: clamp(96px, 14vh, 176px) var(--gutter);
+  padding: clamp(110px, 15vh, 170px) var(--gutter);
+  text-align: center;
 }
 
-.tenet-inner {
+.close-inner {
   max-width: var(--page);
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
 }
 
-.tenet-inner > .kicker {
-  margin-bottom: 34px;
-}
-
-.tenet h2 {
+.close h2 {
   margin: 0;
-  font-size: clamp(34px, 4.4vw, 62px);
-  line-height: 1.04;
-  letter-spacing: -0.024em;
-  font-variation-settings: "opsz" 60, "SOFT" 20, "WONK" 1;
-  max-width: 19ch;
+  font-size: clamp(28px, 3vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.018em;
+  font-variation-settings: "opsz" 34, "SOFT" 20, "WONK" 1;
+  max-width: 24ch;
 }
 
-.tenet h2 em {
+.close h2 em {
   font-style: italic;
   color: var(--warm);
 }
 
-.tenet-notes {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: clamp(32px, 5vw, 80px);
-  margin-top: clamp(56px, 8vh, 96px);
-  padding-top: 32px;
-  border-top: 1px solid var(--line-strong);
-  max-width: 880px;
-  margin-left: auto;
-}
-
-.tenet-notes h3 {
-  margin: 0 0 10px;
-  font-family: var(--font-ui);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0;
-  line-height: 1.4;
-  color: var(--ink);
-}
-
-.tenet-notes p {
-  font-size: 16px;
-  line-height: 1.66;
-  color: var(--ink-2);
-}
-
-/* --- 5. close ------------------------------------------------------- */
-
-.closing {
-  padding: clamp(96px, 13vh, 168px) var(--gutter);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 34px;
-  text-align: center;
-}
-
-.closing h2 {
+.close-inner > p {
   margin: 0;
-  font-size: clamp(34px, 4.6vw, 62px);
-  line-height: 1.0;
-  letter-spacing: -0.024em;
-  font-variation-settings: "opsz" 60, "SOFT" 20, "WONK" 1;
-  max-width: 17ch;
+  font-size: 16px;
+  line-height: 1.62;
+  color: var(--ink-2);
+  max-width: 52ch;
 }
 
-.closing .hero-actions {
-  justify-content: center;
-}
-
-.closing-note {
+.close-note {
   font-size: 14px;
   color: var(--ink-2);
 }
@@ -1130,20 +1103,16 @@ body:has(.access-page) {
 
 /* --- responsive ----------------------------------------------------- */
 
-@media (max-width: 1080px) {
-  .lesson.spread-lead {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
+/* below this the floating marginalia would crowd the type: cut them */
+@media (max-width: 1024px) {
+  .hero-frag {
+    display: none;
   }
+}
 
-  .how-inner,
+@media (max-width: 1080px) {
   .pricing-terms-inner {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .how-figure {
-    position: static;
-    margin-top: 0;
   }
 
   .pricing-grid {
@@ -1180,27 +1149,49 @@ body:has(.access-page) {
 
   .hero {
     min-height: 0;
-    padding-bottom: clamp(48px, 8vh, 80px);
+    padding-top: clamp(72px, 12vh, 120px);
+    padding-bottom: clamp(80px, 14vh, 140px);
   }
 
-  .hero-copy {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .hero h1 {
-    max-width: 14ch;
-  }
-
-  /* flex-basis 0 would let the media contribute nothing to the auto height
-     of the stacked hero and spill into the next section */
-  .hero-media {
-    display: block;
-    flex: 0 0 auto;
-  }
-
-  .hero-stage {
+  /* the annotated frame gives up its margin: the note flows beneath it.
+     24px keeps the sienna ink at large-text contrast */
+  .pen-figure {
     width: 100%;
+  }
+
+  .pen-connector {
+    display: none;
+  }
+
+  .pen-margin-note {
+    position: static;
+    width: auto;
+    max-width: 24ch;
+    margin-top: 18px;
+  }
+
+  /* the contact strip becomes a swipeable row, scrollbar chrome hidden */
+  .strip-row {
+    justify-content: flex-start;
+    overflow-x: auto;
+    margin: 0 calc(-1 * var(--gutter));
+    padding: 0 var(--gutter);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+
+  .strip-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .strip-item {
+    flex: 0 0 78vw;
+    scroll-snap-align: center;
+  }
+
+  .watch-note {
+    text-align: center;
   }
 
   .page-head-inner,
@@ -1221,16 +1212,6 @@ body:has(.access-page) {
 }
 
 @media (max-width: 680px) {
-  .spread-side {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 40px;
-  }
-
-  .how-steps li {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
-
   .pricing-grid {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -22,48 +22,78 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hard ideas, made obvious.");
   await expect(page.getByRole("link", { name: "Start free" }).first()).toHaveAttribute("href", "/studio");
   await expect(page.getByRole("link", { name: "Start with one free lesson" }).first()).toHaveAttribute("href", "/studio");
+  await expect(page.getByRole("link", { name: /Watch a lesson/ })).toHaveAttribute("href", "#watch");
   await expect(page.getByRole("link", { name: /See the plans/ })).toHaveAttribute("href", "/pricing");
-  await expect(page.locator("video.reel-video")).toBeVisible();
-  await expect(page.locator("video.reel-video")).toHaveAttribute("src", "/showcase/accumulation.mp4");
-  await expect(page.locator("#how-it-works")).toContainText("Describe the idea");
+  await expect(page.locator("video.watch-video")).toHaveAttribute("src", "/showcase/accumulation.mp4");
+  await expect(page.locator("#how-it-works")).toContainText("You write");
+  await expect(page.locator("#how-it-works")).toContainText("going round a circle");
+  await expect(page.locator("#how-it-works video")).toHaveAttribute("src", "/showcase/frag-rotation.mp4");
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousA11yViolations(page);
 });
 
-test("the hero and its video fit the first screen without scrolling", async ({ page }, testInfo) => {
+test("the hero fits the first screen and the marginalia clear the type", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The single-screen hero is a desktop layout.");
   for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    const stage = page.locator(".hero-stage");
-    await expect(stage).toBeVisible();
-    const box = await stage.boundingBox();
-    expect(box, `no hero stage box at ${viewport.width}x${viewport.height}`).not.toBeNull();
-    // the whole 16:9 player has to sit above the fold, nav included
-    expect(box!.y + box!.height, `hero bottom at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(viewport.height);
-    expect(box!.height, `hero video is too small at ${viewport.width}x${viewport.height}`).toBeGreaterThan(200);
-    expect(box!.width / box!.height).toBeCloseTo(16 / 9, 1);
+    const at = `${viewport.width}x${viewport.height}`;
+    // every piece of the stacked hero — headline through the fine print —
+    // has to sit above the fold, nav included
+    for (const [name, locator] of [
+      ["headline", page.locator(".hero h1")],
+      ["cta", page.getByRole("link", { name: "Start with one free lesson" }).first()],
+      ["note", page.locator(".hero-note")],
+    ] as const) {
+      const box = await locator.boundingBox();
+      expect(box, `no ${name} box at ${at}`).not.toBeNull();
+      expect(box!.y + box!.height, `${name} below the fold at ${at}`).toBeLessThanOrEqual(viewport.height);
+    }
+    // the floating fragments are marginalia: they must never touch the type.
+    // the h1 fills its container, so measure the actual text lines instead.
+    const lines = await page.locator(".hero h1").evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return Array.from(range.getClientRects()).map((rect) => ({
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      }));
+    });
+    expect(lines.length, `no headline lines at ${at}`).toBeGreaterThan(0);
+    for (const selector of [".hero-frag-rotation", ".hero-frag-slope"]) {
+      const frag = await page.locator(selector).boundingBox();
+      expect(frag, `no ${selector} box at ${at}`).not.toBeNull();
+      for (const line of lines) {
+        const collides =
+          frag!.x < line.x + line.width &&
+          frag!.x + frag!.width > line.x &&
+          frag!.y < line.y + line.height &&
+          frag!.y + frag!.height > line.y;
+        expect(collides, `${selector} collides with the headline at ${at}`).toBe(false);
+      }
+    }
   }
 });
 
-// the gallery is gone: all three lessons are laid out together as one spread,
-// so the assertion's intent — every example is reachable without leaving the
-// page — is now checked by them all being present and captioned at once.
-test("every example lesson is on the page at once, captioned and playing", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "The spread is exercised once.");
+// the examples gallery became the contact strip: all three lesson stills sit
+// in one whitespace-separated row, each captioned with the sentence that
+// produced it (the claim itself is typography inside the frame).
+test("the contact strip lays out all three lessons, captioned", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The strip is exercised once.");
   await page.goto("/");
-  const spread = page.locator("#examples");
-  await expect(spread.locator(".lesson")).toHaveCount(3);
-  for (const [id, caption] of [
-    ["slope", /tangent is placed by evaluating the derivative/i],
-    ["rotation", /turning at a steady rate/i],
-    ["accumulation", /Rectangles narrowing under a curve/i],
+  const strip = page.locator("#examples");
+  await expect(strip.locator("figure")).toHaveCount(3);
+  for (const [id, sentence] of [
+    ["accumulation", /adding up rectangles becomes the integral/i],
+    ["rotation", /sine wave is just something going round a circle/i],
+    ["slope", /what the derivative means at one point/i],
   ] as const) {
-    const lesson = spread.locator(`#lesson-${id}`);
-    await expect(lesson).toBeVisible();
-    await expect(lesson.locator("video")).toHaveAttribute("src", `/showcase/${id}.mp4`);
-    await expect(lesson.locator("video")).toHaveAttribute("poster", `/showcase/${id}.jpg`);
-    await expect(lesson.locator(".lesson-note")).toHaveText(caption);
+    const item = strip.locator(`#lesson-${id}`);
+    await expect(item).toBeVisible();
+    await expect(item.locator("img")).toHaveAttribute("src", `/showcase/${id}.jpg`);
+    await expect(item.locator("figcaption")).toHaveText(sentence);
   }
 });
 
