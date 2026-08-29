@@ -15,6 +15,10 @@ sql_disk_size_gb         = 10
 billing_account_id       = "0181BB-902BC6-5D4673"
 monthly_budget_usd       = 20
 
+# Codex budget: cost is the primary enforced ceiling; the call count is a backstop.
+codex_max_api_calls_per_job               = 200
+codex_max_estimated_cost_microusd_per_job = 2000000
+
 secret_ids = {
   identity_api_key  = "identity_platform_api_key"
   openai_api_key    = "openai_api_key"
@@ -25,4 +29,6 @@ secret_ids = {
   staff_emails      = "staff_emails"
 }
 
+# Email channel managed by Terraform; extra pre-existing channel IDs can be appended below.
+alert_email              = "alerts@example.com"
 notification_channel_ids = []

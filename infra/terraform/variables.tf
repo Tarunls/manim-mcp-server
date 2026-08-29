@@ -104,6 +104,26 @@ variable "monthly_budget_usd" {
   }
 }
 
+variable "codex_max_api_calls_per_job" {
+  type        = number
+  default     = 200
+  description = "Backstop ceiling on Codex API calls per generation job. The cost budget is the primary limit; keep this generous."
+  validation {
+    condition     = var.codex_max_api_calls_per_job >= 1 && var.codex_max_api_calls_per_job <= 1000
+    error_message = "codex_max_api_calls_per_job must be between 1 and 1000."
+  }
+}
+
+variable "codex_max_estimated_cost_microusd_per_job" {
+  type        = number
+  default     = 2000000
+  description = "Primary enforced budget: estimated Codex spend per generation job, in micro-USD (2000000 = $2)."
+  validation {
+    condition     = var.codex_max_estimated_cost_microusd_per_job > 0
+    error_message = "codex_max_estimated_cost_microusd_per_job must be positive."
+  }
+}
+
 variable "secret_ids" {
   type = object({
     identity_api_key  = string

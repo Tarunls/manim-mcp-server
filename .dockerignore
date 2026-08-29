@@ -16,3 +16,6 @@ studio/projects/*
 studio/cache
 studio/jobs.json
 npm-debug.log*
+playwright-report
+test-results
+Demo-manim-mcp.gif

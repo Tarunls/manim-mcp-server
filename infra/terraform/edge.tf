@@ -18,7 +18,7 @@ resource "google_compute_security_policy" "edge" {
     action   = "rate_based_ban"
     match {
       expr {
-        expression = "request.path.startsWith('/api/auth/') || request.path.matches('/api/projects/[^/]+/(messages|reviews)')"
+        expression = "request.path.startsWith('/api/auth/') || request.path.matches('/api/projects/[^/]+/messages') || request.path.matches('/api/projects/[^/]+/reviews')"
       }
     }
     rate_limit_options {

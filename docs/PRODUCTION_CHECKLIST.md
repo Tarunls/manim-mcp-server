@@ -6,13 +6,14 @@
 - Session cookies are `Secure`, host-only, `httpOnly`, and revocation-tested.
 - Cross-user project, job, artifact, review, and billing requests return `404` or `401` without leaking existence.
 - Cloud Run dispatcher rejects public callers and accepts only the Cloud Tasks OIDC service account.
-- The API `run.app` URL cannot bypass the HTTPS load balancer or Cloud Armor, and HTTP redirects to the canonical HTTPS origin.
+- The API `run.app` URL cannot bypass the HTTPS load balancer or Cloud Armor, and HTTP redirects to the canonical HTTPS origin. Satisfied for staging on 2026-08-28: the external edge and `useorune.com` certificate are live, the canonical origin is `https://useorune.com`, and API ingress is internal-and-cloud-load-balancing.
 - E2B egress tests prove arbitrary hosts and direct OpenAI access are blocked; `.env` contains only a job-scoped proxy token, is mode `0600`, excluded from archives, and deleted.
-- A completed/cancelled job and another job's proxy token cannot call the OpenAI proxy; the per-job request budget remains enforced under concurrency.
+- A completed/cancelled job and another job's proxy token cannot call the OpenAI proxy; the per-job budget remains enforced under concurrency. The estimated-cost ceiling (`CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB`) is the primary enforced budget, the call count (`CODEX_MAX_API_CALLS_PER_JOB`) is a backstop, and exhaustion returns a terminal `400`.
 - GCS public access prevention and uniform bucket-level access are enabled.
 - Secret Manager access logs show the API/dispatcher split described in the runbook.
 - Dependency audit reports no high or critical vulnerabilities; SAST and container scanning pass.
 - Only protected, reviewed release branches can invoke the privileged build/deploy identity; untrusted pull requests cannot run with it.
+- Every deployed image tag corresponds to a pushed commit in this repository. Currently unmet: the staging image/template tag `004c9c7` is not a commit here; rebuild from a pushed commit before certification.
 
 ## Reliability
 
@@ -37,11 +38,12 @@
 
 - Production Stripe prices, Customer Portal, tax/legal settings, webhook destination, and refund/support process are verified.
 - Privacy policy, terms, retention/deletion process, support contact, and abuse response are published.
-- Monitoring notification channels and on-call ownership are configured; alert tests reach a human.
+- Monitoring notification channels and on-call ownership are configured; alert tests reach a human. Terraform now defines an email channel (`alert_email`) wired into all alert policies; it takes effect at the next deliberate `terraform apply`.
 - Staging end-to-end silent and narrated videos pass visual, audio, artifact, and download checks.
 
-## Current release blocker (2026-08-28)
+## Current release blockers (2026-08-28)
 
-- `npm run smoke:staging` passed disposable signup, administrator verification, login/session creation, PostgreSQL persistence, Stripe sandbox Checkout creation, Cloud Tasks dispatch, E2B creation, scoped Codex callback authentication, safe failure handling, refund, and account cleanup.
-- The same smoke could not produce an artifact because OpenAI returned `Quota exceeded. Check your plan and billing details.` for the Secret Manager `openai_api_key` project.
-- Restore OpenAI billing/quota or replace that secret, restart the API to load the new secret version, and rerun both silent and narrated staging generation before checking the final product-and-operations item.
+- `npm run smoke:staging` passed disposable signup, administrator verification, login/session creation, PostgreSQL persistence, Stripe sandbox Checkout creation, Cloud Tasks dispatch, E2B creation, scoped Codex callback authentication, safe failure handling, refund, and account cleanup. A full narrated staging generation through the callback-to-artifact path has still not passed end to end.
+- A distinct live restricted Stripe key for production has not been selected or stored; the current isolated key is staging-only.
+- Load, restore, and rollback certification remain outstanding.
+- Rerun both silent and narrated staging generation before checking the final product-and-operations item.

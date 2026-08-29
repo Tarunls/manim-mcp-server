@@ -4,6 +4,29 @@ variable "notification_channel_ids" {
   description = "Existing Monitoring notification channel resource IDs."
 }
 
+variable "alert_email" {
+  type        = string
+  default     = ""
+  description = "Email address that receives Monitoring alerts. Empty disables the managed email channel."
+}
+
+resource "google_monitoring_notification_channel" "email" {
+  count        = var.alert_email != "" ? 1 : 0
+  display_name = "${local.name} alerts (email)"
+  type         = "email"
+  labels = {
+    email_address = var.alert_email
+  }
+  depends_on = [google_project_service.required]
+}
+
+locals {
+  notification_channels = concat(
+    var.notification_channel_ids,
+    google_monitoring_notification_channel.email[*].id,
+  )
+}
+
 resource "google_logging_metric" "generation_failures" {
   name   = "${local.name}/generation_failures"
   filter = "resource.type=\"cloud_run_revision\" AND (resource.labels.service_name=\"${google_cloud_run_v2_service.api.name}\" OR resource.labels.service_name=\"${google_cloud_run_v2_service.dispatcher.name}\") AND severity>=ERROR AND (textPayload:\"generation\" OR jsonPayload.message:\"generation\" OR textPayload:\"E2B\" OR jsonPayload.message:\"E2B\")"
@@ -16,7 +39,7 @@ resource "google_logging_metric" "generation_failures" {
 resource "google_monitoring_alert_policy" "api_5xx" {
   display_name          = "${local.name}: elevated API 5xx rate"
   combiner              = "OR"
-  notification_channels = var.notification_channel_ids
+  notification_channels = local.notification_channels
 
   conditions {
     display_name = "More than one 5xx response per second"
@@ -36,7 +59,7 @@ resource "google_monitoring_alert_policy" "api_5xx" {
 resource "google_monitoring_alert_policy" "generation_failures" {
   display_name          = "${local.name}: generation failures"
   combiner              = "OR"
-  notification_channels = var.notification_channel_ids
+  notification_channels = local.notification_channels
 
   conditions {
     display_name = "Five generation failures in five minutes"
@@ -57,7 +80,7 @@ resource "google_monitoring_alert_policy" "generation_failures" {
 resource "google_monitoring_alert_policy" "database_cpu" {
   display_name          = "${local.name}: Cloud SQL CPU saturation"
   combiner              = "OR"
-  notification_channels = var.notification_channel_ids
+  notification_channels = local.notification_channels
 
   conditions {
     display_name = "Database CPU above 80% for 15 minutes"

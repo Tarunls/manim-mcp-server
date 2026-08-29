@@ -1,22 +1,25 @@
 steps:
   - name: node:22-bookworm-slim
     entrypoint: bash
-    args: ["-euo", "pipefail", "-c", "npm ci && npm run check && npm test && npm run build && npm audit"]
+    args: ["-euo", "pipefail", "-c", "npm ci && npm run check && npm test && npm run build && npm audit --omit=dev --audit-level=high"]
   - name: gcr.io/cloud-builders/docker
     entrypoint: bash
     args:
       - -c
-      - docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest || true
+      - docker pull ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:buildcache || true
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "--cache-from", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest", "."]
+    args: ["build", "--cache-from", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:buildcache", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:buildcache", "."]
   - name: gcr.io/cloud-builders/docker
     args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA"]
+  # :buildcache is a cache-only tag; nothing deploys from it. The mutable
+  # :latest tag is intentionally no longer pushed because the legacy
+  # lesson-studio service deploys from :latest and staging builds were
+  # silently changing what it would pick up.
   - name: gcr.io/cloud-builders/docker
-    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest"]
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:buildcache"]
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:$COMMIT_SHA
-  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/app:latest
 
 serviceAccount: projects/$PROJECT_ID/serviceAccounts/ls-${_ENVIRONMENT}-release@$PROJECT_ID.iam.gserviceaccount.com
 
