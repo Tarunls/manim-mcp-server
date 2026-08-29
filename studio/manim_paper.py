@@ -1,0 +1,203 @@
+"""The Orune paper typography system.
+
+Every piece of text in a lesson goes through this module. Freehand ``Text()``
+calls are forbidden in generated scenes because they are how lessons end up
+with a different size, alignment, and spacing on every frame. The renderer
+enforces the import; the functions here enforce the grid.
+
+The grid: one left margin anchors everything. The running head sits at the
+top, the claim under it, the stage owns the middle, and captions sit at the
+bottom - all flush to ``LEFT_X``. Labels are the only text allowed elsewhere,
+and they must sit adjacent to the object they name, in that object's colour.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+from manim import (
+    DOWN,
+    ITALIC,
+    LEFT,
+    NORMAL,
+    RIGHT,
+    Axes,
+    FadeIn,
+    FadeOut,
+    Mobject,
+    Scene,
+    Text,
+    VGroup,
+)
+
+# The editorial grid, in scene units. Everything hangs off this margin.
+LEFT_X = -5.6
+RIGHT_X = 5.6
+HEAD_Y = 3.05
+CAPTION_Y = -3.4
+
+# The frame is divided into three horizontal bands that never share space:
+# the head band (running head + claim), the stage, and the caption band.
+# Everything visual lives inside the stage; fit_stage() enforces it.
+STAGE_TOP = 1.7
+STAGE_BOTTOM = -2.85
+
+# The full type scale. There are no other sizes.
+SIZE = {
+    "head": 19,  # running head, muted
+    "claim": 40,  # the one sentence of the beat
+    "sub": 28,  # a secondary statement under the claim (rare)
+    "label": 24,  # a name attached to an object
+    "caption": 22,  # the bottom-margin note
+    "expr": 27,  # expression terms; operators are set 1.55x
+}
+
+_FALLBACKS = {
+    "background": "#FBFAF7",
+    "text": "#1A1917",
+    "muted": "#8A857D",
+    "rule": "#D9D4CA",
+    "primary": "#2E5266",
+    "accent": "#B07548",
+}
+
+
+# Roles set at display size use the display cut; everything smaller uses the
+# text cut, whose optical size carries correct word spacing at 19-27pt.
+_DISPLAY_ROLES = {"claim", "sub"}
+
+
+def load_design(project_dir: str = ".") -> dict:
+    """Read design-config.json and return {font, colors...} with fallbacks."""
+    design = dict(_FALLBACKS)
+    design["font"] = "Orune Serif"
+    design["font_text"] = "Orune Serif Text"
+    try:
+        with open(os.path.join(project_dir, "design-config.json")) as handle:
+            data = json.load(handle)
+        for key in _FALLBACKS:
+            value = (data.get("colors") or {}).get(key)
+            if isinstance(value, str) and value.startswith("#"):
+                design[key] = value
+        font = (data.get("font") or {}).get("manim")
+        if isinstance(font, str) and font.strip():
+            design["font"] = font.strip()
+            if font.strip() != "Orune Serif":
+                design["font_text"] = font.strip()
+    except (OSError, ValueError):
+        pass
+    return design
+
+
+def text(design: dict, body: str, role: str = "label", *, italic: bool = False,
+         color: str | None = None) -> Text:
+    """The only sanctioned way to make text. Size comes from the role."""
+    if role not in SIZE:
+        raise ValueError(f"unknown text role {role!r}; use one of {sorted(SIZE)}")
+    default = design["muted"] if role in ("head", "caption") else design["text"]
+    family = design["font"] if role in _DISPLAY_ROLES else design.get(
+        "font_text", design["font"]
+    )
+    return Text(
+        body,
+        font=family,
+        font_size=SIZE[role],
+        color=color or default,
+        slant=ITALIC if italic else NORMAL,
+    )
+
+
+def running_head(design: dict, body: str) -> Text:
+    head = text(design, body, role="head")
+    head.move_to([LEFT_X, HEAD_Y, 0], aligned_edge=LEFT)
+    return head
+
+
+def claim(design: dict, body: str, head: Mobject | None = None) -> Text:
+    """The beat's one sentence. Break long claims yourself with a newline;
+    a claim wider than the frame is a claim that needs fewer words."""
+    sentence = text(design, body, role="claim")
+    if head is not None:
+        sentence.next_to(head, DOWN, buff=0.3, aligned_edge=LEFT)
+    else:
+        sentence.move_to([LEFT_X, HEAD_Y - 0.75, 0], aligned_edge=LEFT)
+    return sentence
+
+
+def swap_claim(scene: Scene, old: Mobject, new: Mobject) -> None:
+    """Replace one sentence with another. Sequential, never concurrent, and
+    never a Transform: both alternatives smear glyphs mid-tween."""
+    new.move_to(old, aligned_edge=LEFT)
+    scene.play(FadeOut(old), run_time=0.35)
+    scene.play(FadeIn(new), run_time=0.45)
+
+
+def label(design: dict, target: Mobject, body: str, direction=RIGHT,
+          *, color: str | None = None, buff: float = 0.22) -> Text:
+    """A name for an object. It sits directly against the thing it names and
+    inherits that thing's colour, so the reader never chases a pointer line
+    across the frame. Pointer lines to distant labels are forbidden."""
+    if color is None:
+        try:
+            picked = target.get_color().to_hex()
+        except Exception:
+            picked = design["text"]
+        color = str(picked)
+    tag = text(design, body, role="label", color=color)
+    tag.next_to(target, direction, buff=buff)
+    return tag
+
+
+def caption(design: dict, body: str, *, italic: bool = False) -> Text:
+    note = text(design, body, role="caption", italic=italic)
+    note.move_to([LEFT_X, CAPTION_Y, 0], aligned_edge=LEFT)
+    return note
+
+
+def expr(design: dict, *parts: tuple[str, str]) -> VGroup:
+    """Set an expression from (body, kind) parts, kind in:
+    "up" upright words, "it" italic variables, "op" oversized operators.
+    Example: expr(d, ("area","up"), ("=","up"), ("∫","op"), ("f(x) dx","it"))
+    """
+    pieces = []
+    for body, kind in parts:
+        if kind == "op":
+            piece = Text(body, font=design.get("font_text", design["font"]),
+                         font_size=round(SIZE["expr"] * 1.55),
+                         color=design["text"])
+            piece.shift(DOWN * 0.05)
+        elif kind == "it":
+            piece = text(design, body, role="expr", italic=True)
+        else:
+            piece = text(design, body, role="expr")
+        pieces.append(piece)
+    group = VGroup(*pieces).arrange(RIGHT, buff=0.2)
+    return group
+
+
+def fit_stage(mobject: Mobject, *, left: float = LEFT_X, right: float = RIGHT_X,
+              top: float = STAGE_TOP, bottom: float = STAGE_BOTTOM) -> Mobject:
+    """Scale and place a visual so it lives inside the stage band - the region
+    between the claim above and the caption below. Route EVERY primary visual
+    through this; it is what makes text/visual collisions impossible."""
+    width = right - left
+    height = top - bottom
+    if mobject.width > width:
+        mobject.scale_to_fit_width(width)
+    if mobject.height > height:
+        mobject.scale_to_fit_height(height)
+    mobject.move_to([left + mobject.width / 2, bottom + height / 2, 0])
+    return mobject
+
+
+def stage_axes(design: dict, **kwargs) -> Axes:
+    """Axes in the house voice: thin rules, no ticks, no arrowheads."""
+    config = {
+        "color": design["rule"],
+        "stroke_width": 1.6,
+        "include_ticks": False,
+        "include_tip": False,
+    }
+    config.update(kwargs.pop("axis_config", {}))
+    return Axes(axis_config=config, **kwargs)

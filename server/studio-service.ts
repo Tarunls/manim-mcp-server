@@ -123,11 +123,13 @@ Manim requirements:
 - Set the scene background to the palette's background colour explicitly; never rely on Manim's default dark canvas.
 - Use only Manim CE APIs available in the local environment. Prefer shapes, Text, MarkupText, NumberPlane, Axes, graphs, and deterministic animations. Avoid MathTex unless you first verify LaTeX is installed.
 - Import fit_inside, stack_in_panel, assert_inside, assert_scene_safe, assert_no_overlap, and watch_no_overlap from manim_layout.
+- Create ALL text through manim_paper: load_design() once, then running_head, claim, swap_claim, label, caption, expr, and text(design, body, role=...). Never call Text() directly and never hand-position text with fixed coordinates - the renderer rejects scenes that skip the manim_paper import, because freehand text is how frames end up with inconsistent size, alignment, and spacing.
+- Place every primary visual with manim_paper.fit_stage(...) so it stays inside the stage band between the claim and the caption; the head band and caption band belong to text alone.
+- A label names the thing it touches: create it with manim_paper.label so it sits adjacent to its object in that object's colour. Never draw a pointer line from a label to a distant object, and never leave a label floating over unrelated content.
 - Compose for a 16:9 frame. Keep all important objects at least 0.32 Manim units from the frame edge.
-- Build every information panel as one VGroup arranged with explicit spacing. Use stack_in_panel or fit_inside with at least 0.30 units of inner padding. Never position panel text independently with fixed coordinates.
 - Call assert_inside(panel, *panel_contents, padding=0.16) before animating each panel. Call assert_scene_safe on every major group before its first animation. Rendering intentionally fails when these checks detect overflow.
 - Call assert_no_overlap on the independent peer objects in every stable key pose. Install watch_no_overlap for peer objects that move concurrently so every rendered animation frame is checked. Do not compare a container with its own contents; group those intentional composites first. Use allow_pairs only for named, deliberate overlaps and add a short source comment explaining each exception.
-- Use no more than two type sizes inside a panel. Keep labels at least 0.18 units apart and align related captions to the equation terms above them.
+- Type sizes come only from manim_paper roles. Keep labels at least 0.18 units apart.
 - Render by running: python3 ../../../scripts/render_scene.py . balanced
 - Before finishing, confirm metadata.json reports renderer manim and ensure no warnings were bypassed by removing required layout assertions.`;
 

@@ -4,6 +4,9 @@ Projects below this directory are editable educational videos created by the Stu
 
 - Keep every project self-contained.
 - The editable source is `scene.py` with one scene named `GeneratedScene`. Import the shared guards from `manim_layout`. Use `assert_inside`, `assert_scene_safe`, and `assert_no_overlap` at every stable visual beat; use `watch_no_overlap` while independent peers move.
+- ALL text goes through `manim_paper` (`load_design`, `running_head`, `claim`, `swap_claim`, `label`, `caption`, `expr`, `text`). Freehand `Text(...)` calls are forbidden and the renderer rejects a scene that skips the import — freehand text is how frames end up with a different size, alignment, and spacing everywhere.
+- Route every primary visual through `manim_paper.fit_stage(...)` so it stays in the stage band between the claim and the caption.
+- A label sits directly against the object it names, in that object's colour (`manim_paper.label`). Never draw a pointer line from a label to something far away.
 - Render with `python3 ../../../scripts/render_scene.py . balanced`.
 - The render helper creates `output.mp4`, `poster.png`, `contact-sheet.png`, and `metadata.json`.
 - Read `narration-config.json`. When `enabled` is false, render a silent video and verify `metadata.json` reports narration disabled. When `enabled` is true, write 3-5 timed, chapter-length passages to `narration.json`, align them to the visual beats, and verify the final Speechify audio.

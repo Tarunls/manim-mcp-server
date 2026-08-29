@@ -2,6 +2,16 @@
 
 Every lesson is a Manim video in the studio's paper style: a printed page that moves. The look is quiet, editorial, and typographic. These rules are proven in rendered lessons — follow them literally rather than reinterpreting them.
 
+## The typography system is code, not judgement
+
+`studio/manim_paper.py` is on the render path's `PYTHONPATH`. Every piece of
+text is created through it — `running_head`, `claim`, `swap_claim`, `label`,
+`caption`, `expr`, and `text(design, body, role=...)` — and every primary
+visual is placed with `fit_stage`. The module owns the sizes, the fonts (a
+display cut for claims, a text cut for everything smaller), the left margin,
+and the three horizontal bands of the frame. Do not hand-position text and do
+not call `Text()` directly; the renderer rejects scenes that skip the module.
+
 ## The ground
 
 - The background is warm paper. Read the exact value from `design-config.json` (`colors.background`) and set it explicitly on the scene.

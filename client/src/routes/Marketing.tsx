@@ -45,30 +45,21 @@ export default function Marketing() {
 
   return (
     <MarketingChrome>
-      {/* 1 — hero: centered stacked type, two unframed fragments floating
-             as marginalia, and the pen circling one word */}
+      {/* 1 — hero: centered stacked type, the pen underlining one word, and
+             below the CTAs the whole product as one diagram: sentence in,
+             arrow, rendered lesson out */}
       <section className="hero" aria-labelledby="hero-title">
-        <img
-          className="hero-frag hero-frag-rotation"
-          src="/showcase/frag-rotation.jpg"
-          alt=""
-          aria-hidden="true"
-        />
-        <img
-          className="hero-frag hero-frag-slope"
-          src="/showcase/frag-slope.jpg"
-          alt=""
-          aria-hidden="true"
-        />
         <div className="hero-copy">
           <h1 id="hero-title">
             Hard ideas, made{" "}
             <span className="pen-word">
               obvious.
-              {/* the pen: a quick sienna circle, drawn once on load */}
+              {/* the pen: one sienna swoosh beneath the word, drawn on load.
+                  it lives under the last line, so it can never touch the
+                  line above at any viewport */}
               <svg
-                className="pen-circle"
-                viewBox="0 0 230 80"
+                className="pen-swoosh"
+                viewBox="0 0 230 34"
                 preserveAspectRatio="none"
                 aria-hidden="true"
                 focusable="false"
@@ -76,12 +67,7 @@ export default function Marketing() {
                 <path
                   className="pen-stroke pen-stroke-1"
                   pathLength={1}
-                  d="M 14,42 C 20,14 92,2 150,5 C 202,8 226,24 224,44 C 222,64 176,77 116,76 C 56,75 8,66 10,44 C 12,28 34,15 66,10"
-                />
-                <path
-                  className="pen-stroke pen-stroke-2"
-                  pathLength={1}
-                  d="M 30,26 C 52,13 104,6 152,9"
+                  d="M 8,9 C 44,24 96,29 148,25 C 178,23 204,17 222,8"
                 />
               </svg>
             </span>
@@ -100,11 +86,58 @@ export default function Marketing() {
           </div>
           <p className="hero-note">One lesson free. No card.</p>
         </div>
+
+        {/* the whole product in one glance: what you type, the arrow, what
+            comes back. bare on the paper — no boxes */}
+        <div
+          className="hero-diagram"
+          id="how-it-works"
+          role="group"
+          aria-label="How Orune works: you write one sentence, Orune renders the lesson"
+        >
+          <div className="hero-diagram-ask">
+            <p className="hero-diagram-quote">
+              &ldquo;Show me why a sine wave is just something going round a
+              circle.&rdquo;
+            </p>
+            <p className="hero-diagram-caption">you write</p>
+          </div>
+          {/* the same pen draws the arrow between the two halves */}
+          <svg
+            className="hero-diagram-arrow"
+            viewBox="0 0 96 44"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path className="pen-stroke" d="M 5,29 C 28,15 57,12 86,20" />
+            <path
+              className="pen-stroke"
+              d="M 75,10 C 80,14 84,17 87,20 C 82,22 77,25 72,29"
+            />
+          </svg>
+          <div className="hero-diagram-render">
+            <video
+              className="hero-diagram-video"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/showcase/frag-rotation.jpg"
+              src="/showcase/frag-rotation.mp4"
+              aria-label="The rendered answer: a hand turning on a circle beside the sine wave its height traces."
+            />
+            <p className="hero-diagram-caption">
+              Orune renders it &mdash; narrated, editable
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* 2 — watch one: a full-bleed lesson between two hairlines */}
       <section className="watch" id="watch" aria-label="Watch one lesson">
         <div className="watch-frame">
+          <span className="kicker watch-kicker">Watch one lesson</span>
           <video
             className="watch-video"
             autoPlay
@@ -123,36 +156,13 @@ export default function Marketing() {
         </p>
       </section>
 
-      {/* 3 — ask, then get: one vertical typographic sequence */}
-      <section
-        className="ask"
-        id="how-it-works"
-        aria-label="From a sentence to a lesson"
-        data-reveal
-      >
-        <p className="ask-label">You write</p>
-        <blockquote className="ask-quote">
-          &ldquo;Show me why a sine wave is just something going round a
-          circle.&rdquo;
-        </blockquote>
-        <p className="ask-label">Orune renders</p>
-        <video
-          className="ask-video"
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          poster="/showcase/frag-rotation.jpg"
-          src="/showcase/frag-rotation.mp4"
-          aria-label="The rendered answer: a hand turning on a circle beside the sine wave its height traces."
-        />
-      </section>
-
-      {/* 4 — the pen: the only annotated frame on the page */}
-      <section className="pen" aria-label="Correct it like a page proof">
+      {/* 3 — the pen: the only annotated frame on the page */}
+      <section className="pen" aria-labelledby="pen-title">
         <div className="pen-inner" data-reveal>
-          <span className="kicker">Correct it like a page proof</span>
+          <span className="kicker">The pen</span>
+          <h2 className="pen-title" id="pen-title">
+            Correct it like a page proof.
+          </h2>
           <div className="pen-figure">
             {/* the overlay maps onto the image alone, so the note must live
                 outside this frame */}
@@ -190,11 +200,12 @@ export default function Marketing() {
         </div>
       </section>
 
-      {/* 5 — three lessons: a contact strip, whitespace-separated */}
-      <section className="strip" id="examples" aria-label="Three lessons">
-        <span className="kicker strip-kicker">
+      {/* 4 — three lessons: a contact strip, whitespace-separated */}
+      <section className="strip" id="examples" aria-labelledby="strip-title">
+        <span className="kicker strip-kicker">Three lessons</span>
+        <h2 className="strip-title" id="strip-title">
           Every one of these was a sentence first.
-        </span>
+        </h2>
         {/* on small screens this row scrolls, so it must be keyboard-reachable */}
         <div
           className="strip-row"
@@ -216,7 +227,7 @@ export default function Marketing() {
         </div>
       </section>
 
-      {/* 6 — close: the one sunken band, type only */}
+      {/* 5 — close: the one sunken band, type only */}
       <section className="close" aria-labelledby="close-title">
         <div className="close-inner" data-reveal>
           <h2 id="close-title">

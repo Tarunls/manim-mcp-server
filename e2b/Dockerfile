@@ -35,7 +35,7 @@ RUN mkdir -p /opt/lesson-studio /workspace studio/projects \
 # Sans. The grep fails the build rather than shipping a template that renders
 # the wrong typeface.
 RUN mkdir -p /usr/local/share/fonts/orune \
-    && cp /opt/lesson-studio/app/fonts/OruneSerif-*.ttf /usr/local/share/fonts/orune/ \
+    && cp /opt/lesson-studio/app/fonts/OruneSerif*.ttf /usr/local/share/fonts/orune/ \
     && fc-cache -f \
     && fc-list : family | grep -q "Orune Serif"
 

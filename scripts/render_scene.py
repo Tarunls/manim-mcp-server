@@ -109,6 +109,11 @@ def main() -> None:
         fail("scene.py must define GeneratedScene as a Scene subclass.")
     if "from manim_layout import" not in code:
         fail("scene.py must import the shared manim_layout guards.")
+    if "from manim_paper import" not in code:
+        fail(
+            "scene.py must build all text through the manim_paper typography "
+            "system (running_head, claim, label, caption, expr, fit_stage)."
+        )
     if "assert_scene_safe(" not in code:
         fail("scene.py must call assert_scene_safe for its important visual groups.")
     if not has_layout_call(code, "assert_no_overlap", 2):

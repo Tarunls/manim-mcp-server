@@ -22,14 +22,18 @@ import os
 from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
 
-FAMILY = "Orune Serif"
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONT_DIR = os.path.join(HERE, "fonts")
 
-# WONK=1 keeps Fraunces' flared alternates, which is most of its character;
-# SOFT=20 takes the hard edge off the terminals; opsz=28 sits in the middle of
-# the 19-40pt range lessons actually set.
-AXES = {"wght": 400, "opsz": 28, "SOFT": 20, "WONK": 1}
+# Two optical cuts, used the way optical sizes are meant to be used. The
+# display cut (opsz 30) carries the 40pt claim; the text cut (opsz 13) carries
+# heads, labels, captions, and expressions - a display cut at those sizes has
+# display-tight word spacing, which is why small text once read as "25people".
+# WONK=1 keeps Fraunces' flared alternates; SOFT=20 rounds the terminals.
+CUTS = {
+    "Orune Serif": {"wght": 400, "opsz": 30, "SOFT": 20, "WONK": 1},
+    "Orune Serif Text": {"wght": 400, "opsz": 13, "SOFT": 20, "WONK": 1},
+}
 
 SOURCES = {
     "Regular": "Fraunces-Variable.ttf",
@@ -37,14 +41,14 @@ SOURCES = {
 }
 
 
-def build(style: str, source: str) -> None:
+def build(family: str, axes: dict, style: str, source: str) -> None:
     font = TTFont(os.path.join(FONT_DIR, source))
     font.flavor = None
-    static = instancer.instantiateVariableFont(font, AXES, inplace=False)
-    full = FAMILY if style == "Regular" else f"{FAMILY} {style}"
+    static = instancer.instantiateVariableFont(font, axes, inplace=False)
+    full = family if style == "Regular" else f"{family} {style}"
     for record in static["name"].names:
         if record.nameID == 1:
-            record.string = FAMILY
+            record.string = family
         elif record.nameID == 2:
             record.string = style
         elif record.nameID == 4:
@@ -52,15 +56,18 @@ def build(style: str, source: str) -> None:
         elif record.nameID == 6:
             record.string = full.replace(" ", "")
         elif record.nameID == 16:
-            record.string = FAMILY
+            record.string = family
         elif record.nameID == 17:
             record.string = style
-    out = os.path.join(FONT_DIR, f"OruneSerif-{style}.ttf")
+    out = os.path.join(
+        FONT_DIR, f"{family.replace(' ', '')}-{style}.ttf"
+    )
     static.save(out)
     print(f"wrote {out}")
 
 
 if __name__ == "__main__":
-    for style, source in SOURCES.items():
-        build(style, source)
-    print(f'family="{FAMILY}"; install fonts/ into the image and run fc-cache')
+    for family, axes in CUTS.items():
+        for style, source in SOURCES.items():
+            build(family, axes, style, source)
+    print("install fonts/ into the image and run fc-cache")

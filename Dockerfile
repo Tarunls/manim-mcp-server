@@ -45,7 +45,7 @@ COPY . .
 # fall back to DejaVu Sans, which is most of why generated output used to look
 # generic, so install the shipped face and rebuild the font cache.
 RUN mkdir -p /usr/local/share/fonts/orune \
-    && cp fonts/OruneSerif-*.ttf /usr/local/share/fonts/orune/ \
+    && cp fonts/OruneSerif*.ttf /usr/local/share/fonts/orune/ \
     && fc-cache -f \
     && fc-list : family | grep -q "Orune Serif"
 RUN npm run build \
