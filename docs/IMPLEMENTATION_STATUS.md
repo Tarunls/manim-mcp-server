@@ -19,12 +19,10 @@ Staging is **release-certified on `b7af3e5` with E2B template `lesson-studio-ren
 | Canonical origin | `https://useorune.com` |
 | Load-balancer IP | `136.68.115.171` |
 | TLS | Google-managed certificate is `ACTIVE` |
-| Deployed app image | `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:004c9c7` |
-| API revision | `lesson-studio-staging-api-00024-rtt` |
-| Dispatcher revision | `lesson-studio-staging-dispatcher-00022-lvj` |
-| Deployed E2B template | `lesson-studio-renderer:004c9c7` |
-| Candidate commit/image | `c74eb0d`; image build succeeded, not deployed |
-| Candidate E2B template | Not built or certified |
+| Deployed app image | `us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:b7af3e5` |
+| API revision | serves `app:b7af3e5` (see Cloud Run for the live revision name) |
+| Dispatcher revision | serves `app:b7af3e5` |
+| Deployed E2B template | `lesson-studio-renderer:7c6ecc6` (Manim-only, Orune Serif verified) |
 | Stripe | Temporary CLI sandbox; expires 2026-09-04 |
 | Staging capacity | Two active E2B sandboxes, API maximum three instances |
 | GCP budget | $20 monthly alert, not a hard cap; external providers excluded |
@@ -44,7 +42,7 @@ Terraform remote state is active. The legacy public Cloud Run service named `les
 - Long-running E2B execution is separated from short HTTP request timeouts, so the worker is not killed at 30 seconds.
 - The sandbox narration bridge binds only to loopback, allows only the narration route, validates bounded inputs, and keeps the job callback credential out of the Codex child. Its unit/security test passes.
 
-## Latest failed acceptance test
+## Historical: last failed acceptance test (resolved in `c74eb0d`, superseded by `b7af3e5`)
 
 The paid narrated smoke job was `2cf0e941-e293-4b93-8c37-9e5df7787d6d`. Payment and entitlement provisioning passed and the job reached E2B. It failed before artifact completion because `/opt/lesson-studio/app/.venv/bin/manim` contained an embedded reference to nonexistent `/app/.venv/bin/python3`.
 
