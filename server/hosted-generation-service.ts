@@ -387,6 +387,11 @@ export class HostedGenerationService {
          VALUES ($1, $2, 'sandbox_started', $3::jsonb)`,
         [jobId, result.rows[0].owner_id, JSON.stringify({ sandboxId })],
       );
+      await this.updateProjectProgress(
+        { id: jobId, projectId: result.rows[0].project_id, ownerId: result.rows[0].owner_id },
+        "authoring",
+        "Workspace ready - the agent is planning the lesson",
+      );
     }
     return result.rows[0] ? this.fromRow(result.rows[0]) : undefined;
   }
@@ -423,13 +428,89 @@ export class HostedGenerationService {
     return this.fromRow(row);
   }
 
+  private redactForOwner(jobId: string, value: unknown, limit: number) {
+    return String(value || "")
+      .replaceAll(this.callbackToken(jobId), "[redacted]")
+      .replaceAll(this.codexToken(jobId), "[redacted]")
+      .replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]")
+      .slice(0, limit);
+  }
+
+  private progressThrottle = new Map<string, number>();
+
+  /** Live progress from the sandbox: a bounded label and/or a stage hint.
+   * Writes bump the project revision, which is what the browser's event
+   * stream watches - without this, a hosted generation looks frozen. */
+  async recordProgress(job: HostedJob, input: { label?: unknown; stage?: unknown }) {
+    const label = this.redactForOwner(
+      job.id,
+      typeof input.label === "string" ? input.label.replace(/\s+/g, " ").trim() : "",
+      90,
+    );
+    const allowedStages = new Set(["authoring", "rendering", "inspecting"]);
+    const stage =
+      typeof input.stage === "string" && allowedStages.has(input.stage)
+        ? (input.stage as StudioProject["stage"])
+        : undefined;
+    if (!label && !stage) return;
+    const now = Date.now();
+    // Labels are throttled; stage changes always land.
+    if (!stage && now - (this.progressThrottle.get(job.id) || 0) < 1500) return;
+    this.progressThrottle.set(job.id, now);
+    await this.updateProjectProgress(job, stage, label || undefined);
+  }
+
+  private async updateProjectProgress(
+    job: Pick<HostedJob, "id" | "projectId" | "ownerId">,
+    stage: StudioProject["stage"] | undefined,
+    label: string | undefined,
+  ) {
+    await this.db.transaction(async (client) => {
+      const result = await client.query<{ document: StudioProject }>(
+        `SELECT document FROM projects WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [job.projectId, job.ownerId],
+      );
+      const project = result.rows[0]?.document;
+      if (!project || project.status !== "running") return;
+      if (stage) project.stage = stage;
+      if (label) {
+        const actions = project.actions || [];
+        const last = actions.at(-1);
+        if (last?.label !== label) {
+          project.actions = [
+            ...actions.slice(-29),
+            {
+              id: `${job.id}:${randomUUID().slice(0, 8)}`,
+              label,
+              status: "done" as const,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+        }
+      }
+      project.updatedAt = new Date().toISOString();
+      await client.query(
+        `UPDATE projects SET document = $3::jsonb, revision = revision + 1, updated_at = now()
+          WHERE id = $1 AND owner_id = $2`,
+        [job.projectId, job.ownerId, JSON.stringify(project)],
+      );
+    });
+  }
+
   async markUploading(jobId: string) {
-    await this.db.query(
+    const result = await this.db.query<JobRow>(
       `UPDATE generation_jobs SET status = 'uploading', updated_at = now(),
           lease_expires_at = now() + interval '10 minutes'
-        WHERE id = $1 AND status = 'running'`,
+        WHERE id = $1 AND status = 'running'
+        RETURNING *`,
       [jobId],
     );
+    if (result.rows[0])
+      await this.updateProjectProgress(
+        { id: jobId, projectId: result.rows[0].project_id, ownerId: result.rows[0].owner_id },
+        "inspecting",
+        "Checking and uploading the finished video",
+      );
   }
 
   async fail(
@@ -662,11 +743,7 @@ export class HostedGenerationService {
         action.status = "done";
         action.label = number === 1 ? "First draft ready" : `Revision ${number} ready`;
       }
-      const safeAssistantMessage = String(assistantMessage || "")
-        .replaceAll(this.callbackToken(job.id), "[redacted]")
-        .replaceAll(this.codexToken(job.id), "[redacted]")
-        .replace(/\b(?:sk|rk)-(?:proj-)?[A-Za-z0-9_-]{16,}/g, "[redacted]")
-        .slice(0, 2000);
+      const safeAssistantMessage = this.redactForOwner(job.id, assistantMessage, 2000);
       project.messages.push({
         id: randomUUID(),
         role: "assistant",

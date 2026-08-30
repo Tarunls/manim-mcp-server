@@ -226,11 +226,55 @@ ${String(job.prompt).slice(0, 12000)}
   const agentTimeoutMs = Number.isSafeInteger(requestedAgentTimeout) && requestedAgentTimeout >= 60_000
     ? Math.min(requestedAgentTimeout, 58 * 60_000)
     : 25 * 60_000;
-  const turn = await withTimeout(
-    thread.run(localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions),
+  // Progress is best-effort and bounded: a dropped callback never fails the
+  // job, labels are short, and the server throttles further.
+  const progress = (body) => callback("/progress", body).catch(() => undefined);
+  await progress({ label: "Reading the brief and planning the lesson" });
+  let lastAgentMessage = "";
+  let lastProgressAt = 0;
+  let renderSeen = false;
+  const streamed = await thread.runStreamed(
+    localAttachments.length ? [{ type: "text", text: instructions }, ...localAttachments] : instructions,
+  );
+  const consume = async () => {
+    for await (const event of streamed.events) {
+      if (event.type === "turn.failed") {
+        throw new Error(event.error?.message || "Codex turn failed.");
+      }
+      if (event.type !== "item.completed" && event.type !== "item.updated") continue;
+      const item = event.item;
+      if (!item) continue;
+      if (item.type === "agent_message" && typeof item.text === "string") {
+        lastAgentMessage = item.text;
+        continue;
+      }
+      const now = Date.now();
+      if (item.type === "todo_list" && Array.isArray(item.items) && item.items.length) {
+        const done = item.items.filter((entry) => entry.completed).length;
+        const current = item.items.find((entry) => !entry.completed);
+        if (current && now - lastProgressAt > 2500) {
+          lastProgressAt = now;
+          await progress({
+            label: `Step ${Math.min(done + 1, item.items.length)} of ${item.items.length} - ${String(current.text).slice(0, 70)}`,
+          });
+        }
+        continue;
+      }
+      if (item.type === "command_execution" && !renderSeen) {
+        const command = String(item.command || "");
+        if (command.includes("render_scene.py")) {
+          renderSeen = true;
+          await progress({ stage: "rendering", label: "Rendering the video with Manim" });
+        }
+      }
+    }
+  };
+  await withTimeout(
+    consume(),
     agentTimeoutMs,
     "Codex generation exceeded its execution deadline.",
   );
+  const turn = { finalResponse: lastAgentMessage };
   await narrationProxy?.close();
   narrationProxy = undefined;
   for (const filename of ["output.mp4", "metadata.json"]) {

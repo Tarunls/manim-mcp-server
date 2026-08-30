@@ -499,6 +499,26 @@ app.post(
 );
 
 app.post(
+  "/api/internal/generation/:jobId/progress",
+  async (request, response) => {
+    const token = (request.header("authorization") || "").replace(
+      /^Bearer\s+/i,
+      "",
+    );
+    const job = await generations.verifyCallback(
+      String(request.params.jobId),
+      token,
+    );
+    if (!job || !["dispatching", "running", "uploading"].includes(job.status))
+      return response.status(401).json({ error: "Invalid job callback." });
+    await generations
+      .recordProgress(job, request.body || {})
+      .catch(() => undefined);
+    response.status(204).end();
+  },
+);
+
+app.post(
   [
     "/api/internal/codex/:jobId/v1/responses",
     "/api/internal/codex/:jobId/v1/responses/compact",
@@ -891,8 +911,10 @@ function subscribeToProjectChanges(
                   .storageRevision || 0,
               );
               if (created.knownRevisions.get(item.id) !== revision)
+                // Mirror the snapshot path: the browser expects restored
+                // projects, not raw repository rows.
                 for (const send of created.subscribers)
-                  send({ type: "project", project: item });
+                  send({ type: "project", project: studio.restoreProject(item) });
               created.knownRevisions.set(item.id, revision);
             }
           })
