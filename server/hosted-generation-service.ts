@@ -8,6 +8,18 @@ import type { VerifiedArtifact } from "./artifact-service.js";
 
 type JobStatus = "queued" | "dispatching" | "running" | "uploading" | "complete" | "failed" | "cancelled";
 
+/** What the owner reads when a draft lands. Written from the probed file
+ * rather than from the agent's own sign-off, which is a build report meant
+ * for whoever ran the tool - sandbox paths, source filenames, vendor model
+ * names - and reads like a stack trace to the person who asked for a lesson. */
+export function completionMessage(number: number, render: StudioProject["versions"][number]["render"]) {
+  const opening = number === 1 ? "First draft ready" : `Revision ${number} ready`;
+  const seconds = Math.round(Number(render?.duration) || 0);
+  if (!seconds) return `${opening}.`;
+  const narrated = render?.narration?.hasAudio ? ", with narration" : "";
+  return `${opening} - ${seconds} seconds${narrated}.`;
+}
+
 export type HostedJob = {
   id: string;
   ownerId: string;
@@ -683,7 +695,7 @@ export class HostedGenerationService {
     }
   }
 
-  async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"], assistantMessage?: string) {
+  async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"]) {
     return this.db.transaction(async (client) => {
       const result = await client.query<JobRow>(
       `UPDATE generation_jobs
@@ -743,11 +755,10 @@ export class HostedGenerationService {
         action.status = "done";
         action.label = number === 1 ? "First draft ready" : `Revision ${number} ready`;
       }
-      const safeAssistantMessage = this.redactForOwner(job.id, assistantMessage, 2000);
       project.messages.push({
         id: randomUUID(),
         role: "assistant",
-        text: safeAssistantMessage || (number === 1 ? "First draft ready." : `Revision ${number} ready.`),
+        text: completionMessage(number, render),
         createdAt: new Date().toISOString(),
       });
       await client.query(

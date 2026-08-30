@@ -422,14 +422,7 @@ app.post(
       await generations.markUploading(job.id);
       const verified = await artifacts.verify(job, reported);
       const render = await artifacts.readRenderMetadata(job.id);
-      await generations.complete(
-        job.id,
-        verified,
-        render,
-        typeof request.body?.assistantMessage === "string"
-          ? request.body.assistantMessage
-          : undefined,
-      );
+      await generations.complete(job.id, verified, render);
       response.json({ received: true });
     } catch (error) {
       console.error("Generation artifact validation failed", {

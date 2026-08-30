@@ -399,7 +399,10 @@ Do not invoke manim directly and do not hand-write metadata.json. Reply only whe
   uploaded.push(await upload("source_archive", "/workspace/source.tar.gz"));
   if (await exists(path.join(projectRoot, "poster.png"))) uploaded.push(await upload("poster", path.join(projectRoot, "poster.png")));
   if (await exists(path.join(projectRoot, "contact-sheet.png"))) uploaded.push(await upload("contact_sheet", path.join(projectRoot, "contact-sheet.png")));
-  await callback("/complete", { artifacts: uploaded, assistantMessage: redactSecrets(lastAgentMessage) });
+  // The agent's own sign-off is deliberately not sent: it is a build report
+  // written for whoever ran the tool, full of sandbox paths and internal
+  // tooling names. The server writes the owner's message from the probed file.
+  await callback("/complete", { artifacts: uploaded });
 } catch (error) {
   await narrationProxy?.close().catch(() => undefined);
   narrationProxy = undefined;

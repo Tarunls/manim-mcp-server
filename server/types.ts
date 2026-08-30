@@ -40,6 +40,7 @@ export interface RenderInfo {
   narration?: {
     status?: string;
     enabled?: boolean;
+    hasAudio?: boolean;
     provider?: string;
     model?: string;
     voice?: string;

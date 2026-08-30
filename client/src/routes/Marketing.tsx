@@ -1,27 +1,7 @@
 import { useEffect } from "react";
 import { ChladniVisual } from "./ChladniVisual";
+import { GravitationalLensVisual } from "./GravitationalLensVisual";
 import { MarketingChrome } from "./MarketingChrome";
-
-// each still already carries its claim as the frame's own typography, so the
-// caption gives the other half of the pair: the sentence it was rendered from
-const STRIP = [
-  {
-    id: "accumulation",
-    sentence: "“Show me how adding up rectangles becomes the integral.”",
-    alt: "A lesson frame titled “The estimate stops being an estimate.”: the area under a curve, shaded, above the identity area equals the integral of f.",
-  },
-  {
-    id: "rotation",
-    sentence:
-      "“Show me why a sine wave is just something going round a circle.”",
-    alt: "A lesson frame titled “A rotation casts a wave.”: a hand turning on a circle beside the sine wave its height traces.",
-  },
-  {
-    id: "slope",
-    sentence: "“Show me what the derivative means at one point.”",
-    alt: "A lesson frame titled “That line's steepness is the derivative.”: a parabola with a tangent line touching at a marked point.",
-  },
-] as const;
 
 export default function Marketing() {
   useEffect(() => {
@@ -46,9 +26,9 @@ export default function Marketing() {
 
   return (
     <MarketingChrome>
-      {/* 1 — hero: one plain-language promise and one large mathematical
-             visual. A vibrating plate turns disorder into standing-wave
-             geometry, showing the product's purpose before we explain it. */}
+      {/* 1 — hero: one plain-language promise and one cinematic physical idea.
+             A source crosses behind a gravitational lens, turning two bent
+             paths of light into an Einstein ring. */}
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-inner">
           <div className="hero-copy">
@@ -61,36 +41,57 @@ export default function Marketing() {
               <a className="button button-primary" href="/studio">
                 Create a lesson
               </a>
-              <a className="text-link" href="#watch">
+              <a className="text-link" href="#examples">
                 Watch an example &rarr;
               </a>
             </div>
           </div>
 
-          <ChladniVisual />
+          <GravitationalLensVisual />
         </div>
       </section>
 
-      {/* 2 — watch one: a full-bleed lesson between two hairlines */}
-      <section className="watch" id="watch" aria-label="Watch one lesson">
-        <div className="watch-frame">
-          <span className="kicker watch-kicker">Watch one lesson</span>
-          <video
-            className="watch-video"
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            poster="/showcase/accumulation.jpg"
-            src="/showcase/accumulation.mp4"
-            aria-label="An Orune lesson: rectangles under a curve narrowing until the estimate becomes the integral."
-          />
+      {/* 2 — a small gallery, not a feature list: three different ideas in
+             motion, staggered like an editorial contact sheet. */}
+      <section className="showcase" id="examples" aria-labelledby="showcase-title">
+        <div className="showcase-head">
+          <span className="kicker">A few ideas, made visible</span>
+          <h2 id="showcase-title">Watch the idea unfold.</h2>
         </div>
-        <p className="watch-note">
-          Rendered by Orune from one sentence. Twelve seconds, exactly as it
-          came out of the renderer.
-        </p>
+        <div className="showcase-grid" data-reveal>
+          <figure className="showcase-item">
+            <ChladniVisual className="showcase-media" id="showcase-chladni" />
+            <figcaption>Sound turns scattered grains into geometry.</figcaption>
+          </figure>
+          <figure className="showcase-item showcase-item-offset">
+            <video
+              className="showcase-media"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/showcase/frag-rotation.jpg"
+              src="/showcase/frag-rotation.mp4"
+              aria-label="A rotating radius casting its height into a sine wave."
+            />
+            <figcaption>A rotation casts a wave.</figcaption>
+          </figure>
+          <figure className="showcase-item">
+            <video
+              className="showcase-media"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/showcase/frag-accumulation.jpg"
+              src="/showcase/frag-accumulation.mp4"
+              aria-label="Rectangles narrowing beneath a curve until their area becomes an integral."
+            />
+            <figcaption>An estimate becomes an integral.</figcaption>
+          </figure>
+        </div>
       </section>
 
       {/* 3 — the pen: the only annotated frame on the page */}
@@ -137,34 +138,7 @@ export default function Marketing() {
         </div>
       </section>
 
-      {/* 4 — three lessons: a contact strip, whitespace-separated */}
-      <section className="strip" id="examples" aria-labelledby="strip-title">
-        <span className="kicker strip-kicker">Three lessons</span>
-        <h2 className="strip-title" id="strip-title">
-          Every one of these was a sentence first.
-        </h2>
-        {/* on small screens this row scrolls, so it must be keyboard-reachable */}
-        <div
-          className="strip-row"
-          data-reveal
-          role="region"
-          aria-label="Three rendered lessons"
-          tabIndex={0}
-        >
-          {STRIP.map((lesson) => (
-            <figure
-              className="strip-item"
-              key={lesson.id}
-              id={`lesson-${lesson.id}`}
-            >
-              <img src={`/showcase/${lesson.id}.jpg`} alt={lesson.alt} />
-              <figcaption>{lesson.sentence}</figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
-
-      {/* 5 — close: the one sunken band, type only */}
+      {/* 4 — close: the one sunken band, type only */}
       <section className="close" aria-labelledby="close-title">
         <div className="close-inner" data-reveal>
           <h2 id="close-title">
