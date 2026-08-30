@@ -18,6 +18,16 @@ variable "environment" {
   }
 }
 
+variable "billing_mode" {
+  type        = string
+  default     = "auto"
+  description = "Stripe mode for the deployed application. auto follows environment; set live only with live Secret Manager IDs and a public HTTPS edge."
+  validation {
+    condition     = contains(["auto", "test", "live"], var.billing_mode)
+    error_message = "billing_mode must be auto, test, or live."
+  }
+}
+
 variable "image" {
   type        = string
   description = "Immutable Artifact Registry image including a digest or commit tag."

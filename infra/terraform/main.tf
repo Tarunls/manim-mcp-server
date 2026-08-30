@@ -59,6 +59,19 @@ check "production_safety" {
   }
 }
 
+check "live_billing_safety" {
+  assert {
+    condition = local.billing_mode != "live" || (
+      var.enable_external_edge &&
+      var.app_domain != "" &&
+      var.app_base_url == "https://${var.app_domain}" &&
+      !contains(["stripe_sandbox_api_key", "stripe_test_api_key"], var.secret_ids.stripe_api_key) &&
+      !contains(["stripe_webhook_secret", "stripe_test_webhook_secret"], var.secret_ids.stripe_webhook)
+    )
+    error_message = "Live billing requires the public HTTPS edge and live Stripe API/webhook Secret Manager IDs."
+  }
+}
+
 check "edge_origin" {
   assert {
     condition = !var.enable_external_edge || (

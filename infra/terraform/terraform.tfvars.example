@@ -1,6 +1,7 @@
 project_id           = "educationalvideo-506219"
 region               = "us-central1"
 environment          = "staging"
+billing_mode         = "auto"
 image                = "us-central1-docker.pkg.dev/educationalvideo-506219/lesson-studio/app:<immutable-commit-sha>"
 app_base_url         = ""
 app_domain           = ""
@@ -28,6 +29,10 @@ secret_ids = {
   stripe_webhook    = "stripe_webhook_secret"
   staff_emails      = "staff_emails"
 }
+
+# To promote an already domain-enabled stack to real payments without renaming
+# infrastructure, set billing_mode = "live" and replace the two Stripe values
+# inside secret_ids with stripe_live_api_key and stripe_live_webhook_secret.
 
 # Email channel managed by Terraform; extra pre-existing channel IDs can be appended below.
 alert_email              = "alerts@example.com"

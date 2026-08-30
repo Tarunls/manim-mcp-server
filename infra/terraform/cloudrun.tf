@@ -2,21 +2,21 @@ locals {
   direct_api_url         = "https://${local.name}-api-${data.google_project.current.number}.${var.region}.run.app"
   effective_app_base_url = var.app_base_url != "" ? var.app_base_url : local.direct_api_url
   dispatcher_url         = "https://${local.name}-dispatcher-${data.google_project.current.number}.${var.region}.run.app/api/internal/generation/dispatch"
-  billing_mode           = var.environment == "production" ? "live" : "test"
+  billing_mode           = var.billing_mode == "auto" ? (var.environment == "production" ? "live" : "test") : var.billing_mode
   common_env = {
-    NODE_ENV                                  = "production"
-    EXECUTION_MODE                            = "e2b"
-    APP_BASE_URL                              = local.effective_app_base_url
-    JOB_CALLBACK_BASE_URL                     = local.effective_app_base_url
-    GCP_PROJECT                               = var.project_id
-    GCP_REGION                                = var.region
-    GENERATION_QUEUE                          = "${local.name}-generation"
-    GENERATION_DISPATCH_URL                   = local.dispatcher_url
-    GENERATION_DISPATCH_SERVICE_ACCOUNT       = google_service_account.task_invoker.email
-    STUDIO_ARTIFACT_BUCKET                    = google_storage_bucket.artifacts.name
-    E2B_MAX_CONCURRENT_SANDBOXES              = tostring(var.max_concurrent_sandboxes)
-    E2B_TEMPLATE                              = "lesson-studio-renderer"
-    E2B_TEMPLATE_VERSION                      = var.e2b_template_version
+    NODE_ENV                            = "production"
+    EXECUTION_MODE                      = "e2b"
+    APP_BASE_URL                        = local.effective_app_base_url
+    JOB_CALLBACK_BASE_URL               = local.effective_app_base_url
+    GCP_PROJECT                         = var.project_id
+    GCP_REGION                          = var.region
+    GENERATION_QUEUE                    = "${local.name}-generation"
+    GENERATION_DISPATCH_URL             = local.dispatcher_url
+    GENERATION_DISPATCH_SERVICE_ACCOUNT = google_service_account.task_invoker.email
+    STUDIO_ARTIFACT_BUCKET              = google_storage_bucket.artifacts.name
+    E2B_MAX_CONCURRENT_SANDBOXES        = tostring(var.max_concurrent_sandboxes)
+    E2B_TEMPLATE                        = "lesson-studio-renderer"
+    E2B_TEMPLATE_VERSION                = var.e2b_template_version
     # The estimated-cost ceiling is the primary per-job budget; the call count
     # is a generous backstop. A complete video commonly needs far more than a
     # dozen agent turns for planning, authoring, rendering, inspection, and
@@ -41,7 +41,7 @@ locals {
     IDENTITY_PLATFORM_PROJECT_ID = var.project_id
     AUTH_CHECK_REVOKED           = "true"
     BILLING_MODE_REQUIRED        = local.billing_mode
-    ALLOW_TEST_CHECKOUT          = var.environment == "staging" ? "true" : "false"
+    ALLOW_TEST_CHECKOUT          = local.billing_mode == "test" ? "true" : "false"
   })
   dispatcher_secret_env = {
     DATABASE_URL        = google_secret_manager_secret.database_url.secret_id
