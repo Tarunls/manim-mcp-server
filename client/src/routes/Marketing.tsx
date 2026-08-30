@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ChladniVisual } from "./ChladniVisual";
 import { MarketingChrome } from "./MarketingChrome";
 
 // each still already carries its claim as the frame's own typography, so the
@@ -45,91 +46,28 @@ export default function Marketing() {
 
   return (
     <MarketingChrome>
-      {/* 1 — hero: centered stacked type, the pen underlining one word, and
-             below the CTAs the whole product as one diagram: sentence in,
-             arrow, rendered lesson out */}
+      {/* 1 — hero: one plain-language promise and one large mathematical
+             visual. A vibrating plate turns disorder into standing-wave
+             geometry, showing the product's purpose before we explain it. */}
       <section className="hero" aria-labelledby="hero-title">
-        <div className="hero-copy">
-          <h1 id="hero-title">
-            Hard ideas, made{" "}
-            <span className="pen-word">
-              obvious.
-              {/* the pen: one sienna swoosh beneath the word, drawn on load.
-                  it lives under the last line, so it can never touch the
-                  line above at any viewport */}
-              <svg
-                className="pen-swoosh"
-                viewBox="0 0 230 34"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-                focusable="false"
-              >
-                <path
-                  className="pen-stroke pen-stroke-1"
-                  pathLength={1}
-                  d="M 8,9 C 44,24 96,29 148,25 C 178,23 204,17 222,8"
-                />
-              </svg>
-            </span>
-          </h1>
-          <p className="hero-lede">
-            Write one sentence about what you want to understand. Orune renders
-            it as a narrated lesson you can stop, mark up, and have rebuilt.
-          </p>
-          <div className="hero-actions">
-            <a className="button button-primary" href="/studio">
-              Start with one free lesson
-            </a>
-            <a className="text-link" href="#watch">
-              Watch a lesson &rarr;
-            </a>
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <h1 id="hero-title">Turn ideas into beautiful animations.</h1>
+            <p className="hero-lede">
+              Describe what you want to explain. Orune turns it into a narrated
+              visual story.
+            </p>
+            <div className="hero-actions">
+              <a className="button button-primary" href="/studio">
+                Create a lesson
+              </a>
+              <a className="text-link" href="#watch">
+                Watch an example &rarr;
+              </a>
+            </div>
           </div>
-          <p className="hero-note">One lesson free. No card.</p>
-        </div>
 
-        {/* the whole product in one glance: what you type, the arrow, what
-            comes back. bare on the paper — no boxes */}
-        <div
-          className="hero-diagram"
-          id="how-it-works"
-          role="group"
-          aria-label="How Orune works: you write one sentence, Orune renders the lesson"
-        >
-          <div className="hero-diagram-ask">
-            <p className="hero-diagram-quote">
-              &ldquo;Show me how spinning circles can draw any shape.&rdquo;
-            </p>
-            <p className="hero-diagram-caption">you write</p>
-          </div>
-          {/* the same pen draws the arrow between the two halves */}
-          <svg
-            className="hero-diagram-arrow"
-            viewBox="0 0 96 44"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path className="pen-stroke" d="M 5,29 C 28,15 57,12 86,20" />
-            <path
-              className="pen-stroke"
-              d="M 75,10 C 80,14 84,17 87,20 C 82,22 77,25 72,29"
-            />
-          </svg>
-          <div className="hero-diagram-render">
-            <video
-              className="hero-diagram-video"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              poster="/showcase/epicycles.jpg"
-              src="/showcase/epicycles.mp4"
-              aria-label="The rendered answer: circles stacked on spinning circles, their tip drawing a heart in ink."
-            />
-            <p className="hero-diagram-caption">
-              Orune renders it &mdash; narrated, editable
-            </p>
-          </div>
+          <ChladniVisual />
         </div>
       </section>
 
