@@ -955,7 +955,8 @@ dialog.modal .mono,
 
 .review-settings label,
 .design-settings label,
-.narration-settings label {
+.narration-settings label,
+.format-control {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -966,7 +967,8 @@ dialog.modal .mono,
 
 .review-settings select,
 .design-settings select,
-.narration-settings select {
+.narration-settings select,
+.format-control select {
   padding: 7px 10px;
   font-size: 13px;
   font-weight: 400;

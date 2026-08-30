@@ -49,6 +49,7 @@ import type {
   ReviewFocus,
   ReviewStrictness,
   StudioEvent,
+  VideoFormat,
 } from "./types.js";
 
 // The npm scripts used to set these with a `TMPDIR=/tmp node ...` prefix, which
@@ -1173,6 +1174,10 @@ app.patch(
       return response
         .status(400)
         .json({ error: "Choose how hard the studio should think." });
+    const requestedFormat = request.body?.format;
+    if (requestedFormat !== undefined && requestedFormat !== "landscape" && requestedFormat !== "vertical")
+      return response.status(400).json({ error: "Choose a widescreen or vertical format." });
+    const format = requestedFormat as VideoFormat | undefined;
     try {
       await ownedProject(request);
       await assertEffort(request, effort);
@@ -1183,10 +1188,13 @@ app.patch(
             (stored) => {
               if (stored.status === "running")
                 throw new Error("Wait for the current generation to finish.");
-              stored.generationPreferences = generationPreferencesFor(effort);
+              stored.generationPreferences = generationPreferencesFor(
+                effort,
+                format || stored.generationPreferences?.format || "landscape",
+              );
             },
           )
-        : studio.updateGenerationPreferences(String(request.params.id), effort);
+        : studio.updateGenerationPreferences(String(request.params.id), effort, format);
       response.json(project);
     } catch (error) {
       response

@@ -23,12 +23,24 @@ QUALITY_ARGS = {
     # Browser default: full HD with smooth motion and half the frames of -qh.
     "balanced": ["-r", "1920,1080", "--fps", "30"],
     "high": ["-qh"],
+    # 9:16 for social. The draft cut keeps the same aspect on purpose, so a
+    # layout that only breaks when the frame is tall breaks during iteration
+    # rather than on the final render.
+    "vertical": ["-r", "1080,1920", "--fps", "30"],
+    "vertical-draft": ["-r", "540,960", "--fps", "30"],
+}
+
+# The exact frame each format must produce, checked after the render so a
+# mismatched aspect can never reach the upload.
+EXPECTED_FRAME = {
+    "balanced": (1920, 1080),
+    "vertical": (1080, 1920),
 }
 
 # Iteration renders keep Manim's partial-movie cache so a re-render after an
 # edit only redraws the changed animations. Final-quality renders disable it:
 # they run once, and hashing every animation would only add overhead.
-CACHED_QUALITIES = {"draft", "low", "preview", "medium"}
+CACHED_QUALITIES = {"draft", "low", "preview", "medium", "vertical-draft"}
 
 
 def fail(message: str) -> None:
@@ -195,6 +207,19 @@ def main() -> None:
     if not candidates:
         fail("Manim completed but no GeneratedScene.mp4 was found.")
     rendered = max(candidates, key=lambda item: item.stat().st_mtime)
+    expected = EXPECTED_FRAME.get(quality)
+    if expected:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+             "stream=width,height", "-of", "csv=p=0:s=x", str(rendered)],
+            text=True, capture_output=True, timeout=60,
+        )
+        actual = probe.stdout.strip()
+        if actual != f"{expected[0]}x{expected[1]}":
+            fail(
+                f"The render produced {actual or 'an unreadable frame'}, but "
+                f"{quality} must be {expected[0]}x{expected[1]}."
+            )
     output = project_dir / "output.mp4"
     optimized = project_dir / "output.faststart.mp4"
     faststart = subprocess.run(

@@ -22,6 +22,7 @@ from manim import (
     LEFT,
     NORMAL,
     RIGHT,
+    UL,
     Axes,
     FadeIn,
     FadeOut,
@@ -29,24 +30,47 @@ from manim import (
     Scene,
     Text,
     VGroup,
+    config,
 )
 
-# The editorial grid, in scene units. Everything hangs off this margin.
-LEFT_X = -5.6
-RIGHT_X = 5.6
-HEAD_Y = 3.05
-CAPTION_Y = -3.4
+# Lessons render in one of two shapes: the 16:9 page, and the 9:16 phone cut
+# for social. Manim would hand us a 4.5-unit-wide frame for 9:16, which is far
+# too narrow to set a sentence in, so the vertical format claims a wider
+# measure and a taller frame. The pixel aspect is identical either way.
+VERTICAL = config.pixel_height > config.pixel_width
+if VERTICAL:
+    config.frame_width = 8.0
+    config.frame_height = 8.0 * config.pixel_height / config.pixel_width
 
-# The frame is divided into three horizontal bands that never share space:
-# the head band (running head + claim), the stage, and the caption band.
-# Everything visual lives inside the stage; fit_stage() enforces it.
-STAGE_TOP = 1.7
-STAGE_BOTTOM = -2.85
+# The editorial grid, in scene units. Everything hangs off the left margin.
+# The frame is three horizontal bands that never share space: the head band
+# (running head + claim), the stage, and the caption band. Everything visual
+# lives inside the stage; fit_stage() enforces it.
+#
+# The vertical grid keeps its bottom band deliberately deep: the lower fifth
+# of a phone screen belongs to the app's own caption and buttons, so nothing
+# that carries meaning is allowed to sit there.
+if VERTICAL:
+    LEFT_X = -3.45
+    RIGHT_X = 3.45
+    HEAD_Y = 5.75
+    CAPTION_Y = -4.55
+    STAGE_TOP = 3.15
+    STAGE_BOTTOM = -3.50
+else:
+    LEFT_X = -5.6
+    RIGHT_X = 5.6
+    HEAD_Y = 3.05
+    CAPTION_Y = -3.4
+    STAGE_TOP = 1.7
+    STAGE_BOTTOM = -2.85
+
+MEASURE = RIGHT_X - LEFT_X
 
 # The full type scale. There are no other sizes.
 SIZE = {
     "head": 19,  # running head, muted
-    "claim": 40,  # the one sentence of the beat
+    "claim": 34 if VERTICAL else 40,  # the one sentence of the beat
     "sub": 28,  # a secondary statement under the claim (rare)
     "label": 24,  # a name attached to an object
     "caption": 22,  # the bottom-margin note
@@ -114,10 +138,36 @@ def running_head(design: dict, body: str) -> Text:
     return head
 
 
-def claim(design: dict, body: str, head: Mobject | None = None) -> Text:
-    """The beat's one sentence. Break long claims yourself with a newline;
-    a claim wider than the frame is a claim that needs fewer words."""
-    sentence = text(design, body, role="claim")
+def _set_lines(design: dict, body: str, role: str, measure: float,
+               *, italic: bool = False) -> Mobject:
+    """One sentence set to a measure. Lines are separate mobjects arranged
+    flush left, because a multi-line Text centres its own lines, and centred
+    type would break the single margin every other function here maintains."""
+    single = text(design, body, role=role, italic=italic)
+    if single.width <= measure or " " not in body.strip():
+        return single
+    lines: list[str] = []
+    current: list[str] = []
+    for word in body.split():
+        trial = current + [word]
+        if current and text(design, " ".join(trial), role=role,
+                            italic=italic).width > measure:
+            lines.append(" ".join(current))
+            current = [word]
+        else:
+            current = trial
+    if current:
+        lines.append(" ".join(current))
+    rows = VGroup(*(text(design, line, role=role, italic=italic)
+                    for line in lines))
+    rows.arrange(DOWN, buff=0.16, aligned_edge=LEFT)
+    return rows
+
+
+def claim(design: dict, body: str, head: Mobject | None = None) -> Mobject:
+    """The beat's one sentence, wrapped to the measure. A claim that needs
+    more than three lines is a claim that needs fewer words."""
+    sentence = _set_lines(design, body, "claim", MEASURE)
     if head is not None:
         sentence.next_to(head, DOWN, buff=0.3, aligned_edge=LEFT)
     else:
@@ -128,7 +178,7 @@ def claim(design: dict, body: str, head: Mobject | None = None) -> Text:
 def swap_claim(scene: Scene, old: Mobject, new: Mobject) -> None:
     """Replace one sentence with another. Sequential, never concurrent, and
     never a Transform: both alternatives smear glyphs mid-tween."""
-    new.move_to(old, aligned_edge=LEFT)
+    new.move_to(old.get_corner(UL), aligned_edge=UL)
     scene.play(FadeOut(old), run_time=0.35)
     scene.play(FadeIn(new), run_time=0.45)
 
@@ -150,7 +200,7 @@ def label(design: dict, target: Mobject, body: str, direction=RIGHT,
 
 
 def caption(design: dict, body: str, *, italic: bool = False) -> Text:
-    note = text(design, body, role="caption", italic=italic)
+    note = _set_lines(design, body, "caption", MEASURE, italic=italic)
     note.move_to([LEFT_X, CAPTION_Y, 0], aligned_edge=LEFT)
     return note
 
@@ -177,17 +227,30 @@ def expr(design: dict, *parts: tuple[str, str]) -> VGroup:
 
 
 def fit_stage(mobject: Mobject, *, left: float = LEFT_X, right: float = RIGHT_X,
-              top: float = STAGE_TOP, bottom: float = STAGE_BOTTOM) -> Mobject:
+              top: float = STAGE_TOP, bottom: float = STAGE_BOTTOM,
+              fill: bool | None = None) -> Mobject:
     """Scale and place a visual so it lives inside the stage band - the region
     between the claim above and the caption below. Route EVERY primary visual
-    through this; it is what makes text/visual collisions impossible."""
+    through this; it is what makes text/visual collisions impossible.
+
+    The two formats want opposite things here. The page hangs its figure on the
+    same left margin as the type and never enlarges it. The phone cut centres
+    the figure and grows it to fill the stage, because a small diagram floating
+    in a tall frame is a wasted post."""
     width = right - left
     height = top - bottom
-    if mobject.width > width:
-        mobject.scale_to_fit_width(width)
-    if mobject.height > height:
-        mobject.scale_to_fit_height(height)
-    mobject.move_to([left + mobject.width / 2, bottom + height / 2, 0])
+    if fill is None:
+        fill = VERTICAL
+    if fill:
+        mobject.scale(min(width / max(mobject.width, 1e-6),
+                          height / max(mobject.height, 1e-6)))
+    else:
+        if mobject.width > width:
+            mobject.scale_to_fit_width(width)
+        if mobject.height > height:
+            mobject.scale_to_fit_height(height)
+    centre_x = left + width / 2 if VERTICAL else left + mobject.width / 2
+    mobject.move_to([centre_x, bottom + height / 2, 0])
     return mobject
 
 
