@@ -29,7 +29,7 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.locator("#how-it-works")).toContainText("you write");
   await expect(page.locator("#how-it-works")).toContainText("going round a circle");
   await expect(page.locator("#how-it-works")).toContainText(/Orune renders it/);
-  await expect(page.locator("#how-it-works video")).toHaveAttribute("src", "/showcase/frag-rotation.mp4");
+  await expect(page.locator("#how-it-works video")).toHaveAttribute("src", "/showcase/epicycles.mp4");
   // the old ask-then-get section is gone; the hero diagram replaced it
   await expect(page.locator(".ask")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
@@ -38,7 +38,7 @@ test("homepage is responsive and links to real product routes", async ({ page },
 
 test("the hero, diagram included, fits the first screen", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "The single-screen hero is a desktop layout.");
-  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }]) {
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
     const at = `${viewport.width}x${viewport.height}`;
@@ -52,6 +52,7 @@ test("the hero, diagram included, fits the first screen", async ({ page }, testI
       ["diagram arrow", page.locator(".hero-diagram-arrow")],
       ["diagram video", page.locator(".hero-diagram-video")],
       ["diagram", page.locator("#how-it-works")],
+      ["diagram caption", page.locator(".hero-diagram-render .hero-diagram-caption")],
     ] as const) {
       const box = await locator.boundingBox();
       expect(box, `no ${name} box at ${at}`).not.toBeNull();

@@ -267,7 +267,7 @@ body:has(.access-page) {
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(56px, 7.5vw, 108px);
+  font-size: clamp(50px, 6.4vw, 92px);
   line-height: 0.98;
   letter-spacing: -0.028em;
   font-variation-settings: "opsz" 144, "SOFT" 20, "WONK" 1;
@@ -346,7 +346,9 @@ body:has(.access-page) {
 
 .hero-diagram-video {
   display: block;
-  width: clamp(360px, 36vw, 540px);
+  /* The visual is the hero's main event - as large as the viewport's height
+     budget allows (the file is 4:3), but never pushed below the fold. */
+  width: min(clamp(400px, 38vw, 560px), max(320px, calc((100svh - 470px) * 1.33)));
   height: auto;
 }
 

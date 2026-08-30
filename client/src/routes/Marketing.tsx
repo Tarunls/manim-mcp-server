@@ -97,8 +97,7 @@ export default function Marketing() {
         >
           <div className="hero-diagram-ask">
             <p className="hero-diagram-quote">
-              &ldquo;Show me why a sine wave is just something going round a
-              circle.&rdquo;
+              &ldquo;Show me how spinning circles can draw any shape.&rdquo;
             </p>
             <p className="hero-diagram-caption">you write</p>
           </div>
@@ -123,9 +122,9 @@ export default function Marketing() {
               loop
               playsInline
               preload="metadata"
-              poster="/showcase/frag-rotation.jpg"
-              src="/showcase/frag-rotation.mp4"
-              aria-label="The rendered answer: a hand turning on a circle beside the sine wave its height traces."
+              poster="/showcase/epicycles.jpg"
+              src="/showcase/epicycles.mp4"
+              aria-label="The rendered answer: circles stacked on spinning circles, their tip drawing a heart in ink."
             />
             <p className="hero-diagram-caption">
               Orune renders it &mdash; narrated, editable

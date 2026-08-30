@@ -57,9 +57,9 @@ resource "google_compute_backend_service" "api" {
   protocol              = "HTTP"
   port_name             = "http"
   load_balancing_scheme = "EXTERNAL_MANAGED"
-  # The studio holds an SSE stream open; the 30s default chops it every half
-  # minute and the browser reconnects in a loop. Match Cloud Run's own limit.
-  timeout_sec           = 3600
+  # timeout_sec is intentionally absent: GCP rejects it for backend services
+  # with serverless NEGs, and Cloud Run's own 3600s request timeout governs
+  # long-lived streams instead.
   security_policy       = google_compute_security_policy.edge[0].id
   backend {
     group = google_compute_region_network_endpoint_group.api[0].id
