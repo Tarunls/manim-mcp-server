@@ -196,11 +196,13 @@ Every lesson is rendered with Manim. Read ../../AGENTS.md, generation-request.js
 These four rules are non-negotiable and the job is rejected without them:
 1. Your Manim source file MUST be named exactly scene.py in this project directory, with one Scene subclass named GeneratedScene. Do not name it after the topic.
 2. scene.py MUST import the shared guards (from manim_layout import ...) and the typography system (from manim_paper import ...), and MUST call assert_no_overlap at each stable beat.
-3. You MUST render by running: python3 ../../../scripts/render_scene.py . balanced
+3. You MUST render through the render script, and the final render MUST be: python3 ../../../scripts/render_scene.py . balanced
    Never invoke manim directly - a direct manim run skips the layout, typography, and quality gates and its output is discarded.
 4. Do not hand-write metadata.json; the renderer and the harness produce it.
 
 Repair validation failures the renderer reports and render again. Do not read or write outside this project directory.
+
+Pacing: run every render in the foreground with a command timeout of at least 600000 ms and simply wait for it - NEVER run a render in the background and NEVER wait in sleep loops, because each poll wastes half a minute of the user's time. While iterating, check your work quickly with python3 ../../../scripts/render_scene.py . draft; only the final render uses balanced.
 
 ${(job.attachments || []).length ? `Attached local images appear in this order: ${(job.attachments || []).map((attachment, index) => `${index + 1}. ${attachment.label}`).join("; ")}. Compare them carefully and apply only the requested localized change.` : "No review images are attached."}
 

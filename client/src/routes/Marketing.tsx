@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { ChladniVisual } from "./ChladniVisual";
-import { GravitationalLensVisual } from "./GravitationalLensVisual";
+import { CircleTriangleVisual } from "./CircleTriangleVisual";
 import { MarketingChrome } from "./MarketingChrome";
+import { CausticVisual, CycloidVisual } from "./ShowcaseVisuals";
 
 export default function Marketing() {
   useEffect(() => {
@@ -26,9 +27,8 @@ export default function Marketing() {
 
   return (
     <MarketingChrome>
-      {/* 1 — hero: one plain-language promise and one cinematic physical idea.
-             A source crosses behind a gravitational lens, turning two bent
-             paths of light into an Einstein ring. */}
+      {/* 1 — hero: concentric rings unwrap into a triangle, making the area
+             of a circle visible with no labels or interface chrome. */}
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-inner">
           <div className="hero-copy">
@@ -47,49 +47,33 @@ export default function Marketing() {
             </div>
           </div>
 
-          <GravitationalLensVisual />
+          <CircleTriangleVisual />
         </div>
       </section>
 
-      {/* 2 — a small gallery, not a feature list: three different ideas in
-             motion, staggered like an editorial contact sheet. */}
-      <section className="showcase" id="examples" aria-labelledby="showcase-title">
-        <div className="showcase-head">
-          <span className="kicker">A few ideas, made visible</span>
-          <h2 id="showcase-title">Watch the idea unfold.</h2>
-        </div>
+      {/* 2 — three quiet, continuously moving mathematical objects. */}
+      <section className="showcase" id="examples" aria-label="Animated mathematical ideas">
         <div className="showcase-grid" data-reveal>
           <figure className="showcase-item">
+            <h3>Standing waves</h3>
             <ChladniVisual className="showcase-media" id="showcase-chladni" />
-            <figcaption>Sound turns scattered grains into geometry.</figcaption>
-          </figure>
-          <figure className="showcase-item showcase-item-offset">
-            <video
-              className="showcase-media"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              poster="/showcase/frag-rotation.jpg"
-              src="/showcase/frag-rotation.mp4"
-              aria-label="A rotating radius casting its height into a sine wave."
-            />
-            <figcaption>A rotation casts a wave.</figcaption>
+            <figcaption className="visually-hidden">
+              A Chladni plate organizing grains into nodal lines.
+            </figcaption>
           </figure>
           <figure className="showcase-item">
-            <video
-              className="showcase-media"
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              poster="/showcase/frag-accumulation.jpg"
-              src="/showcase/frag-accumulation.mp4"
-              aria-label="Rectangles narrowing beneath a curve until their area becomes an integral."
-            />
-            <figcaption>An estimate becomes an integral.</figcaption>
+            <h3>Reflected light</h3>
+            <CausticVisual />
+            <figcaption className="visually-hidden">
+              Reflections inside a circle forming a caustic curve.
+            </figcaption>
+          </figure>
+          <figure className="showcase-item">
+            <h3>A rolling point</h3>
+            <CycloidVisual />
+            <figcaption className="visually-hidden">
+              A point on a rolling circle tracing a cycloid.
+            </figcaption>
           </figure>
         </div>
       </section>
@@ -138,16 +122,16 @@ export default function Marketing() {
         </div>
       </section>
 
-      {/* 4 — close: the one sunken band, type only */}
+      {/* 4 — close: one memorable invitation, not another explanation. */}
       <section className="close" aria-labelledby="close-title">
         <div className="close-inner" data-reveal>
+          <span className="kicker">One idea is enough</span>
           <h2 id="close-title">
-            Every diagram is <em>computed</em>, not drawn.
+            Make the hard thing <em>visible.</em>
           </h2>
           <p>
-            A curve is its function sampled along its own domain, and a tangent
-            sits where the derivative puts it. Pick the idea you never quite
-            got, and watch it get built.
+            Start with the concept that never quite clicked. Describe it in
+            your own words, then watch Orune build the explanation.
           </p>
           <div className="hero-actions close-actions">
             <a className="button button-primary" href="/studio">
@@ -157,9 +141,6 @@ export default function Marketing() {
               See the plans &rarr;
             </a>
           </div>
-          <p className="close-note">
-            One lesson free, no card. Paid plans start at $20 a month.
-          </p>
         </div>
       </section>
     </MarketingChrome>

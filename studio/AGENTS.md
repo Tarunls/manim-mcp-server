@@ -8,7 +8,7 @@ Projects below this directory are editable educational videos created by the Stu
 - Route every primary visual through `manim_paper.fit_stage(...)` so it stays in the stage band between the claim and the caption.
 - A label sits directly against the object it names, in that object's colour (`manim_paper.label`). Never draw a pointer line from a label to something far away.
 - A label for marks inside a grid goes OUTSIDE the grid, aligned over the marks it names. Include every label in `assert_no_overlap`; the renderer refuses scenes without that call.
-- Render with `python3 ../../../scripts/render_scene.py . balanced`.
+- Iterate with `python3 ../../../scripts/render_scene.py . draft` for fast checks; the final render must be `python3 ../../../scripts/render_scene.py . balanced`. Run renders in the foreground with a generous command timeout and wait for them — never background a render or poll it with sleep loops.
 - The render helper creates `output.mp4`, `poster.png`, `contact-sheet.png`, and `metadata.json`.
 - Read `narration-config.json`. When `enabled` is false, render a silent video and verify `metadata.json` reports narration disabled. When `enabled` is true, write 3-5 timed, chapter-length passages to `narration.json`, align them to the visual beats, and verify the final Speechify audio.
 - Enabled passages should be 18-45 words, explain cause and effect, and connect naturally to the next idea. Use natural mathematical pronunciation, avoid fragments and fact lists, and budget about 145 words per minute plus breathing room.

@@ -24,7 +24,7 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.getByRole("link", { name: "Create a lesson" }).first()).toHaveAttribute("href", "/studio");
   await expect(page.getByRole("link", { name: /Watch an example/ })).toHaveAttribute("href", "#examples");
   await expect(page.getByRole("link", { name: /See the plans/ })).toHaveAttribute("href", "/pricing");
-  await expect(page.locator("#how-it-works")).toHaveAttribute("aria-label", /Einstein ring/);
+  await expect(page.locator("#how-it-works")).toHaveAttribute("aria-label", /circle.*triangle/i);
   await expect(page.locator("#how-it-works canvas")).toBeVisible();
   // the old ask-then-get section is gone; the hero diagram replaced it
   await expect(page.locator(".ask")).toHaveCount(0);
@@ -43,7 +43,7 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
       ["headline", page.locator(".hero h1")],
       ["cta", page.getByRole("link", { name: "Create a lesson" }).first()],
       ["visual", page.locator("#how-it-works")],
-      ["visual canvas", page.locator(".hero-lens-canvas")],
+      ["visual canvas", page.locator(".circle-triangle-canvas")],
     ] as const) {
       const box = await locator.boundingBox();
       expect(box, `no ${name} box at ${at}`).not.toBeNull();
@@ -55,14 +55,14 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
   }
 });
 
-test("the gravitational lens remains animated with reduced motion", async ({ page }, testInfo) => {
+test("the circle-to-triangle visual remains animated with reduced motion", async ({ page }, testInfo) => {
   test.skip(
     testInfo.project.name !== "desktop",
     "The canvas behavior is viewport-independent.",
   );
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  const canvas = page.locator(".hero-lens-canvas");
+  const canvas = page.locator(".circle-triangle-canvas");
   await expect(canvas).toBeVisible();
   const firstFrame = await canvas.screenshot();
   await page.waitForTimeout(900);
@@ -76,13 +76,22 @@ test("the showcase presents three animated ideas", async ({ page }, testInfo) =>
   const showcase = page.locator("#examples");
   await expect(showcase.locator(".showcase-item")).toHaveCount(3);
   await expect(showcase.locator("#showcase-chladni .chladni-canvas")).toBeVisible();
-  await expect(showcase.locator('video[src="/showcase/rotation.mp4"]')).toBeVisible();
-  await expect(showcase.locator('video[src="/showcase/accumulation.mp4"]')).toBeVisible();
-  await expect(showcase.locator("figcaption")).toHaveText([
-    "Sound turns scattered grains into geometry.",
-    "A rotation casts a wave.",
-    "An estimate becomes an integral.",
+  await expect(showcase.locator(".concept-canvas")).toHaveCount(2);
+  await expect(showcase.getByRole("heading", { level: 3 })).toHaveText([
+    "Standing waves",
+    "Reflected light",
+    "A rolling point",
   ]);
+  await expect(showcase.locator("video")).toHaveCount(0);
+  const canvases = showcase.locator("canvas");
+  await expect(canvases).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    const canvas = canvases.nth(index);
+    const firstFrame = await canvas.screenshot();
+    await page.waitForTimeout(650);
+    const secondFrame = await canvas.screenshot();
+    expect(firstFrame.equals(secondFrame), `showcase canvas ${index} is static`).toBe(false);
+  }
 });
 
 test("pricing shows every plan and an honest checkout state", async ({ page }, testInfo) => {
