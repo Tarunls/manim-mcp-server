@@ -391,7 +391,7 @@ Do not invoke manim directly and do not hand-write metadata.json. Reply only whe
   await assertNoSecretMaterial(projectRoot, [apiKey, callbackToken]);
   await fs.rm(sandboxEnvPath, { force: true });
   await execFileAsync("tar", [
-    "--exclude=.git", "--exclude=.env", "--exclude=output.mp4", "--exclude=poster.png", "--exclude=contact-sheet.png",
+    "--exclude=.git", "--exclude=.env", "--exclude=.media", "--exclude=output.mp4", "--exclude=poster.png", "--exclude=contact-sheet.png",
     "-czf", "/workspace/source.tar.gz", "-C", projectRoot, ".",
   ]);
 

@@ -8,6 +8,10 @@ const version = process.env.E2B_TEMPLATE_VERSION?.trim() || "dev";
 const template = Template({ fileContextPath: root }).fromDockerfile(path.join(root, "e2b", "Dockerfile"));
 
 const result = await Template.build(template, `${name}:${version}`, {
+  // Manim rasterizes every frame and ffmpeg encodes them; both are compute
+  // bound, and sandbox CPU is a rounding error next to the LLM cost per job.
+  cpuCount: 4,
+  memoryMB: 4096,
   onBuildLogs: (entry) => process.stdout.write(`${entry}\n`),
 });
 console.log(`Built E2B template ${name}:${version} (${result.buildId}).`);

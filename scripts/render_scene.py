@@ -25,6 +25,11 @@ QUALITY_ARGS = {
     "high": ["-qh"],
 }
 
+# Iteration renders keep Manim's partial-movie cache so a re-render after an
+# edit only redraws the changed animations. Final-quality renders disable it:
+# they run once, and hashing every animation would only add overhead.
+CACHED_QUALITIES = {"draft", "low", "preview", "medium"}
+
 
 def fail(message: str) -> None:
     print(message, file=sys.stderr)
@@ -165,7 +170,7 @@ def main() -> None:
         "-m",
         "manim",
         *QUALITY_ARGS[quality],
-        "--disable_caching",
+        *([] if quality in CACHED_QUALITIES else ["--disable_caching"]),
         "--media_dir",
         str(media_dir),
         str(source),
