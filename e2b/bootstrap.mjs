@@ -277,11 +277,45 @@ ${String(job.prompt).slice(0, 12000)}
   const turn = { finalResponse: lastAgentMessage };
   await narrationProxy?.close();
   narrationProxy = undefined;
-  for (const filename of ["output.mp4", "metadata.json"]) {
+  for (const filename of ["output.mp4", "scene.py"]) {
     if (!await exists(path.join(projectRoot, filename))) {
       throw new Error(`Codex completed without ${filename}. Agent response: ${redactSecrets(turn.finalResponse, 2_000)}`);
     }
   }
+  // The agent must go through the gated renderer, not drive Manim directly.
+  const sceneSource = await fs.readFile(path.join(projectRoot, "scene.py"), "utf8");
+  for (const marker of ["from manim_layout import", "from manim_paper import", "assert_no_overlap"]) {
+    if (!sceneSource.includes(marker)) {
+      throw new Error(`scene.py skipped the gated renderer (missing ${marker}). The lesson must be rendered with scripts/render_scene.py.`);
+    }
+  }
+  // Metadata is derived here, from the actual file, because agent-authored
+  // metadata has been hand-invented before (missing duration, fake narration
+  // status) and then correctly rejected upstream - after the user waited.
+  const { stdout: probeJson } = await execFileAsync("ffprobe", [
+    "-v", "error", "-print_format", "json",
+    "-show_entries", "stream=codec_type,width,height,avg_frame_rate:format=duration,bit_rate",
+    path.join(projectRoot, "output.mp4"),
+  ]);
+  const probe = JSON.parse(probeJson);
+  const videoStream = (probe.streams || []).find((stream) => stream.codec_type === "video");
+  const hasAudio = (probe.streams || []).some((stream) => stream.codec_type === "audio");
+  if (!videoStream) throw new Error("output.mp4 has no video stream.");
+  const narrationEnabled = job.narrationPreferences?.enabled === true;
+  if (narrationEnabled && !hasAudio) {
+    throw new Error("Narration is enabled but the rendered video has no audio track.");
+  }
+  const [fpsNumerator, fpsDenominator] = String(videoStream.avg_frame_rate || "30/1").split("/").map(Number);
+  const derivedMetadata = {
+    renderer: "manim",
+    duration: Number(probe.format?.duration || 0),
+    width: Number(videoStream.width || 0),
+    height: Number(videoStream.height || 0),
+    fps: fpsDenominator ? Math.round((fpsNumerator / fpsDenominator) * 1000) / 1000 : 30,
+    bitRate: Number(probe.format?.bit_rate || 0),
+    narration: { enabled: narrationEnabled, hasAudio },
+  };
+  await fs.writeFile(path.join(projectRoot, "metadata.json"), JSON.stringify(derivedMetadata, null, 2));
   await assertNoSecretMaterial(projectRoot, [apiKey, callbackToken]);
   await fs.rm(sandboxEnvPath, { force: true });
   await execFileAsync("tar", [
