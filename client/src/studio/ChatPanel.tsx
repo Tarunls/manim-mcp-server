@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ArrowsLeftRight,
   CaretDown,
+  Check,
   Code,
   ImageSquare,
   PushPin,
@@ -12,7 +13,13 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type {
   AuthState,
   BillingState,
@@ -35,6 +42,150 @@ import {
 } from "../lib/studio";
 import { AgentActivity } from "./Progress";
 import { AssetPicker } from "./AssetPicker";
+
+const INTENT_OPTIONS: Array<{
+  value: GenerationIntent;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "auto",
+    label: "Smart choice",
+    description: "Reads the prompt and decides whether to edit or start fresh.",
+  },
+  {
+    value: "revise",
+    label: "Edit this video",
+    description: "Changes this video and preserves everything else.",
+  },
+  {
+    value: "new",
+    label: "Separate video",
+    description: "Creates a separate project from the default style.",
+  },
+];
+
+/*
+ * The old control here was a native <select> styled flat: no caret, no
+ * disabled state, so "Smart choice" read as a label that swallowed clicks.
+ * A real menu makes the choice visible and explains each option in place.
+ */
+function IntentMenu({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: GenerationIntent;
+  disabled?: boolean;
+  onChange: (value: GenerationIntent) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selected =
+    INTENT_OPTIONS.find((option) => option.value === value) ??
+    INTENT_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current
+      ?.querySelector<HTMLButtonElement>("[aria-checked='true']")
+      ?.focus();
+  }, [open]);
+
+  function moveFocus(delta: number) {
+    const options = Array.from(
+      rootRef.current?.querySelectorAll<HTMLButtonElement>(
+        "[role='menuitemradio']",
+      ) ?? [],
+    );
+    if (!options.length) return;
+    const index = options.findIndex(
+      (option) => option === document.activeElement,
+    );
+    options[(index + delta + options.length) % options.length].focus();
+  }
+
+  function close(refocus: boolean) {
+    setOpen(false);
+    if (refocus) triggerRef.current?.focus();
+  }
+
+  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveFocus(event.key === "ArrowDown" ? 1 : -1);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+    } else if (event.key === "Tab") {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className={`intent-control ${open ? "open" : ""}`} ref={rootRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="intent-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Next prompt: ${selected.label}`}
+        title="Choose how the next prompt is applied"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span>{selected.label}</span>
+        <CaretDown size={12} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="intent-menu"
+          role="menu"
+          aria-label="How to apply the next prompt"
+          onKeyDown={onMenuKeyDown}
+        >
+          {INTENT_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.value === value}
+              onClick={() => {
+                onChange(option.value);
+                close(true);
+              }}
+            >
+              <span className="intent-option-label">
+                {option.label}
+                {option.value === value && (
+                  <Check size={13} aria-hidden="true" />
+                )}
+              </span>
+              <span className="intent-option-desc">{option.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ThinkingControl({
   value,
@@ -511,21 +662,15 @@ export function ChatPanel({
           />
           <div className="composer-row">
             <div className="composer-tools">
-              {project && (
-                <label className="action-select">
-                  <span className="sr-only">Action</span>
-                  <select
-                    value={intent}
-                    disabled={running || !hasPriorWork}
-                    onChange={(event) =>
-                      setIntent(event.target.value as GenerationIntent)
-                    }
-                  >
-                    <option value="auto">Smart choice</option>
-                    <option value="revise">Edit this video</option>
-                    <option value="new">Separate video</option>
-                  </select>
-                </label>
+              {/* The choice only means something once there is a video to
+                  edit; before that the first prompt is always a new video,
+                  so no dead-looking control is shown. */}
+              {project && hasPriorWork && (
+                <IntentMenu
+                  value={intent}
+                  disabled={running}
+                  onChange={setIntent}
+                />
               )}
               {project && (
                 <button

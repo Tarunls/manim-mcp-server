@@ -748,41 +748,129 @@ dialog.modal .mono,
 .action-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   border-top: 1px solid var(--border);
-  padding-top: 10px;
+  padding-top: 8px;
 }
 
-.action-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+.action-earlier {
+  font-size: 11px;
   color: var(--ink-2);
+  padding: 2px 0 4px 26px;
 }
 
-.action-row svg {
+/* Each step is a grid row: a fixed marker column, a label free to wrap, and
+   a timestamp column that never shrinks or collides with the text. */
+.action-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 5px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  animation: action-enter 260ms ease both;
+}
+
+.action-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 1.5em; /* one line box, so the marker centers on the first line */
+}
+
+.action-marker svg {
   flex: none;
-}
-
-.action-row-running {
-  color: var(--ink);
+  color: var(--ink-3);
 }
 
 .action-row-failed {
   color: var(--danger);
 }
 
-.action-row > span:first-of-type {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.action-row-failed .action-marker svg {
+  color: var(--danger);
 }
 
-.action-row .mono {
-  margin-left: auto;
+.action-row-latest {
+  color: var(--ink);
+}
+
+.action-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.action-chip {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  line-height: 17px;
+  white-space: nowrap;
   color: var(--ink-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transform: translateY(-1px);
+}
+
+.action-row-latest .action-chip {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+  background: var(--accent-tint);
+}
+
+.action-time {
+  padding-top: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 3.4em;
+  text-align: right;
+  color: var(--ink-2);
+}
+
+/* liveness: a small pulsing accent dot rides the newest entry */
+
+.working-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex: none;
+  animation: working-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes working-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 var(--accent-ring);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px var(--accent-ring);
+  }
+}
+
+@keyframes action-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-row {
+    animation: none;
+  }
+
+  .working-dot {
+    animation: none;
+  }
 }
 
 /* --- 8. composer ---------------------------------------------------- */
@@ -994,23 +1082,104 @@ dialog.modal .mono,
   flex: none;
 }
 
-.action-select {
+/* generation intent: a labelled menu, not a flat select */
+
+.intent-control {
+  position: relative;
   display: inline-flex;
-  align-items: center;
 }
 
-.action-select select {
-  border-color: transparent;
-  background: transparent;
-  padding: 5px 6px;
+.intent-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 12px;
   font-size: 13px;
   font-weight: 500;
   color: var(--ink-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
 }
 
-.action-select select:hover {
-  background: var(--bg-inset);
+.intent-trigger svg {
+  color: var(--ink-3);
+  transition: transform 120ms ease;
+}
+
+.intent-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
   color: var(--ink);
+}
+
+.intent-trigger:disabled {
+  opacity: 0.45;
+}
+
+.intent-control.open .intent-trigger {
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.intent-control.open .intent-trigger svg {
+  transform: rotate(180deg);
+}
+
+.intent-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-container);
+  box-shadow: 0 2px 6px rgba(28, 25, 23, 0.05), 0 12px 32px rgba(28, 25, 23, 0.12);
+}
+
+.intent-menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  background: transparent;
+  border-radius: var(--radius-control);
+}
+
+.intent-menu button[aria-checked="true"] {
+  background: var(--accent-tint);
+}
+
+.intent-menu button:hover,
+.intent-menu button:focus-visible {
+  background: var(--bg-inset);
+}
+
+.intent-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.intent-option-label svg {
+  color: var(--accent);
+}
+
+.intent-option-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-2);
 }
 
 .composer-tool {
@@ -1205,7 +1374,6 @@ dialog.modal .mono,
   font-size: 13px;
 }
 
-.render-state,
 .canvas-empty {
   position: absolute;
   inset: 0;
@@ -1216,6 +1384,39 @@ dialog.modal .mono,
   gap: 8px;
   text-align: center;
   color: var(--stage-ink-2);
+}
+
+/* The working state is the only content on the stage, so it holds the
+   optical center with a deliberate vertical rhythm. */
+.render-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  color: var(--stage-ink-2);
+}
+
+.render-state .kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.render-state h2 {
+  margin-bottom: 10px;
+}
+
+.render-state p {
+  max-width: 400px;
+}
+
+.render-state .progress-block {
+  margin-top: 32px;
 }
 
 /* The example plays behind the copy. On paper it needs almost no dimming -
@@ -1262,8 +1463,7 @@ dialog.modal .mono,
   color: var(--stage-ink-2);
 }
 
-.canvas-empty .kicker,
-.render-state .kicker {
+.canvas-empty .kicker {
   color: var(--stage-ink-2);
   margin-bottom: 4px;
 }
@@ -1274,7 +1474,7 @@ dialog.modal .mono,
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: 12px;
   width: min(440px, 100%);
   margin-top: 20px;
 }
@@ -1282,16 +1482,16 @@ dialog.modal .mono,
 .progress-track {
   height: 2px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(28, 25, 23, 0.12);
   overflow: hidden;
 }
 
 .progress-track span {
   display: block;
   height: 100%;
-  background: var(--stage-ink);
+  background: var(--accent);
   transform-origin: left;
-  transition: transform 240ms ease;
+  transition: transform 150ms ease;
 }
 
 .progress-steps {
@@ -1305,7 +1505,7 @@ dialog.modal .mono,
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #7d8582;
+  transition: color 150ms ease;
 }
 
 .progress-step i {
@@ -1314,14 +1514,20 @@ dialog.modal .mono,
   border-radius: 999px;
   background: currentColor;
   flex: none;
+  transition: background 150ms ease;
+}
+
+.progress-pending {
+  /* muted, but still past the 4.5:1 contrast line on the paper stage */
+  color: rgba(26, 25, 23, 0.62);
 }
 
 .progress-done {
-  color: var(--stage-ink-2);
+  color: var(--stage-ink);
 }
 
 .progress-active {
-  color: var(--stage-ink);
+  color: var(--accent);
   font-weight: 500;
 }
 

@@ -119,7 +119,9 @@ export function VideoWorkspace({
             />
           ) : project?.status === "running" ? (
             <div className="render-state">
-              <span className="kicker">Working</span>
+              <span className="kicker">
+                <i className="working-dot" aria-hidden="true" /> Working
+              </span>
               <h2>
                 {project.stage === "rendering"
                   ? `Rendering ${generationLabel(project).toLowerCase()}`
