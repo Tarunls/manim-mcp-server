@@ -56,6 +56,21 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
   }
 });
 
+test("the hero resonance remains animated with reduced motion", async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "desktop",
+    "The canvas behavior is viewport-independent.",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  const canvas = page.locator(".hero-chladni-canvas");
+  await expect(canvas).toBeVisible();
+  const firstFrame = await canvas.screenshot();
+  await page.waitForTimeout(900);
+  const secondFrame = await canvas.screenshot();
+  expect(firstFrame.equals(secondFrame)).toBe(false);
+});
+
 // the examples gallery became the contact strip: all three lesson stills sit
 // in one whitespace-separated row, each captioned with the sentence that
 // produced it (the claim itself is typography inside the frame).

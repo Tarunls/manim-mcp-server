@@ -6,6 +6,7 @@ type Grain = {
   delay: number;
   radius: number;
   phase: number;
+  tone: number;
 };
 
 type FieldSample = {
@@ -24,6 +25,21 @@ function smoothstep(value: number) {
 function hash(index: number, salt: number) {
   const value = Math.sin(index * 91.173 + salt * 47.119) * 43758.5453;
   return value - Math.floor(value);
+}
+
+function resonanceState(seconds: number) {
+  const cycle = seconds % 12;
+  if (cycle < 1.5) return { blend: 0, activity: 0 };
+  if (cycle < 5) {
+    const progress = smoothstep((cycle - 1.5) / 3.5);
+    return { blend: progress, activity: Math.sin(progress * Math.PI) };
+  }
+  if (cycle < 7) return { blend: 1, activity: 0 };
+  if (cycle < 10.5) {
+    const progress = smoothstep((cycle - 7) / 3.5);
+    return { blend: 1 - progress, activity: Math.sin(progress * Math.PI) };
+  }
+  return { blend: 0, activity: 0 };
 }
 
 function mode(x: number, y: number, n: number, m: number): FieldSample {
@@ -155,6 +171,7 @@ export function ChladniVisual() {
       delay: hash(index, 3) * 1.25,
       radius: 0.62 + hash(index, 4) * 0.72,
       phase: hash(index, 5) * TAU,
+      tone: hash(index, 6),
     }));
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -182,24 +199,34 @@ export function ChladniVisual() {
       }
       lastFrameAt = timestamp;
       if (!startedAt) startedAt = timestamp;
-      const seconds = reducedMotion.matches ? 9 : (timestamp - startedAt) / 1000;
+      const seconds = (timestamp - startedAt) / 1000;
+      // Reduced motion keeps the explanation alive at a calmer speed and
+      // amplitude instead of replacing the animation with a frozen frame.
+      const motionScale = reducedMotion.matches ? 0.28 : 1;
+      const motionSeconds = seconds * (reducedMotion.matches ? 0.52 : 1);
       const plateSize = Math.min(width * 0.84, height * 0.82);
-      const blend =
-        0.5 + 0.5 * Math.sin(Math.max(0, seconds - 3.6) * 0.24 - Math.PI / 2);
-      const settle = reducedMotion.matches ? 1 : smoothstep(seconds / 3.4);
-      const wave = seconds * 2.1;
+      const resonance = resonanceState(motionSeconds);
+      const blend = resonance.blend;
+      const activity = resonance.activity * motionScale;
+      const settle = smoothstep(seconds / 2.8);
+      const wave = motionSeconds * 2.35;
+      const plateBreath = Math.sin(wave) * 0.006 * motionScale;
 
       context.clearRect(0, 0, width, height);
       context.save();
-      context.translate(width * 0.53, height * 0.5);
-      context.rotate(-0.035);
+      context.translate(
+        width * 0.53,
+        height * 0.5 + Math.sin(wave * 0.5) * (1.1 + activity * 1.8),
+      );
+      context.rotate(-0.035 + Math.sin(wave * 0.38) * 0.0045);
+      context.scale(1 - plateBreath * 0.3, 1 + plateBreath);
 
       // The plate is an object in space, not a UI card: one quiet boundary,
       // a whisper of depth, and plenty of surrounding paper.
       context.save();
-      context.shadowColor = "rgba(26, 25, 23, 0.055)";
-      context.shadowBlur = 28;
-      context.shadowOffsetY = 15;
+      context.shadowColor = `rgba(26, 25, 23, ${0.05 + activity * 0.035})`;
+      context.shadowBlur = 26 + activity * 16;
+      context.shadowOffsetY = 13 + activity * 8;
       context.fillStyle = "rgba(255, 253, 248, 0.74)";
       context.fillRect(-plateSize / 2, -plateSize / 2, plateSize, plateSize);
       context.restore();
@@ -213,13 +240,19 @@ export function ChladniVisual() {
       context.rect(-plateSize / 2, -plateSize / 2, plateSize, plateSize);
       context.clip();
 
-      // A moving displacement contour makes the vibration visible before the
-      // grains reveal where the plate itself is standing still.
-      context.strokeStyle = "rgba(46, 82, 102, 0.075)";
-      context.lineWidth = 1;
-      contour(context, blend, Math.sin(wave) * 0.58, plateSize, 56);
-      context.strokeStyle = "rgba(176, 117, 72, 0.085)";
-      contour(context, blend, Math.sin(wave + Math.PI) * 0.58, plateSize, 56);
+      // Moving displacement contours make the flex of the plate legible.
+      // Their phase shifts continuously while the stationary node remains calm.
+      const surfaceLevels = [-0.68, -0.3, 0.3, 0.68];
+      for (let index = 0; index < surfaceLevels.length; index += 1) {
+        const level =
+          surfaceLevels[index] * (0.84 + Math.sin(wave + index * 1.2) * 0.12);
+        context.strokeStyle =
+          index < 2
+            ? `rgba(46, 82, 102, ${0.075 + activity * 0.055})`
+            : `rgba(176, 117, 72, ${0.08 + activity * 0.06})`;
+        context.lineWidth = 0.8;
+        contour(context, blend, level, plateSize, 46);
+      }
 
       // The exact nodal geometry remains calm while the plate moves around it.
       context.strokeStyle = "rgba(176, 117, 72, 0.24)";
@@ -229,30 +262,57 @@ export function ChladniVisual() {
       const half = plateSize / 2;
       for (const grain of grains) {
         const target = projectToNode(grain.x, grain.y, blend);
-        const localSettle = reducedMotion.matches
-          ? 1
-          : smoothstep((seconds - grain.delay) / 2.5);
-        const tremor = (1 - localSettle) * 0.011;
+        const introSettle = smoothstep((seconds - grain.delay) / 1.9);
+        // A new tone briefly lifts the grains before they find the next set
+        // of nodal lines. The stagger keeps the transition physical, not a fade.
+        const localSettle =
+          introSettle * (1 - activity * (0.42 + grain.tone * 0.18));
+        const tremor = 0.0025 + (1 - localSettle) * 0.02;
+        const targetField = field(target.x, target.y, blend);
+        const targetMagnitude = Math.hypot(targetField.dx, targetField.dy) || 1;
+        const tangentX = -targetField.dy / targetMagnitude;
+        const tangentY = targetField.dx / targetMagnitude;
+        const glide =
+          Math.sin(wave * 0.48 + grain.phase) * (0.0015 + activity * 0.0045);
         const x =
-          grain.x + (target.x - grain.x) * localSettle + Math.sin(wave * 2.7 + grain.phase) * tremor;
+          grain.x +
+          (target.x - grain.x) * localSettle +
+          Math.sin(wave * 2.7 + grain.phase) * tremor +
+          tangentX * glide;
         const y =
-          grain.y + (target.y - grain.y) * localSettle + Math.cos(wave * 2.3 + grain.phase) * tremor;
+          grain.y +
+          (target.y - grain.y) * localSettle +
+          Math.cos(wave * 2.3 + grain.phase) * tremor +
+          tangentY * glide;
+
+        const distance = Math.hypot(x, y);
+        const travellingLight = 0.5 + 0.5 * Math.cos(distance * 18 - wave * 1.7);
+        const warm = travellingLight > 0.84 && grain.tone > 0.67;
 
         context.beginPath();
         context.arc(x * half, y * half, grain.radius, 0, TAU);
-        context.fillStyle = `rgba(26, 25, 23, ${0.2 + 0.48 * localSettle})`;
+        context.fillStyle = warm
+          ? `rgba(176, 117, 72, ${0.34 + 0.28 * localSettle})`
+          : `rgba(26, 25, 23, ${0.18 + 0.5 * localSettle})`;
         context.fill();
       }
 
-      // The exciter is the only explicit cause in the composition. Its pulse
-      // recedes as order appears, keeping the final frame beautifully sparse.
-      const pulseStrength = 0.34 * (1 - settle * 0.55);
-      for (let ring = 0; ring < 3; ring += 1) {
-        const radius = 7 + ((seconds * 26 + ring * 24) % 72);
+      // Wavefronts travel all the way across the plate, tying the movement of
+      // the grains to the small exciter at the center.
+      const pulseStrength = 0.12 + activity * 0.13 + (1 - settle) * 0.14;
+      const maximumRadius = plateSize * 0.72;
+      for (let ring = 0; ring < 4; ring += 1) {
+        const radius =
+          8 +
+          ((motionSeconds * 54 + ring * (maximumRadius / 4)) % maximumRadius);
+        const edgeFade = Math.sin(Math.min(1, radius / maximumRadius) * Math.PI);
         context.beginPath();
         context.arc(0, 0, radius, 0, TAU);
-        context.strokeStyle = `rgba(46, 82, 102, ${pulseStrength * (1 - radius / 82)})`;
-        context.lineWidth = 1;
+        context.strokeStyle =
+          ring % 2 === 0
+            ? `rgba(46, 82, 102, ${pulseStrength * edgeFade})`
+            : `rgba(176, 117, 72, ${pulseStrength * edgeFade * 0.8})`;
+        context.lineWidth = 0.8;
         context.stroke();
       }
       context.beginPath();
@@ -263,12 +323,11 @@ export function ChladniVisual() {
       context.restore();
       context.restore();
 
-      if (!reducedMotion.matches) animationFrame = requestAnimationFrame(draw);
+      animationFrame = requestAnimationFrame(draw);
     };
 
     const observer = new ResizeObserver(() => {
       resize();
-      if (reducedMotion.matches) draw(performance.now());
     });
     observer.observe(canvas);
     resize();
