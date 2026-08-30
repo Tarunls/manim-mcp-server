@@ -41,10 +41,23 @@ SOURCES = {
 }
 
 
+# Fraunces' word space is display-tight even in the text cut: at 19-22pt it
+# renders one or two pixels wide and short words visually merge. Widen the
+# space advance in the text cut only; the display cut keeps its tight set.
+SPACE_SCALE = {"Orune Serif": 1.0, "Orune Serif Text": 1.8}
+
+
 def build(family: str, axes: dict, style: str, source: str) -> None:
     font = TTFont(os.path.join(FONT_DIR, source))
     font.flavor = None
     static = instancer.instantiateVariableFont(font, axes, inplace=False)
+    scale = SPACE_SCALE.get(family, 1.0)
+    if scale != 1.0:
+        hmtx = static["hmtx"]
+        for glyph in ("space", "uni00A0"):
+            if glyph in hmtx.metrics:
+                advance, lsb = hmtx.metrics[glyph]
+                hmtx.metrics[glyph] = (round(advance * scale), lsb)
     full = family if style == "Regular" else f"{family} {style}"
     for record in static["name"].names:
         if record.nameID == 1:
