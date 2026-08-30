@@ -205,6 +205,11 @@ def caption(design: dict, body: str, *, italic: bool = False) -> Text:
     return note
 
 
+# Symbols that separate quantities rather than joining them; they take the
+# wider setting on both sides.
+_RELATIONS = {"=", "≠", "≈", "<", ">", "≤", "≥", "×", "·", "+", "-", "−", "±", "/", "÷"}
+
+
 def expr(design: dict, *parts: tuple[str, str]) -> VGroup:
     """Set an expression from (body, kind) parts, kind in:
     "up" upright words, "it" italic variables, "op" oversized operators.
@@ -222,7 +227,20 @@ def expr(design: dict, *parts: tuple[str, str]) -> VGroup:
         else:
             piece = text(design, body, role="expr")
         pieces.append(piece)
-    group = VGroup(*pieces).arrange(RIGHT, buff=0.2)
+    # Space carries meaning in an expression. Terms that multiply have to sit
+    # close enough to read as one quantity - set evenly, "2 pi r" reads as three
+    # separate tokens instead of one - while relations and operators need room.
+    group = VGroup(*pieces)
+    for index in range(1, len(pieces)):
+        previous_body, previous_kind = parts[index - 1]
+        body, kind = parts[index]
+        loose = (
+            kind == "op"
+            or previous_kind == "op"
+            or body.strip() in _RELATIONS
+            or previous_body.strip() in _RELATIONS
+        )
+        pieces[index].next_to(pieces[index - 1], RIGHT, buff=0.30 if loose else 0.09)
     return group
 
 

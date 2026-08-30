@@ -13,6 +13,8 @@ Projects below this directory are editable educational videos created by the Stu
 - The render helper creates `output.mp4`, `poster.png`, `contact-sheet.png`, and `metadata.json`.
 - Read `narration-config.json`. When `enabled` is false, render a silent video and verify `metadata.json` reports narration disabled. When `enabled` is true, write 3-5 timed, chapter-length passages to `narration.json`, align them to the visual beats, and verify the final Speechify audio.
 - Enabled passages should be 18-45 words, explain cause and effect, and connect naturally to the next idea. Use natural mathematical pronunciation, avoid fragments and fact lists, and budget about 145 words per minute plus breathing room.
+- Narration text is spoken aloud, so write every symbol as the words a person would say — "pi r squared", "two pi r", "one half" — never the characters `πr²` or `½`. The symbols belong on screen, in the claim and the expression; a voice cannot read them reliably.
+- A claim must not restate what the expression beneath it already shows. Let the claim say what the moment means and the expression carry the algebra.
 - Enabled narration uses Speechify `simba-3.2` with warm SSML delivery, timing guards, fades, and loudness normalization. Fallback narration is forbidden.
 - Completed outputs are copied into immutable `versions/vNNN/` folders by the Studio server. Never edit those archived folders.
 - Never delete earlier project folders or write outside the current project.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { completionMessage } from "../server/hosted-generation-service.js";
-import { looksLikeIndependentVideoRequest } from "../server/studio-service.js";
+import { generationPreferencesFor, looksLikeIndependentVideoRequest } from "../server/studio-service.js";
 import type { StudioProject } from "../server/types.js";
 
 const project = { prompt: "Create a video explaining Fourier transforms" } as StudioProject;
@@ -29,4 +29,12 @@ test("the completion note describes the video, never the agent's build report", 
   );
   // A render we could not measure still reads as a finished draft.
   assert.equal(completionMessage(1, undefined), "First draft ready.");
+});
+
+test("the chosen frame survives, because it decides how the scene is written", () => {
+  assert.equal(generationPreferencesFor("balanced").format, "landscape");
+  assert.equal(generationPreferencesFor("thorough", "vertical").format, "vertical");
+  // Raising the effort on a vertical project must not quietly send it back to
+  // widescreen: the grid, not just the output size, depends on this.
+  assert.equal(generationPreferencesFor("quick", "vertical").format, "vertical");
 });
