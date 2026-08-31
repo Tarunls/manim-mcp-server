@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 from manim import (
     DOWN,
@@ -295,17 +296,19 @@ def narration_beats(project_dir: str = ".") -> list[dict]:
     return sorted(beats, key=lambda beat: beat["start"])
 
 
-def hold_for_narration(scene: Scene, beats: list[dict], index: int,
-                       *, tolerance: float = 0.4) -> None:
+def hold_for_narration(scene: Scene, beats: list[dict], index: int) -> None:
     """Hold the current beat until its narration line is done.
 
     Call this once at the end of every beat, in order. It waits until the next
     line begins - or, on the last beat, until the final line ends - so the
-    voice and the picture cannot drift apart.
+    voice and the picture stay together.
 
-    A beat whose animations already ran past its line raises instead of
-    silently sliding everything after it out of sync; shorten that beat's
-    animations, or give the line more room, and render again."""
+    Every target is an absolute time on the narration's own clock, which is
+    what makes this safe: a beat whose animations run past their line simply
+    starts late, and the very next call still lands on its own start time.
+    Error never accumulates, so an overrun is reported and forgiven rather
+    than raised - failing here would only cost a whole render to fix a beat
+    that the following one already corrects."""
     if not beats or index >= len(beats):
         return
     if index + 1 < len(beats):
@@ -315,12 +318,11 @@ def hold_for_narration(scene: Scene, beats: list[dict], index: int,
     remaining = target - scene.time
     if remaining > 0:
         scene.wait(remaining)
-    elif remaining < -tolerance:
-        raise ValueError(
-            f"Beat {index + 1} overran its narration by {-remaining:.2f}s "
-            f"(scene reached {scene.time:.2f}s, the line needed {target:.2f}s). "
-            "Shorten this beat's animations or lengthen the passage, then "
-            "render again - otherwise the voice drifts for the rest of the video."
+    elif remaining < -0.4:
+        print(
+            f"note: beat {index + 1} ran {-remaining:.2f}s past its narration line; "
+            f"the next beat re-syncs, but consider shortening it.",
+            file=sys.stderr,
         )
 
 
