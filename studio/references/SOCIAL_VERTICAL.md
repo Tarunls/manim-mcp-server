@@ -74,3 +74,29 @@ the stage. What is left to get right:
 - claims short enough to wrap to two lines;
 - nothing that carries meaning in the bottom fifth, which the app covers with
   its own caption and buttons.
+
+## A backlog of concepts that pass the test
+
+Each of these is one familiar fact, one transformation, one payoff. The
+transformation column is the beat that carries the whole argument, so it is
+the beat to give the most time. Shipped ones are marked.
+
+| Fact everyone knows | The single transformation | |
+| --- | --- | --- |
+| A circle's area is pi r squared | Slice into rings, unroll each into a line, stack into a triangle | shipped |
+| A triangle's angles make a straight line | Slide the three corner angles together at one point | shipped |
+| A parallelogram's area is base times height | Cut the triangle off one end and slide it to the other, making a rectangle | |
+| The diagonal of a unit square is not a fraction | Fold the square onto its own diagonal and find no common unit | |
+| A sphere's surface is four circles | Peel the sphere and fill exactly four discs of the same radius | |
+| Odds of sharing a birthday pass half at 23 people | Count the pairs, not the people | |
+| Bees build hexagons | Push circles together until they tile with no gaps | |
+| a squared minus b squared is (a+b)(a-b) | Cut the small square out of the big one and rearrange the L into a rectangle | |
+| A cone is a third of its cylinder | Pour the cone into the cylinder three times | |
+| The sum 1 to n is n(n+1)/2 | Pair the row with its own reverse to make a rectangle | |
+| Any map needs only four colours | Try to force a fifth on a small map and fail | |
+| Pythagoras | Rearrange four copies of the triangle inside one square, twice | |
+
+Two that look tempting and are not: anything needing the viewer to hold
+several numbers at once, and anything where the reason is a chain of steps
+rather than a single change. Both read as clever on paper and land as
+confusing on a phone.

@@ -103,6 +103,58 @@ def validate_generation_request(project_dir: Path, source: Path) -> None:
         fail("Generation freshness check failed: beat-plan.md does not appear to address the requested topic.")
 
 
+def validate_narration_script(project_dir: Path, quality: str) -> None:
+    """Enforce the narration rules that a markdown file cannot.
+
+    Every one of these started as a written instruction that a generated
+    lesson ignored: fragment narration read as a caption list rather than a
+    voice, a social cut that came in at seventeen seconds, and an opening that
+    was not the question the format is built around."""
+    config_file = project_dir / "narration-config.json"
+    if config_file.exists():
+        try:
+            if json.loads(config_file.read_text(encoding="utf-8")).get("enabled") is False:
+                return
+        except (json.JSONDecodeError, OSError):
+            fail("narration-config.json must contain valid JSON.")
+    script = project_dir / "narration.json"
+    if not script.exists():
+        return
+    try:
+        segments = json.loads(script.read_text(encoding="utf-8")).get("segments") or []
+    except (json.JSONDecodeError, OSError):
+        fail("narration.json must contain valid JSON.")
+    if not segments:
+        return
+    for index, segment in enumerate(segments, start=1):
+        words = len(str(segment.get("text", "")).split())
+        if words < 12:
+            fail(
+                f"Narration passage {index} is {words} words. A passage must be a "
+                "spoken sentence of at least 12 words (aim for 18-45), not a caption "
+                "fragment - fragments read as a list of labels instead of a voice."
+            )
+        if words > 60:
+            fail(f"Narration passage {index} is {words} words; split it, the limit is 60.")
+    starts = [float(segment.get("start", 0)) for segment in segments]
+    if starts != sorted(starts):
+        fail("Narration passages must be in ascending order of start time.")
+    if quality.startswith("vertical"):
+        opening = str(segments[0].get("text", "")).lower()
+        if "wondered" not in opening:
+            fail(
+                "A vertical lesson opens on the question the format is built around: "
+                "the first narration line must ask 'Have you ever wondered why ...'. "
+                f"It currently begins: {str(segments[0].get('text',''))[:80]!r}"
+            )
+        finish = max(float(segment.get("end") or 0) for segment in segments)
+        if finish < 30:
+            fail(
+                f"The narration only runs to {finish:.1f}s. A vertical lesson is 35-45 "
+                "seconds; give the transformation beat the room it needs."
+            )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         fail("Usage: render_scene.py PROJECT_DIR [draft|preview|balanced|high]")
@@ -161,6 +213,23 @@ def main() -> None:
         )
     if "assert_scene_safe(" not in code:
         fail("scene.py must call assert_scene_safe for its important visual groups.")
+    narrated = (project_dir / "narration.json").exists()
+    if narrated:
+        config_file = project_dir / "narration-config.json"
+        try:
+            narrated = config_file.exists() and json.loads(
+                config_file.read_text(encoding="utf-8")
+            ).get("enabled") is not False
+        except (json.JSONDecodeError, OSError):
+            narrated = True
+    if narrated and "hold_for_narration" not in called:
+        fail(
+            "This lesson is narrated, so every beat must end with "
+            "manim_paper.hold_for_narration(self, beats, index) using timings from "
+            "narration_beats('.'). Pacing a narrated beat with a bare self.wait() is "
+            "what lets the voice drift ahead of or behind the picture."
+        )
+    validate_narration_script(project_dir, quality)
     if not has_layout_call(code, "assert_no_overlap", 2):
         fail("scene.py must call assert_no_overlap with at least two independent peer objects.")
     if not has_layout_call(code, "watch_no_overlap", 3):
