@@ -272,6 +272,58 @@ def fit_stage(mobject: Mobject, *, left: float = LEFT_X, right: float = RIGHT_X,
     return mobject
 
 
+def narration_beats(project_dir: str = ".") -> list[dict]:
+    """The start times the finished audio is actually mixed at.
+
+    The narration mux places each line at its own ``start`` second, so those
+    numbers - not the scene's own guesswork - are the clock the picture has to
+    keep. Returns an empty list when the lesson is silent."""
+    try:
+        with open(os.path.join(project_dir, "narration.json")) as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    beats = []
+    for segment in data.get("segments") or []:
+        try:
+            beats.append({
+                "start": float(segment["start"]),
+                "end": float(segment.get("end") or 0.0),
+            })
+        except (KeyError, TypeError, ValueError):
+            return []
+    return sorted(beats, key=lambda beat: beat["start"])
+
+
+def hold_for_narration(scene: Scene, beats: list[dict], index: int,
+                       *, tolerance: float = 0.4) -> None:
+    """Hold the current beat until its narration line is done.
+
+    Call this once at the end of every beat, in order. It waits until the next
+    line begins - or, on the last beat, until the final line ends - so the
+    voice and the picture cannot drift apart.
+
+    A beat whose animations already ran past its line raises instead of
+    silently sliding everything after it out of sync; shorten that beat's
+    animations, or give the line more room, and render again."""
+    if not beats or index >= len(beats):
+        return
+    if index + 1 < len(beats):
+        target = beats[index + 1]["start"]
+    else:
+        target = beats[index]["end"] or beats[index]["start"]
+    remaining = target - scene.time
+    if remaining > 0:
+        scene.wait(remaining)
+    elif remaining < -tolerance:
+        raise ValueError(
+            f"Beat {index + 1} overran its narration by {-remaining:.2f}s "
+            f"(scene reached {scene.time:.2f}s, the line needed {target:.2f}s). "
+            "Shorten this beat's animations or lengthen the passage, then "
+            "render again - otherwise the voice drifts for the rest of the video."
+        )
+
+
 def stage_axes(design: dict, **kwargs) -> Axes:
     """Axes in the house voice: thin rules, no ticks, no arrowheads."""
     config = {

@@ -23,6 +23,7 @@ not call `Text()` directly; the renderer rejects scenes that skip the module.
 - `colors.muted` is used only for the small running head.
 - `colors.rule` is used for axes and for any rule that carries structure.
 - `colors.primary` is the single working colour. It carries the mathematical object and nothing else.
+- When a figure is built from parts the viewer has to count or tell apart, give each part the primary colour at a different fill opacity — the first palest, each addition a step deeper. One hue at several strengths still satisfies this rule, and it is the only way those parts stay legible; a finished figure where every part shares one flat fill has lost the argument it was drawn to make.
 - `colors.accent` is the payoff colour. Use it exactly once in the whole lesson, at the moment the idea lands.
 - Fills are pale — roughly 0.14 to 0.22 opacity — so the curve or edge stays readable on top of them.
 
