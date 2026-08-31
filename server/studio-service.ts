@@ -94,6 +94,8 @@ House style — these rules are proven and are not open to reinterpretation:
 
 Requirements:
 - Start by writing a short beat plan for yourself: one teaching purpose, one dominant visual, and one narration passage per beat. Avoid adding a second panel when changing or replacing the current visual would teach the point more clearly.
+- Before scene.py, read ../../references/SCENE_PLAN_CONTRACT.md and write scene-plan.json with version 1, the lessonGoal, and a beats array. Each beat needs id, purpose, dominantVisual, optional weight, and objects with stable id, role, and changePolicy (flexible or preserve). Reuse an object's id when it persists across beats.
+- Pass those exact object ids as literal names=[...] values to every assert_inside, assert_scene_safe, assert_no_overlap, and watch_no_overlap call. The renderer uses them to produce targeted repair context; unnamed layout guards are rejected.
 - Use the studio's production standard unless the user asks for a different format: about four beats and 35-45 seconds, one claim sentence plus one large focused visual, generous negative space, and a clear visual transformation from one beat to the next. This is a quality floor, not a template to copy literally.
 - Each beat should have one memorable visual claim that can be understood from a paused frame. Do not fill the frame with interchangeable panels, decorative widgets, or simultaneous mini-explanations.
 - Compose for a 16:9 frame with the configured palette, readable type, consistent spacing, and purposeful motion.
@@ -104,14 +106,14 @@ Requirements:
 - Read narration-config.json before planning. When enabled is false, make a silent video, do not depend on narration.json, and verify metadata.json reports narration.enabled false. When enabled is true, write narration.json before rendering as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages aligned to the visual beats.
 - For enabled narration, each passage should be 18-45 words, explain cause and effect, and lead naturally into the next idea. Write mathematical pronunciation as natural speech, budget roughly 145 spoken words per minute plus breathing room, and target 24-45 seconds unless the user asks for a different duration.
 - Enabled narration uses Speechify simba-3.2 with warm SSML delivery, timing guards, fades, and loudness normalization. Never create or substitute a fallback voice. After rendering, verify metadata.json reports provider speechify, model simba-3.2, and status ready.
-- Inspect both poster.png and contact-sheet.png. The contact sheet samples twelve moments; check every one for clipping, crowded panels, uneven spacing, poor contrast, accidental occlusion, and objects crossing during transitions. If any issue exists, fix the source and render again.
+- Inspect poster.png, contact-sheet.png, review-frames.json, and layout-audit.json. The contact sheet prioritizes stable beats and transition boundaries; map its cells to review-frames.json and check every one for clipping, crowded panels, uneven spacing, poor contrast, accidental occlusion, and objects crossing during transitions. If any issue exists, fix the source and render again.
 - If review-config.json exists, read ../../skills/educational-video-reviewer/SKILL.md and follow it after rendering. Write review-report.json, validate it, and repair blocking issues once before finishing.
 - Read design-config.json before authoring and use its chosen font category and palette consistently. Do not silently replace the selected visual system with your own defaults.
 - Every Text and MarkupText must set font to the exact family named by design-config.json font.manim. Never hardcode a system font such as Arial, Helvetica, Segoe UI, or DejaVu Sans, and never leave the font argument off and accept Manim's silent generic fallback.
 - Before authoring, write asset-decision.json with needsAuthenticImage and reason. Authentic imagery usually helps for a real person, place, artifact, organism, or historical context; skip it for abstract explanations that are clearer with native shapes.
 - When imagery is useful, run node ../../../scripts/studio_asset.mjs . search "a precise context-rich query". Inspect at least three downloaded candidate previews and their descriptions. Never choose the top result merely because it is attractive; reject candidates that depict the wrong person, era, object, location, or causal context. Import the best verified match with node ../../../scripts/studio_asset.mjs . import <candidate-id>. If no result is genuinely relevant, use renderer-native visuals instead.
 - If assets.json exists, use only assets listed there. Preserve credits and licenses. Load an asset's localPath with ImageMobject. Generated scene source must not make network requests.
-- If the request cites a frame review, inspect both directly attached images before editing. Compare clean.png with annotated.png, identify the smallest exact object enclosed or touched by red markup, and explicitly exclude adjacent untargeted objects. Write reviews/<review-id>/interpretation.json with target, evidence, and excludedNearbyObjects before changing source. Do not reproduce the markup in the video and do not generalize a local edit to sibling labels.
+- If the request cites a frame review, inspect both directly attached images before editing. Compare clean.png with annotated.png, identify the smallest exact object enclosed or touched by red markup, and map it to its stable id in scene-plan.json. Write reviews/<review-id>/interpretation.json with targetObjectId, visualEvidence, requestedPropertyChange, preserveObjectIds, and excludedNearbyObjects before changing source. Do not reproduce the markup in the video and do not generalize a local edit to sibling labels.
 - output.mp4 must exist before you finish. Never return base64 or paste the full source into chat.
 - Revisions must preserve unrelated source and must stay in the paper house style.
 - Your final response is one or two short sentences describing what changed. Begin with "First draft ready:" or "Revision N ready:" using the target named in the turn request. For frame feedback, name the exact targeted object and a nearby object intentionally left unchanged. Do not expose hidden reasoning or raw command logs.`;
@@ -504,7 +506,7 @@ Time: ${review.time.toFixed(3)} seconds
 Files: ${relative}/clean.png and ${relative}/annotated.png
 User note: ${review.note}
 
-First write ${relative}/interpretation.json containing: target (the smallest exact object enclosed or touched by red markup), visualEvidence, requestedPropertyChange, and excludedNearbyObjects. Red marks are spatial pointers only and must not appear in the video. Apply the requested property change only to the identified target. Nearby labels, siblings, and repeated styles must remain unchanged unless they are also explicitly marked. After rerendering, inspect the same timestamp and confirm the target changed while every excluded nearby object stayed unchanged.`;
+First read scene-plan.json and write ${relative}/interpretation.json containing: targetObjectId (the stable id for the smallest exact object enclosed or touched by red markup), visualEvidence, requestedPropertyChange, preserveObjectIds, and excludedNearbyObjects. Red marks are spatial pointers only and must not appear in the video. Apply the requested property change only to targetObjectId. Nearby labels, siblings, repeated styles, and every preserveObjectId must remain unchanged unless also explicitly marked. After rerendering, inspect the same timestamp and confirm the target changed while every preserved nearby object stayed unchanged.`;
     await this.sendMessage(project.id, visibleText, {
       agentRequest,
       localImagePaths: [path.join(reviewDir, "clean.png"), path.join(reviewDir, "annotated.png")],
@@ -635,7 +637,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["scene.py", "generation-request.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
+    const assets = ["scene.py", "scene-plan.json", "generation-request.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "review-frames.json", "layout-audit.json", "repair-context.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
@@ -802,8 +804,9 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
       startedAt: now(),
       renderer: project.renderer,
       requirements: isRevision
-        ? ["Preserve unrelated successful work", "Produce a fresh validated render"]
-        : ["Write a fresh beat-plan.md", "Create scene.py after this request"],
+        ? ["Preserve unrelated successful work", "Update scene-plan.json", "Produce a fresh validated render"]
+        : ["Write a fresh beat-plan.md", "Write scene-plan.json", "Create scene.py after this request"],
+      engineContract: 1,
     }, null, 2));
     this.updateProject(project);
 
@@ -827,6 +830,7 @@ First write ${relative}/interpretation.json containing: target (the smallest exa
 - Read design-config.json and preserve its selected font category and palette.
 - Read narration-config.json. Voice is ${project.narrationPreferences.enabled ? "enabled; create and verify Speechify narration" : "disabled; render and validate a silent video without calling Speechify"}.
 - Read review-config.json and apply ../../skills/educational-video-reviewer/SKILL.md after rendering.
+- Create or update scene-plan.json before scene.py. Use its stable object ids as literal names=[...] in every layout guard so a failed render can identify the smallest repair target.
 - If this request introduces a real person, place, artifact, organism, or historical context, reconsider asset-decision.json and use the licensed candidate search workflow. Inspect at least three candidate previews before importing. For a localized revision, preserve existing assets unless the user asks to change them.
 - The target output is ${generationTarget(project)}.
 - Begin the final response with "${project.versions.length ? `Revision ${targetVersion} ready:` : "First draft ready:"}" so the user always knows which generation completed.

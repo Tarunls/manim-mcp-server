@@ -18,3 +18,22 @@ test("artifact signatures reject files disguised by content type", () => {
   assert.equal(hasExpectedSignature("metadata", Buffer.from('{"duration":10}')), true);
   assert.equal(hasExpectedSignature("metadata", Buffer.from('{"duration":0}')), false);
 });
+
+test("render metadata accepts bounded review and layout audit summaries", () => {
+  const metadata = validateRenderMetadata({
+    renderer: "manim",
+    duration: 38,
+    review: { strategy: "beat-aware-v1", sampleCount: 12, manifest: "review-frames.json" },
+    layoutAudit: {
+      status: "pass",
+      checks: { inside: 4, safeArea: 8, overlap: 1200, watchedFrames: 1180 },
+      namedObjects: ["curve", "integral-label"],
+      violations: 0,
+    },
+  });
+  assert.equal(metadata.layoutAudit?.status, "pass");
+  assert.throws(() => validateRenderMetadata({
+    duration: 38,
+    review: { strategy: "all-frames", sampleCount: 9000, manifest: "frames.json" },
+  }), /review strategy/);
+});

@@ -207,6 +207,16 @@ export function VideoWorkspace({
                   · {selectedVersion.render.fps} fps
                 </span>
               )}
+              {selectedVersion?.render?.layoutAudit?.status === "pass" && (
+                <span
+                  title={`${selectedVersion.render.layoutAudit.checks?.watchedFrames || 0} animated frames checked for layout collisions`}
+                >
+                  Layout verified
+                  {selectedVersion.render.review?.sampleCount
+                    ? ` · ${selectedVersion.render.review.sampleCount} review moments`
+                    : ""}
+                </span>
+              )}
               {selectedVersion?.render?.narration?.enabled && (
                 <span
                   className="ai-voice"

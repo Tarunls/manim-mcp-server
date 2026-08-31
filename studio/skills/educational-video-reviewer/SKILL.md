@@ -10,12 +10,14 @@ Inspect the actual rendered frames, return evidence tied to frame numbers, and d
 ## Workflow
 
 1. Read `review-config.json`; default to `{"focus":"balanced","strictness":"normal"}` if missing.
-2. Read `metadata.json` for duration and fps. Inspect `contact-sheet.png`, `poster.png`, and any directly attached clean/annotated review pair named in the request.
-3. For `quick`, inspect the contact sheet and cited review frames. For `normal`, also extract and inspect the beginning, midpoint, and end of each major transition. For `obsessive`, inspect those plus every 10th rendered frame around transitions and dense visual beats.
+2. Read `metadata.json` for duration and fps, `scene-plan.json` for stable object ids, `layout-audit.json` for deterministic checks, and `review-frames.json` for the ordered contact-sheet cell mapping. Inspect `contact-sheet.png`, `poster.png`, and any directly attached clean/annotated review pair named in the request.
+3. For `quick`, inspect every beat-aware contact-sheet cell and cited review frame. For `normal`, use `review-frames.json` to inspect its stable beats and transition boundaries at full resolution when anything looks suspicious. For `obsessive`, inspect those plus every 10th rendered frame around transitions and dense visual beats. Do not re-sample uniformly when the manifest already identifies higher-risk moments.
 4. Apply the rubric in [rubric.md](references/rubric.md), prioritizing the configured focus while still reporting true blockers in any category.
 5. Write `review-report.json` using the schema below. Every issue needs frame evidence and a concrete correction. Use an empty issues array when the render passes.
 6. Run `python ../../skills/educational-video-reviewer/scripts/validate_report.py review-report.json` from the project directory.
 7. If an issue is blocking, patch the editable source, rerender once, and review the changed frames again. Do not chase subjective polish indefinitely.
+
+If rendering produced `repair-context.json`, use its `targets` as the smallest editable scope and keep everything in `preserve` unchanged. Never fix a named collision by globally changing a shared text or colour style.
 
 ## Report schema
 
@@ -42,7 +44,7 @@ Inspect the actual rendered frames, return evidence tied to frame numbers, and d
 ## Annotation rules
 
 - Compare `clean.png` with `annotated.png`; treat red circles, arrows, and strokes as spatial pointers only.
-- Before opening source, write `interpretation.json` beside the review with `target`, `visualEvidence`, `requestedPropertyChange`, and `excludedNearbyObjects`.
+- Before opening source, read `scene-plan.json`, map the marked visual to its stable object id, and write `interpretation.json` beside the review with `targetObjectId`, `visualEvidence`, `requestedPropertyChange`, `preserveObjectIds`, and `excludedNearbyObjects`.
 - Select the smallest object enclosed or touched by the markup. A circle around one word does not target its sibling words, even when they share a style or group.
 - After rerendering, inspect the same timestamp and confirm both that the target changed and every excluded nearby object remained unchanged.
 - The note controls intent when markup is ambiguous.

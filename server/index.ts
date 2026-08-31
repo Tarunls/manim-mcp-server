@@ -1421,7 +1421,13 @@ app.post("/api/projects/:id/reviews", async (request, response) => {
           result = await generations.submit({
             ownerId: userId(request),
             project,
-            prompt: `Frame review at ${review.time.toFixed(2)} seconds: ${note}`,
+            prompt: `Frame-specific review for ${versionId}, frame ${review.frame} at ${review.time.toFixed(3)} seconds.
+
+The first attachment is the clean rendered frame. The second is the same frame with reviewer markup. Compare them visually before opening source. Read scene-plan.json and map the smallest enclosed or touched visual to its exact stable object id.
+
+Before editing, write review-interpretation.json with targetObjectId, visualEvidence, requestedPropertyChange, and preserveObjectIds. Treat the markup as a spatial pointer only. Change only targetObjectId, preserve every listed object and unrelated beat, rerender, then inspect the same timestamp again.
+
+Requested change: ${note}`,
             effort: project.generationPreferences.effort,
             idempotencyKey: request.header("idempotency-key") || "",
             attachments: [

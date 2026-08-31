@@ -35,6 +35,22 @@ export interface RenderInfo {
   height?: number;
   fps?: number;
   bitRate?: number;
+  review?: {
+    strategy?: "beat-aware-v1" | "uniform-v1";
+    sampleCount?: number;
+    manifest?: string;
+  };
+  layoutAudit?: {
+    status?: "pass" | "failed";
+    checks?: {
+      inside?: number;
+      safeArea?: number;
+      overlap?: number;
+      watchedFrames?: number;
+    };
+    namedObjects?: string[];
+    violations?: number;
+  };
   narration?: {
     status?: string;
     enabled?: boolean;

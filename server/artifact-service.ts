@@ -64,6 +64,35 @@ export function validateRenderMetadata(value: unknown): RenderInfo {
     if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate < minimum || candidate > maximum)
       throw new Error(`Render metadata has an invalid ${name}.`);
   }
+  if (metadata.review !== undefined) {
+    if (!metadata.review || typeof metadata.review !== "object" || Array.isArray(metadata.review))
+      throw new Error("Render metadata has an invalid review summary.");
+    const review = metadata.review as Record<string, unknown>;
+    if (!new Set(["beat-aware-v1", "uniform-v1"]).has(String(review.strategy)))
+      throw new Error("Render metadata has an invalid review strategy.");
+    if (!Number.isSafeInteger(review.sampleCount) || Number(review.sampleCount) < 1 || Number(review.sampleCount) > 100)
+      throw new Error("Render metadata has an invalid review sample count.");
+    if (review.manifest !== "review-frames.json")
+      throw new Error("Render metadata has an invalid review manifest.");
+  }
+  if (metadata.layoutAudit !== undefined) {
+    if (!metadata.layoutAudit || typeof metadata.layoutAudit !== "object" || Array.isArray(metadata.layoutAudit))
+      throw new Error("Render metadata has an invalid layout audit.");
+    const audit = metadata.layoutAudit as Record<string, unknown>;
+    if (!new Set(["pass", "failed"]).has(String(audit.status)))
+      throw new Error("Render metadata has an invalid layout audit status.");
+    if (!Number.isSafeInteger(audit.violations) || Number(audit.violations) < 0 || Number(audit.violations) > 20)
+      throw new Error("Render metadata has an invalid layout violation count.");
+    if (!Array.isArray(audit.namedObjects) || audit.namedObjects.length > 200 || audit.namedObjects.some((item) => typeof item !== "string"))
+      throw new Error("Render metadata has invalid layout object ids.");
+    if (!audit.checks || typeof audit.checks !== "object" || Array.isArray(audit.checks))
+      throw new Error("Render metadata has invalid layout check counts.");
+    for (const [name, value] of Object.entries(audit.checks as Record<string, unknown>)) {
+      if (!new Set(["inside", "safeArea", "overlap", "watchedFrames"]).has(name)
+        || !Number.isSafeInteger(value) || Number(value) < 0 || Number(value) > 10_000_000)
+        throw new Error("Render metadata has invalid layout check counts.");
+    }
+  }
   return value as RenderInfo;
 }
 
