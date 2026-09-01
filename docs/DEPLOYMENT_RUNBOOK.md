@@ -16,7 +16,27 @@ Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact curr
 - Migration job: `lesson-studio-staging-migrate`
 - Legacy service `lesson-studio`: do not modify
 
-The deployed image/template are currently `004c9c7`. Candidate application image `c74eb0d` is built but not deployed; its E2B template must be built and smoked first.
+The deployed image/template are currently `8e40333` (deployed 2026-09-01; E2B smoke and the silent staging smoke passed). Two items are outstanding:
+
+1. **ElevenLabs voices are not yet enabled.** The `elevenlabs_api_key` secret exists but has no IAM bindings, and only the project owner can grant them. From the owner account run:
+
+   ```sh
+   gcloud secrets add-iam-policy-binding elevenlabs_api_key \
+     --project educationalvideo-506219 \
+     --member serviceAccount:ls-staging-api@educationalvideo-506219.iam.gserviceaccount.com \
+     --role roles/secretmanager.secretAccessor
+   ```
+
+   then mount it and verify the account/key against a built-in voice before trusting the configured voices:
+
+   ```sh
+   gcloud run services update lesson-studio-staging-api --region us-central1 \
+     --set-secrets ELEVENLABS_API_KEY=elevenlabs_api_key:latest
+   ```
+
+   The API boots without the key (commit `8e40333`) and logs a warning; ElevenLabs voice selections fail per-request with a refund until the key is mounted and the ElevenLabs account has credits.
+
+2. **Terraform drift.** `E2B_TEMPLATE_VERSION=8e40333` was set with `gcloud run services update` because Terraform could not run from the release machine. On the next Terraform run, set `image`/`e2b_template_version` in `staging.auto.tfvars` to `8e40333` first so the plan reconciles instead of reverting.
 
 ## Release invariants
 
