@@ -136,22 +136,24 @@ variable "codex_max_estimated_cost_microusd_per_job" {
 
 variable "secret_ids" {
   type = object({
-    identity_api_key  = string
-    openai_api_key    = string
-    e2b_api_key       = string
-    speechify_api_key = string
-    stripe_api_key    = string
-    stripe_webhook    = string
-    staff_emails      = string
+    identity_api_key   = string
+    openai_api_key     = string
+    e2b_api_key        = string
+    speechify_api_key  = string
+    elevenlabs_api_key = string
+    stripe_api_key     = string
+    stripe_webhook     = string
+    staff_emails       = string
   })
   description = "Existing Secret Manager secret IDs. Terraform never reads their plaintext into configuration."
   default = {
-    identity_api_key  = "identity_platform_api_key"
-    openai_api_key    = "openai_api_key"
-    e2b_api_key       = "e2b_api_key"
-    speechify_api_key = "speechify_key"
-    stripe_api_key    = "stripe_sandbox_api_key"
-    stripe_webhook    = "stripe_webhook_secret"
-    staff_emails      = "staff_emails"
+    identity_api_key   = "identity_platform_api_key"
+    openai_api_key     = "openai_api_key"
+    e2b_api_key        = "e2b_api_key"
+    speechify_api_key  = "speechify_key"
+    elevenlabs_api_key = "elevenlabs_api_key"
+    stripe_api_key     = "stripe_sandbox_api_key"
+    stripe_webhook     = "stripe_webhook_secret"
+    staff_emails       = "staff_emails"
   }
 }

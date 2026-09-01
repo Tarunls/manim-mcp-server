@@ -17,7 +17,7 @@ The checked-in staging example is deliberately budget constrained: `db-f1-micro`
 
 `billing_mode` is independent from the resource-name environment so an existing, domain-enabled beta stack can be promoted without replacing its database, load balancer, or user records. `auto` keeps the normal behavior (`staging` uses Stripe test mode and `production` uses live mode). A deliberate live promotion must set `billing_mode = "live"`, point `secret_ids.stripe_api_key` and `secret_ids.stripe_webhook` at live Secret Manager entries, and keep the exact public HTTPS edge enabled. Terraform refuses an unsafe live combination, and live mode always disables test Checkout.
 
-The project-scoped $20 budget sends threshold and forecast alerts to billing recipients. It is not a hard cap. OpenAI, E2B, Speechify, and Stripe charges are outside the GCP billing account and need separate provider controls.
+The project-scoped $20 budget sends threshold and forecast alerts to billing recipients. It is not a hard cap. OpenAI, E2B, Speechify, ElevenLabs, and Stripe charges are outside the GCP billing account and need separate provider controls.
 
 The existing `useorune.com` stack is deployed with application/E2B tag `ad08eb1` and live billing. Its resource names retain the `staging` suffix because it was promoted in place to preserve the domain edge, database, and user records; `billing_mode = "live"` is the production payment boundary. Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before changing tfvars or applying.
 

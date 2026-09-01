@@ -10,6 +10,7 @@ export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "acces
 export type ReviewStrictness = "quick" | "normal" | "obsessive";
 export type FontCategory = "serif" | "sans" | "mono";
 export type ColorPalette = "paper" | "ochre" | "sage" | "monochrome";
+export type NarrationVoice = "default-female" | "seductive-female" | "seductive-male" | "seductive-female-accent";
 
 export interface ChatMessage {
   id: string;
@@ -57,11 +58,13 @@ export interface RenderInfo {
     provider?: string;
     model?: string;
     voice?: string;
+    voiceId?: string;
     segments?: number;
     segmentDurations?: number[];
     audioFormat?: string;
     style?: string;
     rate?: string;
+    pausePolicy?: string;
     disclosure?: string;
   };
 }
@@ -103,6 +106,7 @@ export interface DesignPreferences {
 
 export interface NarrationPreferences {
   enabled: boolean;
+  voice?: NarrationVoice;
 }
 
 export interface GenerationPreferences {

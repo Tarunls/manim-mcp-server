@@ -15,6 +15,7 @@ import {
   generationPreferencesFor,
   looksLikeIndependentVideoRequest,
 } from "./studio-service.js";
+import { narrationVoiceOrDefault } from "./narration.js";
 import { titleFromPrompt } from "./plan.js";
 import { BillingService } from "./billing-service.js";
 import { IdentityAuthService, type AuthUser } from "./auth-service.js";
@@ -102,6 +103,8 @@ function validateProductionConfiguration() {
     missing.push("E2B/artifact configuration");
   if (!generationQueue.configured)
     missing.push("Cloud Tasks identity and URL configuration");
+  if (serviceRole !== "dispatcher" && !process.env.ELEVENLABS_API_KEY?.trim())
+    missing.push("ELEVENLABS_API_KEY");
   if (serviceRole !== "dispatcher" && !hostedBilling.configured)
     missing.push("Stripe configuration");
   if (serviceRole !== "dispatcher" && !scopedCodex.configured)
@@ -1304,6 +1307,18 @@ app.patch(
     try {
       await ownedProject(request);
       const enabled = request.body.enabled as boolean;
+      const requestedVoice = request.body?.voice;
+      if (
+        requestedVoice !== undefined &&
+        ![
+          "default-female",
+          "seductive-female",
+          "seductive-male",
+          "seductive-female-accent",
+        ].includes(requestedVoice)
+      ) {
+        return response.status(400).json({ error: "Choose a supported AI voice." });
+      }
       if (enabled) await assertNarration(request);
       const project = generations.configured
         ? await projects.update(
@@ -1312,10 +1327,19 @@ app.patch(
             (stored) => {
               if (stored.status === "running")
                 throw new Error("Wait for the current generation to finish.");
-              stored.narrationPreferences = { enabled };
+              stored.narrationPreferences = {
+                enabled,
+                voice: narrationVoiceOrDefault(
+                  requestedVoice ?? stored.narrationPreferences?.voice,
+                ),
+              };
             },
           )
-        : studio.updateNarrationPreferences(String(request.params.id), enabled);
+        : studio.updateNarrationPreferences(
+            String(request.params.id),
+            enabled,
+            requestedVoice,
+          );
       response.json(project);
     } catch (error) {
       response

@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const port = process.env.PLAYWRIGHT_PORT || "4321";
 const baseURL = `http://127.0.0.1:${port}`;
+const browserChannel = process.env.PLAYWRIGHT_CHANNEL;
 const temporaryDirectory =
   process.platform === "win32"
     ? process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp"
@@ -17,13 +18,13 @@ export default defineConfig({
   reporter: process.env.CI ? [["line"], ["html", { open: "never" }]] : "line",
   use: {
     baseURL,
-    channel: "chrome",
+    ...(browserChannel ? { channel: browserChannel } : {}),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"], channel: "chrome" } },
-    { name: "mobile", use: { ...devices["iPhone 13"], browserName: "chromium", channel: "chrome" } },
+    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    { name: "mobile", use: { ...devices["iPhone 13"], browserName: "chromium" } },
   ],
   webServer: {
     command: "npm run start",

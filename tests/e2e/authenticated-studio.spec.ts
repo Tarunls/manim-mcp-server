@@ -32,7 +32,7 @@ const projectDefaults = {
   assets: [],
   reviewPreferences: { focus: "balanced", strictness: "normal" },
   designPreferences: { fontCategory: "serif", colorPalette: "paper" },
-  narrationPreferences: { enabled: true },
+  narrationPreferences: { enabled: true, voice: "default-female" },
   generationPreferences: { effort: "balanced" },
   messages: [],
   actions: [],
@@ -253,4 +253,23 @@ test("the generation intent menu opens, explains, and applies a choice", async (
   await expect(page.locator(".composer-hint")).toHaveText(
     "Changes this video and preserves everything else.",
   );
+});
+
+test("voice settings expose every supported performance", async ({ page }, testInfo) => {
+  await mockStudio(page, [completeProject]);
+  await page.goto("/studio");
+  if (testInfo.project.name !== "desktop")
+    await page.locator(".mobile-tabs").getByRole("button", { name: "Chat" }).click();
+  await page.getByText("Creative controls", { exact: true }).click();
+
+  const voice = page.getByLabel("AI voice");
+  await expect(voice).toHaveValue("default-female");
+  await expect(voice.locator("option")).toHaveText([
+    "Default female",
+    "Seductive female",
+    "Seductive male",
+    "Seductive female · accent",
+    "Off · silent video",
+  ]);
+  await expect(page.getByText("Fast short-form delivery · long pauses reduced")).toBeVisible();
 });

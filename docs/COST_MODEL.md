@@ -36,7 +36,7 @@ At standard US card rates, approximate revenue after the payment transaction fee
 - The E2B sandbox has a 30-minute lifetime and is terminated on completion, cancellation, or dispatch failure.
 - The project has a $20 monthly GCP alerting budget at 50%, 80%, 100%, and forecasted 100%. Google documents that ordinary budget alerts do not enforce a hard spending cap.
 
-The $20 GCP budget does not include OpenAI, E2B, Speechify, or Stripe. Those providers need their own account-level limits. No public plan should be marketed with an unlimited-generation promise.
+The $20 GCP budget does not include OpenAI, E2B, Speechify, ElevenLabs, or Stripe. Those providers need their own account-level limits. No public plan should be marketed with an unlimited-generation promise.
 
 One measured 32-turn failed staging generation used 923,724 input tokens, of which 876,410 were cached, plus 12,061 output tokens. The application estimated that run at $0.518306. This is useful evidence that the 64-call ceiling is not itself an uncontrolled retry loop, but it is not a successful-video cost estimate. Record and compare successful silent and narrated jobs before changing allowances, pricing, or margin claims.
 

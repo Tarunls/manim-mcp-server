@@ -20,7 +20,10 @@ export type HostedJob = {
   sandboxId?: string;
   dispatchLeaseId?: string;
   reservedCredits: number;
-  input: { attachments?: Array<{ fileId: string; label: string }> };
+  input: {
+    attachments?: Array<{ fileId: string; label: string }>;
+    narrationPreferences?: StudioProject["narrationPreferences"];
+  };
 };
 
 type JobRow = {
@@ -248,7 +251,10 @@ export class HostedGenerationService {
          VALUES ($1, $2, $3, 'queued', $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
         [jobId, input.ownerId, project.id, input.prompt, project.renderer, input.effort, input.idempotencyKey,
           templateVersion, this.callbackHash(jobId), credits,
-          JSON.stringify({ attachments: input.attachments || [] })],
+          JSON.stringify({
+            attachments: input.attachments || [],
+            narrationPreferences: project.narrationPreferences,
+          })],
       );
       if (credits > 0) {
         await client.query(

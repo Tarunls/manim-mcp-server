@@ -229,7 +229,7 @@ export class CodexBridge extends EventEmitter {
         ...localImagePaths.map((imagePath) => ({ type: "localImage", path: imagePath, detail: "high" })),
       ],
       approvalPolicy: "never",
-      // Rendering invokes Speechify from the project helper. Keep filesystem
+      // Rendering invokes the selected narration provider from the project helper. Keep filesystem
       // access scoped to this project while allowing that API call to succeed.
       sandboxPolicy: {
         type: "workspaceWrite",

@@ -8,7 +8,8 @@ import { CodexBridge } from "./codex-bridge.js";
 import { fetchVerifiedCommonsImage } from "./hosted-media-service.js";
 import { manimPath } from "./platform.js";
 import { titleFromPrompt } from "./plan.js";
-import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
+import { narrationVoiceOrDefault } from "./narration.js";
+import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, NarrationVoice, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const RENDERER: RendererKind = "manim";
@@ -73,6 +74,10 @@ export function normalizeStoredProject<T extends StudioProject>(project: T): T {
     fontCategory: fontCategoryOrDefault(project.designPreferences?.fontCategory),
     colorPalette: colorPaletteOrDefault(project.designPreferences?.colorPalette),
   };
+  project.narrationPreferences = {
+    enabled: project.narrationPreferences?.enabled !== false,
+    voice: narrationVoiceOrDefault(project.narrationPreferences?.voice),
+  };
   return project;
 }
 
@@ -104,8 +109,8 @@ Requirements:
 - Check layout at the beginning, midpoint, and end of every transition—not only on the final frame. Text reflow, transforms, and entering/exiting objects can collide between key poses.
 - Prefer replacing, transforming, or fading a visual before introducing more simultaneous objects. Keep no more than 5 independent visual groups on screen unless the lesson truly requires it.
 - Read narration-config.json before planning. When enabled is false, make a silent video, do not depend on narration.json, and verify metadata.json reports narration.enabled false. When enabled is true, write narration.json before rendering as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages aligned to the visual beats.
-- For enabled narration, each passage should be 18-45 words, explain cause and effect, and lead naturally into the next idea. Write mathematical pronunciation as natural speech, budget roughly 145 spoken words per minute plus breathing room, and target 24-45 seconds unless the user asks for a different duration.
-- Enabled narration uses Speechify simba-3.2 with warm SSML delivery, timing guards, fades, and loudness normalization. Never create or substitute a fallback voice. After rendering, verify metadata.json reports provider speechify, model simba-3.2, and status ready.
+- For enabled narration, each passage should be 18-45 words, explain cause and effect, and lead naturally into the next idea. Keep the delivery continuous: avoid ellipses, blank lines, dramatic punctuation, isolated sentence fragments, and more than 0.35 seconds of intentional silence between spoken passages. Write mathematical pronunciation as natural speech, budget roughly 165 spoken words per minute, and target 24-45 seconds unless the user asks for a different duration.
+- Enabled narration uses the voice selected in narration-config.json through an approved Speechify or ElevenLabs model, with faster delivery, long-silence compression, timing guards, fades, and loudness normalization. Never create or substitute a fallback voice. After rendering, verify metadata.json reports narration status ready and the selected voice.
 - Inspect poster.png, contact-sheet.png, review-frames.json, and layout-audit.json. The contact sheet prioritizes stable beats and transition boundaries; map its cells to review-frames.json and check every one for clipping, crowded panels, uneven spacing, poor contrast, accidental occlusion, and objects crossing during transitions. If any issue exists, fix the source and render again.
 - If review-config.json exists, read ../../skills/educational-video-reviewer/SKILL.md and follow it after rendering. Write review-report.json, validate it, and repair blocking issues once before finishing.
 - Read design-config.json before authoring and use its chosen font category and palette consistently. Do not silently replace the selected visual system with your own defaults.
@@ -271,7 +276,10 @@ export class StudioService extends EventEmitter {
         project.reviews ||= [];
         project.assets ||= [];
         project.reviewPreferences ||= { focus: "balanced", strictness: "normal" };
-        project.narrationPreferences = { enabled: project.narrationPreferences?.enabled !== false };
+        project.narrationPreferences = {
+          enabled: project.narrationPreferences?.enabled !== false,
+          voice: narrationVoiceOrDefault(project.narrationPreferences?.voice),
+        };
         project.generationPreferences = normalizeGenerationPreferences(project.generationPreferences);
         fs.mkdirSync(path.join(this.projectRoot, project.id), { recursive: true });
         this.writeReviewConfig(project);
@@ -402,15 +410,18 @@ export class StudioService extends EventEmitter {
     return project;
   }
 
-  updateNarrationPreferences(projectId: string, enabled: boolean) {
+  updateNarrationPreferences(projectId: string, enabled: boolean, voice?: NarrationVoice) {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("Wait for the current generation to finish.");
-    project.narrationPreferences = { enabled };
+    project.narrationPreferences = {
+      enabled,
+      voice: narrationVoiceOrDefault(voice ?? project.narrationPreferences?.voice),
+    };
     this.writeNarrationConfig(project);
     const narrationOnlyFailure = !enabled
       && project.status === "error"
-      && /narration was rejected|speechify/i.test(project.error || "");
+      && /narration was rejected|speechify|elevenlabs/i.test(project.error || "");
     if (narrationOnlyFailure) {
       const projectDir = path.join(this.projectRoot, project.id);
       const validationError = this.renderValidationError(projectDir, false);
@@ -694,10 +705,12 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
       if (
         narration?.status !== "ready"
         || narration.enabled !== true
-        || narration.provider !== "speechify"
-        || narration.model !== "simba-3.2"
+        || !(
+          (narration.provider === "speechify" && narration.model === "simba-3.2")
+          || (narration.provider === "elevenlabs" && narration.model === "eleven_multilingual_v2")
+        )
       ) {
-        return "Narration was rejected because it was not generated by Speechify simba-3.2.";
+        return "Narration was rejected because it was not generated by an approved voice provider.";
       }
       const audioCodec = execFileSync("ffprobe", [
         "-v", "error", "-select_streams", "a:0",
@@ -750,7 +763,10 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
         fontCategory: fontCategoryOrDefault(seed.designPreferences?.fontCategory),
         colorPalette: colorPaletteOrDefault(seed.designPreferences?.colorPalette),
       },
-      narrationPreferences: { ...(seed.narrationPreferences || { enabled: true }) },
+      narrationPreferences: {
+        enabled: seed.narrationPreferences?.enabled !== false,
+        voice: narrationVoiceOrDefault(seed.narrationPreferences?.voice),
+      },
       generationPreferences: normalizeGenerationPreferences(seed.generationPreferences),
     };
     fs.mkdirSync(path.join(this.projectRoot, id), { recursive: true });
@@ -828,7 +844,7 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
       const request = `Current project workflow for this turn:
 - ${productionContext}
 - Read design-config.json and preserve its selected font category and palette.
-- Read narration-config.json. Voice is ${project.narrationPreferences.enabled ? "enabled; create and verify Speechify narration" : "disabled; render and validate a silent video without calling Speechify"}.
+- Read narration-config.json. Voice is ${project.narrationPreferences.enabled ? `enabled with the ${narrationVoiceOrDefault(project.narrationPreferences.voice)} preset; create and verify the configured narration` : "disabled; render and validate a silent video without calling a narration provider"}.
 - Read review-config.json and apply ../../skills/educational-video-reviewer/SKILL.md after rendering.
 - Create or update scene-plan.json before scene.py. Use its stable object ids as literal names=[...] in every layout guard so a failed render can identify the smallest repair target.
 - If this request introduces a real person, place, artifact, organism, or historical context, reconsider asset-decision.json and use the licensed candidate search workflow. Inspect at least three candidate previews before importing. For a localized revision, preserve existing assets unless the user asks to change them.

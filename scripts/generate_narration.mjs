@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-/** Generate timed Speechify segments and mux them into a project video. */
+/** Generate timed narration segments and mux them into a project video. */
 
 import { SpeechifyClient } from "@speechify/api";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import voiceCatalog from "../shared/narration-voices.json" with { type: "json" };
 
 function fail(message) {
   console.error(message);
@@ -35,11 +36,29 @@ async function main() {
     fail("output.mp4 and narration.json are required.");
   }
 
-  const apiKey = process.env.SPEECHIFY_API_KEY?.trim();
+  let narrationPreferences = { enabled: true, voice: "default-female" };
+  const narrationConfigPath = path.join(projectDir, "narration-config.json");
+  if (fs.existsSync(narrationConfigPath)) {
+    try {
+      narrationPreferences = {
+        ...narrationPreferences,
+        ...JSON.parse(fs.readFileSync(narrationConfigPath, "utf8")),
+      };
+    } catch {
+      fail("narration-config.json must contain valid JSON.");
+    }
+  }
+  const voiceKey = Object.hasOwn(voiceCatalog, narrationPreferences.voice)
+    ? narrationPreferences.voice
+    : "default-female";
+  const voice = voiceCatalog[voiceKey];
+  const apiKey = voice.provider === "elevenlabs"
+    ? process.env.ELEVENLABS_API_KEY?.trim()
+    : process.env.SPEECHIFY_API_KEY?.trim();
   const proxyUrl = process.env.NARRATION_PROXY_URL?.trim();
   const callbackUrl = process.env.JOB_CALLBACK_URL?.trim();
   const callbackToken = process.env.JOB_CALLBACK_TOKEN?.trim();
-  if (!apiKey && !proxyUrl && (!callbackUrl || !callbackToken)) fail("A server-scoped Speechify provider is required. Narration will not use a fallback voice.");
+  if (!apiKey && !proxyUrl && (!callbackUrl || !callbackToken)) fail("A server-scoped narration provider is required. Narration will not use a fallback voice.");
 
   let segments;
   try {
@@ -53,7 +72,12 @@ async function main() {
 
   const normalized = segments.map((segment, index) => {
     const start = Math.max(0, Number(segment?.start));
-    const text = String(segment?.text || "").trim();
+    const text = String(segment?.text || "")
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\.{3,}|…+/g, ".")
+      .replace(/([!?])\1+/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!Number.isFinite(start) || !text || text.length > 1800) {
       fail(`Narration segment ${index + 1} must have a valid start and 1-1800 characters.`);
     }
@@ -68,9 +92,12 @@ async function main() {
 
   const audioDir = path.join(projectDir, ".narration");
   fs.mkdirSync(audioDir, { recursive: true });
-  const voice = process.env.SPEECHIFY_VOICE_ID?.trim() || "geffen_32";
-  const model = "simba-3.2";
-  const client = apiKey ? new SpeechifyClient({ token: apiKey }) : undefined;
+  const model = voice.provider === "elevenlabs" ? "eleven_multilingual_v2" : "simba-3.2";
+  const outputFormat = voice.provider === "elevenlabs" ? "mp3_44100_128" : "mp3_24000_160";
+  const rate = voice.provider === "elevenlabs" ? "1.08x" : "+8%";
+  const speechifyClient = apiKey && voice.provider === "speechify"
+    ? new SpeechifyClient({ token: apiKey })
+    : undefined;
   const audioFiles = [];
   const audioDurations = [];
 
@@ -83,21 +110,46 @@ async function main() {
 
   for (let index = 0; index < normalized.length; index += 1) {
     const segment = normalized[index];
-    const ssml = `<speak><speechify:style emotion="warm"><prosody rate="-5%">${escapeXml(segment.text)}</prosody></speechify:style></speak>`;
-    const cacheKey = createHash("sha256").update(JSON.stringify({ ssml, voice, model, output: "mp3_24000_160" })).digest("hex").slice(0, 16);
-    const target = path.join(audioDir, `speechify-${cacheKey}.mp3`);
-    if (!fs.existsSync(target)) {
+    const ssml = `<speak><speechify:style emotion="warm"><prosody rate="+8%">${escapeXml(segment.text)}</prosody></speechify:style></speak>`;
+    const cacheKey = createHash("sha256").update(JSON.stringify({ text: segment.text, voiceKey, voiceId: voice.voiceId, model, outputFormat, rate })).digest("hex").slice(0, 16);
+    const rawTarget = path.join(audioDir, `${voice.provider}-${cacheKey}-raw.mp3`);
+    const target = path.join(audioDir, `${voice.provider}-${cacheKey}-compact.mp3`);
+    if (!fs.existsSync(rawTarget)) {
       let response;
       try {
-        if (client) {
-          response = await client.audio.speech({
-            input: ssml,
-            voice_id: voice,
-            model,
-            audio_format: "mp3",
-            output_format: "mp3_24000_160",
-            language: "en-US",
-          });
+        if (apiKey) {
+          if (voice.provider === "speechify") {
+            response = await speechifyClient.audio.speech({
+              input: ssml,
+              voice_id: voice.voiceId,
+              model,
+              audio_format: "mp3",
+              output_format: outputFormat,
+              language: "en-US",
+            });
+          } else {
+            const providerResponse = await fetch(
+              `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.voiceId)}?output_format=${outputFormat}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "xi-api-key": apiKey },
+                body: JSON.stringify({
+                  text: segment.text,
+                  model_id: model,
+                  voice_settings: {
+                    stability: 0.45,
+                    similarity_boost: 0.8,
+                    style: 0.2,
+                    use_speaker_boost: true,
+                    speed: 1.08,
+                  },
+                }),
+                signal: AbortSignal.timeout(120_000),
+              },
+            );
+            if (!providerResponse.ok) throw new Error(`ElevenLabs returned HTTP ${providerResponse.status}.`);
+            response = { audio_data: Buffer.from(await providerResponse.arrayBuffer()).toString("base64") };
+          }
         } else {
           const providerResponse = await fetch(proxyUrl || `${callbackUrl}/narration`, {
             method: "POST",
@@ -113,12 +165,21 @@ async function main() {
         }
       } catch (error) {
         const code = typeof error?.statusCode === "number" ? ` (${error.statusCode})` : "";
-        fail(`Speechify speech request failed${code}. Check the server key, voice, and account limits.`);
+        fail(`Narration request failed${code}. Check the server key, voice, and account limits.`);
       }
       if (typeof response?.audio_data !== "string" || !response.audio_data) {
-        fail("Speechify returned no audio_data.");
+        fail("The narration provider returned no audio data.");
       }
-      fs.writeFileSync(target, Buffer.from(response.audio_data, "base64"));
+      fs.writeFileSync(rawTarget, Buffer.from(response.audio_data, "base64"));
+    }
+    if (!fs.existsSync(target)) {
+      run("ffmpeg", [
+        "-y", "-i", rawTarget,
+        "-af",
+        "silenceremove=start_periods=1:start_duration=0.04:start_threshold=-45dB:start_silence=0.03:" +
+          "stop_periods=-1:stop_duration=0.45:stop_threshold=-45dB:stop_silence=0.18",
+        "-c:a", "libmp3lame", "-b:a", "160k", target,
+      ]);
     }
     audioFiles.push(target);
     const segmentDuration = Number(run("ffprobe", [
@@ -178,14 +239,16 @@ async function main() {
   console.log(JSON.stringify({
     status: "ready",
     enabled: true,
-    provider: "speechify",
+    provider: voice.provider,
     model,
-    voice,
+    voice: voiceKey,
+    voiceId: voice.voiceId,
     segments: normalized.length,
     segmentDurations: audioDurations.map((value) => Number(value.toFixed(3))),
-    audioFormat: "mp3_24000_160",
-    style: "warm",
-    rate: "-5%",
+    audioFormat: outputFormat,
+    style: voice.provider === "elevenlabs" ? "expressive" : "warm",
+    rate,
+    pausePolicy: "silence-over-450ms-capped-at-180ms",
     disclosure: "AI-generated voice",
   }));
 }

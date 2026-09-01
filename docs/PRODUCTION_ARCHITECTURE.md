@@ -11,7 +11,7 @@ This document is the implementation contract for the hosted SaaS. Production mus
 3. The API writes user, project, billing, credit-ledger, and generation-job changes to PostgreSQL in transactions.
 4. A generation request commits a job, credit reservation, and outbox event atomically. The dispatcher publishes that job to Cloud Tasks.
 5. The private dispatch endpoint starts one E2B sandbox from the pinned renderer template, records the sandbox ID, starts the Codex/render bootstrap, and acknowledges the task.
-6. The sandbox has no upstream OpenAI, GCP, database, Identity Platform, Stripe, E2B, or Speechify credential. Its `.env` contains a job-scoped OpenAI proxy token. The trusted bootstrap separately holds a callback token and narrowly scoped artifact upload URLs.
+6. The sandbox has no upstream OpenAI, GCP, database, Identity Platform, Stripe, E2B, Speechify, or ElevenLabs credential. Its `.env` contains a job-scoped OpenAI proxy token. The trusted bootstrap separately holds a callback token and narrowly scoped artifact upload URLs.
 7. The API validates completion callbacks, verifies uploaded artifacts, commits the final version, and exposes short-lived signed read URLs after checking ownership.
 
 ## Trust boundaries
@@ -23,7 +23,7 @@ This document is the implementation contract for the hosted SaaS. Production mus
 - **Database:** Private-IP Cloud SQL PostgreSQL with PITR, deletion protection, and bounded connection pools. Production requires regional HA; budget staging is zonal `db-f1-micro`.
 - **Artifacts:** Private Cloud Storage with uniform bucket-level access and public access prevention. Browsers use expiring signed URLs after application authorization.
 
-The same immutable container image runs with `SERVICE_ROLE=api` or `SERVICE_ROLE=dispatcher`. Route guards fail closed across roles, and Terraform gives each role a different service account and different Secret Manager grants. The API cannot read the E2B credential; the dispatcher cannot read OpenAI, Identity Platform, Stripe, Speechify, or staff configuration.
+The same immutable container image runs with `SERVICE_ROLE=api` or `SERVICE_ROLE=dispatcher`. Route guards fail closed across roles, and Terraform gives each role a different service account and different Secret Manager grants. The API cannot read the E2B credential; the dispatcher cannot read OpenAI, Identity Platform, Stripe, Speechify, ElevenLabs, or staff configuration.
 
 ## Database ownership model
 
@@ -52,7 +52,7 @@ Production starts with `REQUIRE_DATABASE=true`; this makes the service fail clos
 
 Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. The sandbox creates `.env` with a job-scoped proxy token and proxy base URL, mode `0600`; it never receives the upstream OpenAI key, never logs the file, excludes it from archives, and deletes it before completion. The proxy token is accepted only while its job is active and is capped at 64 upstream calls by default. The Codex child environment does not receive the callback credential, and archive-bound files are rejected if they contain raw sandbox credential material, links, special files, or unsafe paths.
 
-The Codex process must never inherit the web service environment. Speechify is exposed through a bootstrap-owned loopback bridge, not through a provider key or raw callback credential. Generated rendering code can submit only bounded narration requests to localhost; the trusted bridge validates them and attaches the active job callback credential while forwarding to the API. Each job can request at most twelve segments. The API calls Speechify, so the provider key never crosses the service boundary.
+The Codex process must never inherit the web service environment. Speechify and ElevenLabs are exposed through a bootstrap-owned loopback bridge, not through provider keys or raw callback credentials. Generated rendering code can submit only bounded narration requests to localhost; the trusted bridge validates them and attaches the active job callback credential while forwarding to the API. Each job can request at most twelve segments. The API calls the selected provider, so provider keys never cross the service boundary.
 
 The loopback bridge is unit/security tested, but the final live narrated staging flow remains unverified as of 2026-08-29 because the deployed E2B image failed earlier during Manim startup. See `docs/IMPLEMENTATION_STATUS.md`.
 

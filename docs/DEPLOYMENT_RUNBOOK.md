@@ -121,7 +121,7 @@ APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 npm run sm
 APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 STAGING_SMOKE_TIMEOUT_MS=1200000 npm run smoke:staging-payment
 ```
 
-`smoke:staging-payment` is the release gate for hosted payment plus narration. It must prove hosted Checkout, signed webhook activation, Customer Portal, credit debit, narrated E2B generation, Speechify metadata/audio, private MP4 download, cancellation, and account cleanup.
+`smoke:staging-payment` is the release gate for hosted payment plus narration. It must prove hosted Checkout, signed webhook activation, Customer Portal, credit debit, narrated E2B generation, approved-provider metadata/audio, private MP4 download, cancellation, and account cleanup. The default voice exercises Speechify; release-specific checks should also exercise any newly enabled ElevenLabs voice after provider billing is active.
 
 After a failed smoke, confirm that the subscription, test identity, project, job, and E2B sandbox were removed or terminated. Failure cleanup is implemented but must be verified.
 

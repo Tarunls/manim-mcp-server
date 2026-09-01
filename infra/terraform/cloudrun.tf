@@ -55,6 +55,7 @@ locals {
     IDENTITY_PLATFORM_API_KEY = var.secret_ids.identity_api_key
     OPENAI_API_KEY            = var.secret_ids.openai_api_key
     SPEECHIFY_API_KEY         = var.secret_ids.speechify_api_key
+    ELEVENLABS_API_KEY        = var.secret_ids.elevenlabs_api_key
     STRIPE_SECRET_KEY         = var.secret_ids.stripe_api_key
     STRIPE_WEBHOOK_SECRET     = var.secret_ids.stripe_webhook
     STAFF_EMAILS              = var.secret_ids.staff_emails

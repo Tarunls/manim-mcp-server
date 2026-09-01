@@ -48,7 +48,7 @@ export const PRICING_PLANS: Record<BillingPlanId, PricingPlan> = {
     features: [
       "Up to 10 quick or 5 balanced generations",
       "Faster and Balanced thinking",
-      "Speechify narration",
+      "Selectable AI voice narration",
       "Licensed visual search",
       "Two active generations",
     ],
@@ -67,7 +67,7 @@ export const PRICING_PLANS: Record<BillingPlanId, PricingPlan> = {
     features: [
       "Up to 30 quick, 15 balanced, or 7 thorough generations",
       "Faster, Balanced, and Try harder",
-      "Speechify narration",
+      "Selectable AI voice narration",
       "Licensed visual search",
       "Five active generations",
     ],
@@ -86,7 +86,7 @@ export const PRICING_PLANS: Record<BillingPlanId, PricingPlan> = {
     features: [
       "Up to 70 quick, 35 balanced, or 17 thorough generations",
       "Every reasoning level",
-      "Speechify narration",
+      "Selectable AI voice narration",
       "Licensed visual search",
       "Ten active generations",
     ],

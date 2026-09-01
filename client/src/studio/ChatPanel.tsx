@@ -27,6 +27,7 @@ import type {
   FontCategory,
   GenerationEffort,
   GenerationIntent,
+  NarrationVoice,
   ReviewFocus,
   ReviewStrictness,
   RuntimeState,
@@ -280,7 +281,10 @@ export function ChatPanel({
     fontCategory?: FontCategory;
     colorPalette?: ColorPalette;
   }) => Promise<void>;
-  onNarrationPreferences: (enabled: boolean) => Promise<void>;
+  onNarrationPreferences: (changes: {
+    enabled: boolean;
+    voice?: NarrationVoice;
+  }) => Promise<void>;
   onGenerationPreferences: (effort: GenerationEffort) => Promise<void>;
   onNotify: (message: string) => void;
   mode: ChatMode;
@@ -607,21 +611,34 @@ export function ChatPanel({
                     value={
                       project.narrationPreferences?.enabled === false
                         ? "off"
-                        : "on"
+                        : project.narrationPreferences?.voice || "default-female"
                     }
                     disabled={running}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.target.value;
                       void onNarrationPreferences(
-                        event.target.value === "on",
-                      ).catch(() => undefined)
-                    }
+                        value === "off"
+                          ? {
+                              enabled: false,
+                              voice:
+                                project.narrationPreferences?.voice ||
+                                "default-female",
+                            }
+                          : { enabled: true, voice: value as NarrationVoice },
+                      ).catch(() => undefined);
+                    }}
                   >
-                    <option
-                      value="on"
-                      disabled={!billing.entitlements.narration}
-                    >
-                      Speechify narration
-                      {billing.entitlements.narration ? "" : " · Creator"}
+                    <option value="default-female" disabled={!billing.entitlements.narration}>
+                      Default female{billing.entitlements.narration ? "" : " · Creator"}
+                    </option>
+                    <option value="seductive-female" disabled={!billing.entitlements.narration}>
+                      Seductive female{billing.entitlements.narration ? "" : " · Creator"}
+                    </option>
+                    <option value="seductive-male" disabled={!billing.entitlements.narration}>
+                      Seductive male{billing.entitlements.narration ? "" : " · Creator"}
+                    </option>
+                    <option value="seductive-female-accent" disabled={!billing.entitlements.narration}>
+                      Seductive female · accent{billing.entitlements.narration ? "" : " · Creator"}
                     </option>
                     <option value="off">Off · silent video</option>
                   </select>
@@ -629,7 +646,7 @@ export function ChatPanel({
                 <span>
                   {project.narrationPreferences?.enabled === false
                     ? "Silent video"
-                    : "Generated during final render"}
+                    : "Fast short-form delivery · long pauses reduced"}
                 </span>
               </div>
             )}
