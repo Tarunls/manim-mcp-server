@@ -103,8 +103,13 @@ function validateProductionConfiguration() {
     missing.push("E2B/artifact configuration");
   if (!generationQueue.configured)
     missing.push("Cloud Tasks identity and URL configuration");
+  // ElevenLabs powers optional premium voices only; the default Speechify voice
+  // does not depend on it. Boot with a loud warning instead of refusing to
+  // start so a missing/unmountable key cannot block an unrelated release.
   if (serviceRole !== "dispatcher" && !process.env.ELEVENLABS_API_KEY?.trim())
-    missing.push("ELEVENLABS_API_KEY");
+    console.warn(
+      "ELEVENLABS_API_KEY is not configured; ElevenLabs narration voices will fail until it is provided.",
+    );
   if (serviceRole !== "dispatcher" && !hostedBilling.configured)
     missing.push("Stripe configuration");
   if (serviceRole !== "dispatcher" && !scopedCodex.configured)
