@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import { Sandbox } from "e2b";
 
+const checks = [
+  ["Node runtime", "node --version"],
+  [
+    "Manim runtime",
+    "test -x /opt/lesson-studio/app/.venv/bin/python && /opt/lesson-studio/app/.venv/bin/python -m manim --version && /opt/lesson-studio/app/.venv/bin/python -c 'import manim'",
+  ],
+  [
+    "Orune fonts",
+    "fc-list : family | grep -q 'Orune Serif' && fc-list : family | grep -q 'Orune Serif Text'",
+  ],
+  [
+    "renderer dependencies",
+    "cd /opt/lesson-studio/app && node -e \"import('@openai/codex-sdk')\" && ffmpeg -version >/dev/null && test -x e2b/bootstrap.mjs && test -f studio/AGENTS.md && test -f studio/references/DEFAULT_VISUAL_LANGUAGE.md",
+  ],
+  [
+    "blocked internet egress",
+    "if node -e \"fetch('https://example.com', { signal: AbortSignal.timeout(5000) }).then(() => process.exit(0)).catch(() => process.exit(1))\"; then echo 'unexpected internet access' >&2; exit 42; fi",
+  ],
+] as const;
+
 async function main(): Promise<void> {
   const apiKey = process.env.E2B_API_KEY?.trim();
   const name = process.env.E2B_TEMPLATE?.trim() || "lesson-studio-renderer";
@@ -20,12 +40,16 @@ async function main(): Promise<void> {
     });
     await sandbox.files.write("/workspace/smoke.txt", "isolated");
     assert.equal(await sandbox.files.read("/workspace/smoke.txt"), "isolated");
-    const result = await sandbox.commands.run(
-      "set -eu; node --version; test -x /opt/lesson-studio/app/.venv/bin/python; /opt/lesson-studio/app/.venv/bin/python -m manim --version >/dev/null; /opt/lesson-studio/app/.venv/bin/python -c 'import manim'; fc-list : family | grep -q 'Orune Serif'; fc-list : family | grep -q 'Orune Serif Text'; cd /opt/lesson-studio/app && node -e \"import('@openai/codex-sdk')\"; ffmpeg -version >/dev/null; test -x e2b/bootstrap.mjs; test -f studio/AGENTS.md; test -f studio/references/DEFAULT_VISUAL_LANGUAGE.md; if curl -fsS --max-time 5 https://example.com >/dev/null 2>&1; then exit 42; fi",
-      { cwd: "/workspace", timeoutMs: 60_000 },
-    );
-    assert.equal(result.exitCode, 0);
-    assert.match(result.stdout, /^v22\./m);
+    for (const [label, command] of checks) {
+      console.log(`E2B smoke check started: ${label}.`);
+      const result = await sandbox.commands.run(`set -eu; ${command}`, {
+        cwd: "/workspace",
+        timeoutMs: 2 * 60_000,
+      });
+      assert.equal(result.exitCode, 0, `${label} failed: ${result.stderr.slice(0, 500)}`);
+      if (label === "Node runtime") assert.match(result.stdout, /^v22\./m);
+      console.log(`E2B smoke check passed: ${label}.`);
+    }
     console.log(`E2B smoke passed for ${name}:${version}.`);
   } finally {
     await sandbox?.kill().catch(() => undefined);
