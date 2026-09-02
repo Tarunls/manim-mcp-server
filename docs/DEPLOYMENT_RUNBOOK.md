@@ -1,6 +1,6 @@
 # GCP deployment runbook
 
-Updated: 2026-08-29
+Updated: 2026-09-02
 
 Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact current release and the incomplete narrated-generation certification.
 
@@ -16,27 +16,29 @@ Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact curr
 - Migration job: `lesson-studio-staging-migrate`
 - Legacy service `lesson-studio`: do not modify
 
-The deployed image/template are currently `8e40333` (deployed 2026-09-01; E2B smoke and the silent staging smoke passed). Two items are outstanding:
+The deployed image/template are currently `5f7c9d7` (deployed 2026-09-02; E2B smoke and the silent staging smoke passed). That release restores nine commits from 2026-08-30/31 (`bb9b604`..`2452405`, the showcase landing page and the 9:16 vertical format) that had been built and deployed from a local clone but never pushed; their trees were recovered from the Cloud Build source archives onto branch `recover/aug30-31-local-work` and merged.
 
-1. **ElevenLabs voices are not yet enabled.** The `elevenlabs_api_key` secret exists but has no IAM bindings, and only the project owner can grant them. From the owner account run:
+**Before any release, verify nothing is unpushed:** compare the `COMMIT_SHA` values in `gcloud builds list` and the live services' image tags against `git branch -r --contains <sha>`. A SHA git does not know means local work that must be recovered from `gs://educationalvideo-506219_cloudbuild/source/` before deploying over it.
 
-   ```sh
-   gcloud secrets add-iam-policy-binding elevenlabs_api_key \
-     --project educationalvideo-506219 \
-     --member serviceAccount:ls-staging-api@educationalvideo-506219.iam.gserviceaccount.com \
-     --role roles/secretmanager.secretAccessor
-   ```
+One item is outstanding, and one caveat applies:
 
-   then mount it and verify the account/key against a built-in voice before trusting the configured voices:
+1. **Narrated generation is not yet re-proven end to end.** ElevenLabs is enabled and verified at the provider (see below), but a full narrated job has not run since. `smoke:staging-payment` cannot cover it while `BILLING_MODE_REQUIRED=live`, because that script pays with Stripe's `4242…` test card. Prove narration with a staff-account generation instead, or temporarily use a sandbox Stripe key.
 
-   ```sh
-   gcloud run services update lesson-studio-staging-api --region us-central1 \
-     --set-secrets ELEVENLABS_API_KEY=elevenlabs_api_key:latest
-   ```
+2. **Terraform drift.** `E2B_TEMPLATE_VERSION=5f7c9d7` was set with `gcloud run services update` before Terraform ran. `staging.auto.tfvars` is now reconstructed on the release machine and the plan is clean; keep `image`/`e2b_template_version` in it current so future plans reconcile instead of reverting.
 
-   The API boots without the key (commit `8e40333`) and logs a warning; ElevenLabs voice selections fail per-request with a refund until the key is mounted and the ElevenLabs account has credits.
+### ElevenLabs narration (enabled 2026-09-02)
 
-2. **Terraform drift.** `E2B_TEMPLATE_VERSION=8e40333` was set with `gcloud run services update` because Terraform could not run from the release machine. On the next Terraform run, set `image`/`e2b_template_version` in `staging.auto.tfvars` to `8e40333` first so the plan reconciles instead of reverting.
+The `elevenlabs_api_key` secret is granted to `ls-staging-api` and mounted on the API service. Verified with the exact production request shape (`eleven_multilingual_v2`, `mp3_44100_128`, the same `voice_settings`): all three configured voices in `shared/narration-voices.json` return real MP3 audio. The earlier `payment_required` no longer reproduces.
+
+**The key is a restricted key.** It has no `user_read` scope (`/v1/user/subscription` and `/v1/voices` return 401) and is scoped to specific voices — a built-in voice such as Rachel `21m00Tcm4TlvDq8ikawM` returns `voice_not_found`. So a 404 on a built-in voice is expected and is *not* evidence of a broken key; test only voice IDs the key is scoped to. Before adding a voice to `narration-voices.json`, confirm that exact `voiceId` returns 200 with this key.
+
+Granting secret access requires the project owner (`tarun.l.sankar@gmail.com`); an editor account gets 403 on `secretmanager.secrets.setIamPolicy`. Because Terraform's `google_secret_manager_secret_iam_member` performs a read-modify-write, an editor cannot apply that resource even when the binding already exists — import it into state instead:
+
+```sh
+terraform -chdir=infra/terraform import \
+  'google_secret_manager_secret_iam_member.api_existing["elevenlabs_api_key"]' \
+  "projects/educationalvideo-506219/secrets/elevenlabs_api_key roles/secretmanager.secretAccessor serviceAccount:ls-staging-api@educationalvideo-506219.iam.gserviceaccount.com"
+```
 
 ## Release invariants
 
