@@ -22,10 +22,9 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Turn ideas into beautiful animations.");
   await expect(page.getByRole("link", { name: "Start free" }).first()).toHaveAttribute("href", "/studio");
   await expect(page.getByRole("link", { name: "Create a lesson" }).first()).toHaveAttribute("href", "/studio");
-  await expect(page.getByRole("link", { name: /Watch an example/ })).toHaveAttribute("href", "#watch");
+  await expect(page.getByRole("link", { name: /Watch an example/ })).toHaveAttribute("href", "#examples");
   await expect(page.getByRole("link", { name: /See the plans/ })).toHaveAttribute("href", "/pricing");
-  await expect(page.locator("video.watch-video")).toHaveAttribute("src", "/showcase/accumulation.mp4");
-  await expect(page.locator("#how-it-works")).toHaveAttribute("aria-label", /standing-wave pattern/);
+  await expect(page.locator("#how-it-works")).toHaveAttribute("aria-label", /circle.*triangle/i);
   await expect(page.locator("#how-it-works canvas")).toBeVisible();
   // the old ask-then-get section is gone; the hero diagram replaced it
   await expect(page.locator(".ask")).toHaveCount(0);
@@ -44,7 +43,7 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
       ["headline", page.locator(".hero h1")],
       ["cta", page.getByRole("link", { name: "Create a lesson" }).first()],
       ["visual", page.locator("#how-it-works")],
-      ["visual canvas", page.locator(".hero-chladni-canvas")],
+      ["visual canvas", page.locator(".circle-triangle-canvas")],
     ] as const) {
       const box = await locator.boundingBox();
       expect(box, `no ${name} box at ${at}`).not.toBeNull();
@@ -56,14 +55,14 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
   }
 });
 
-test("the hero resonance remains animated with reduced motion", async ({ page }, testInfo) => {
+test("the circle-to-triangle visual remains animated with reduced motion", async ({ page }, testInfo) => {
   test.skip(
     testInfo.project.name !== "desktop",
     "The canvas behavior is viewport-independent.",
   );
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  const canvas = page.locator(".hero-chladni-canvas");
+  const canvas = page.locator(".circle-triangle-canvas");
   await expect(canvas).toBeVisible();
   const firstFrame = await canvas.screenshot();
   await page.waitForTimeout(900);
@@ -71,23 +70,27 @@ test("the hero resonance remains animated with reduced motion", async ({ page },
   expect(firstFrame.equals(secondFrame)).toBe(false);
 });
 
-// the examples gallery became the contact strip: all three lesson stills sit
-// in one whitespace-separated row, each captioned with the sentence that
-// produced it (the claim itself is typography inside the frame).
-test("the contact strip lays out all three lessons, captioned", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "The strip is exercised once.");
+test("the showcase presents three animated ideas", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The gallery is exercised once.");
   await page.goto("/");
-  const strip = page.locator("#examples");
-  await expect(strip.locator("figure")).toHaveCount(3);
-  for (const [id, sentence] of [
-    ["accumulation", /adding up rectangles becomes the integral/i],
-    ["rotation", /sine wave is just something going round a circle/i],
-    ["slope", /what the derivative means at one point/i],
-  ] as const) {
-    const item = strip.locator(`#lesson-${id}`);
-    await expect(item).toBeVisible();
-    await expect(item.locator("img")).toHaveAttribute("src", `/showcase/${id}.jpg`);
-    await expect(item.locator("figcaption")).toHaveText(sentence);
+  const showcase = page.locator("#examples");
+  await expect(showcase.locator(".showcase-item")).toHaveCount(3);
+  await expect(showcase.locator("#showcase-chladni .chladni-canvas")).toBeVisible();
+  await expect(showcase.locator(".concept-canvas")).toHaveCount(2);
+  await expect(showcase.getByRole("heading", { level: 3 })).toHaveText([
+    "Standing waves",
+    "Reflected light",
+    "A rolling point",
+  ]);
+  await expect(showcase.locator("video")).toHaveCount(0);
+  const canvases = showcase.locator("canvas");
+  await expect(canvases).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    const canvas = canvases.nth(index);
+    const firstFrame = await canvas.screenshot();
+    await page.waitForTimeout(650);
+    const secondFrame = await canvas.screenshot();
+    expect(firstFrame.equals(secondFrame), `showcase canvas ${index} is static`).toBe(false);
   }
 });
 

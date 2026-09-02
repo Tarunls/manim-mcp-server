@@ -32,6 +32,7 @@ import type {
   ReviewStrictness,
   RuntimeState,
   StudioProject,
+  VideoFormat,
 } from "../types";
 import {
   clampEffort,
@@ -285,7 +286,7 @@ export function ChatPanel({
     enabled: boolean;
     voice?: NarrationVoice;
   }) => Promise<void>;
-  onGenerationPreferences: (effort: GenerationEffort) => Promise<void>;
+  onGenerationPreferences: (effort: GenerationEffort, format?: VideoFormat) => Promise<void>;
   onNotify: (message: string) => void;
   mode: ChatMode;
   side: ChatSide;
@@ -514,6 +515,22 @@ export function ChatPanel({
                     );
                   }}
                 />
+                <label className="format-control">
+                  Shape
+                  <select
+                    value={project.generationPreferences?.format || "landscape"}
+                    disabled={running}
+                    onChange={(event) =>
+                      onGenerationPreferences(
+                        generationEffort,
+                        event.target.value as VideoFormat,
+                      ).catch(() => undefined)
+                    }
+                  >
+                    <option value="landscape">Widescreen 16:9</option>
+                    <option value="vertical">Vertical 9:16 - TikTok, Reels</option>
+                  </select>
+                </label>
               </div>
             )}
             {project && (

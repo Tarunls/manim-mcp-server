@@ -9,7 +9,7 @@ import { fetchVerifiedCommonsImage } from "./hosted-media-service.js";
 import { manimPath } from "./platform.js";
 import { titleFromPrompt } from "./plan.js";
 import { narrationVoiceOrDefault } from "./narration.js";
-import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, NarrationVoice, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
+import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, NarrationVoice, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject, VideoFormat } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const RENDERER: RendererKind = "manim";
@@ -21,15 +21,21 @@ const GENERATION_EFFORTS: Record<GenerationEffort, { model: AgentModel; reasonin
   thorough: { model: DEFAULT_MODEL, reasoningEffort: "xhigh" },
 };
 
-export function generationPreferencesFor(effort: GenerationEffort): StudioProject["generationPreferences"] {
-  return { effort, ...GENERATION_EFFORTS[effort] };
+export function generationPreferencesFor(
+  effort: GenerationEffort,
+  format: VideoFormat = "landscape",
+): StudioProject["generationPreferences"] {
+  return { effort, format, ...GENERATION_EFFORTS[effort] };
 }
 
 function normalizeGenerationPreferences(preferences?: Partial<StudioProject["generationPreferences"]>) {
   const effort = preferences?.effort === "quick" || preferences?.effort === "balanced" || preferences?.effort === "thorough"
     ? preferences.effort
     : preferences?.model === "gpt-5.6-terra" ? "quick" : DEFAULT_GENERATION_EFFORT;
-  return generationPreferencesFor(effort);
+  return generationPreferencesFor(
+    effort,
+    preferences?.format === "vertical" ? "vertical" : "landscape",
+  );
 }
 
 export const DEFAULT_FONT_CATEGORY: FontCategory = "serif";
@@ -441,11 +447,14 @@ export class StudioService extends EventEmitter {
     return project;
   }
 
-  updateGenerationPreferences(projectId: string, effort: GenerationEffort) {
+  updateGenerationPreferences(projectId: string, effort: GenerationEffort, format?: VideoFormat) {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
     if (project.status === "running") throw new Error("Wait for the current generation to finish.");
-    project.generationPreferences = generationPreferencesFor(effort);
+    project.generationPreferences = generationPreferencesFor(
+      effort,
+      format || project.generationPreferences?.format || "landscape",
+    );
     this.updateProject(project);
     return project;
   }
@@ -794,13 +803,20 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
         designPreferences: project.designPreferences,
         narrationPreferences: project.narrationPreferences,
         generationPreferences: options.requestedEffort
-          ? generationPreferencesFor(options.requestedEffort)
+          ? generationPreferencesFor(
+              options.requestedEffort,
+              project.generationPreferences?.format,
+            )
           : project.generationPreferences,
       }, project.ownerId);
       const result = await this.sendMessage(freshProject.id, text, { ...options, intent: "auto" });
       return { ...result, startedFresh: true };
     }
-    if (options.requestedEffort) project.generationPreferences = generationPreferencesFor(options.requestedEffort);
+    if (options.requestedEffort)
+      project.generationPreferences = generationPreferencesFor(
+        options.requestedEffort,
+        project.generationPreferences?.format,
+      );
     if (!this.runtimeState.manim) throw new Error("Manim is not installed. Run npm run setup:manim first.");
 
     const projectDir = path.join(this.projectRoot, project.id);

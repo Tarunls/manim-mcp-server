@@ -310,19 +310,27 @@ body:has(.access-page) {
   isolation: isolate;
 }
 
-.hero-chladni {
+.hero-circle-triangle {
   width: min(
     100%,
     820px,
-    calc((100svh - var(--nav-height) - 80px) * 1.08)
+    calc((100svh - var(--nav-height) - 80px) * 1.14)
   );
-  aspect-ratio: 1.08 / 1;
+  aspect-ratio: 1.14 / 1;
 }
 
-.hero-chladni-canvas {
+.circle-triangle-canvas,
+.chladni-canvas,
+.concept-canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.chladni-visual {
+  position: relative;
+  margin: 0;
+  aspect-ratio: 4 / 3;
 }
 
 .visually-hidden {
@@ -347,36 +355,51 @@ body:has(.access-page) {
   vector-effect: non-scaling-stroke;
 }
 
-/* --- 2. watch one: a full-bleed lesson between two hairlines --------- */
+/* --- 2. showcase: three animated objects, with titles only ---------- */
 
-.watch {
-  margin-top: clamp(48px, 8vh, 96px);
-}
-
-.watch-frame {
-  border-top: 1px solid var(--line);
+.showcase {
+  margin-top: clamp(72px, 11vh, 128px);
   border-bottom: 1px solid var(--line);
-  padding: clamp(40px, 6vh, 64px) 0 clamp(28px, 5vh, 56px);
-}
-
-.watch-kicker {
-  text-align: center;
-  margin-bottom: clamp(24px, 4vh, 40px);
-}
-
-.watch-video {
-  display: block;
-  width: 100%;
-  max-height: 76vh;
-  object-fit: contain;
-}
-
-.watch-note {
-  margin: 14px 0 0;
   padding: 0 var(--gutter);
-  text-align: right;
-  font-size: 13px;
+  scroll-margin-top: var(--nav-height);
+}
+
+.showcase-grid {
+  max-width: var(--page);
+  margin: 0 auto;
+}
+
+.showcase-item {
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(24px, 4vh, 40px);
+  min-height: min(82svh, 820px);
+  padding: clamp(58px, 8vh, 88px) 0 clamp(72px, 10vh, 110px);
+  border-top: 1px solid var(--line);
+}
+
+.showcase-item h3 {
+  margin: 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
   color: var(--ink-2);
+}
+
+.showcase-media,
+.showcase-visual {
+  display: block;
+  width: min(100%, 980px);
+  aspect-ratio: 16 / 9;
+  position: relative;
+  align-self: center;
 }
 
 /* --- 3. the pen section: one annotated frame, note in the margin ----- */
@@ -455,62 +478,14 @@ body:has(.access-page) {
   max-width: 52ch;
 }
 
-/* --- 4. three lessons: a contact strip, whitespace-separated --------- */
-
-.strip {
-  margin-top: clamp(120px, 16vh, 180px);
-  border-top: 1px solid var(--line);
-  padding: clamp(72px, 10vh, 110px) var(--gutter) 0;
-  text-align: center;
-}
-
-.strip-kicker {
-  margin-bottom: 14px;
-}
-
-.strip-title {
-  margin: 0 auto clamp(36px, 5vh, 52px);
-  font-size: clamp(28px, 3vw, 34px);
-  line-height: 1.15;
-  letter-spacing: -0.018em;
-  font-variation-settings: "opsz" 34, "SOFT" 20, "WONK" 1;
-  max-width: 24ch;
-}
-
-.strip-row {
-  display: flex;
-  gap: clamp(24px, 3vw, 48px);
-  justify-content: center;
-}
-
-.strip-item {
-  margin: 0;
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.strip-item img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.strip-item figcaption {
-  font-size: 14px;
-  color: var(--ink-2);
-}
-
-/* --- 5. close: the one sunken band, type only ------------------------ */
+/* --- 4. close: the one sunken band, type only ------------------------ */
 
 .close {
   margin-top: clamp(160px, 20vh, 220px);
   background: var(--paper-sunken);
   border-top: 1px solid var(--line);
   padding: clamp(110px, 15vh, 170px) var(--gutter);
-  text-align: center;
+  text-align: left;
 }
 
 .close-inner {
@@ -518,17 +493,17 @@ body:has(.access-page) {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 28px;
+  align-items: flex-start;
+  gap: 30px;
 }
 
 .close h2 {
   margin: 0;
-  font-size: clamp(28px, 3vw, 34px);
-  line-height: 1.15;
-  letter-spacing: -0.018em;
-  font-variation-settings: "opsz" 34, "SOFT" 20, "WONK" 1;
-  max-width: 24ch;
+  font-size: clamp(54px, 7vw, 96px);
+  line-height: 0.96;
+  letter-spacing: -0.045em;
+  font-variation-settings: "opsz" 96, "SOFT" 18, "WONK" 1;
+  max-width: 11ch;
 }
 
 .close h2 em {
@@ -541,12 +516,7 @@ body:has(.access-page) {
   font-size: 16px;
   line-height: 1.62;
   color: var(--ink-2);
-  max-width: 52ch;
-}
-
-.close-note {
-  font-size: 14px;
-  color: var(--ink-2);
+  max-width: 46ch;
 }
 
 /* --- footer: one quiet line ----------------------------------------- */
@@ -1144,28 +1114,13 @@ body:has(.access-page) {
     margin-top: 18px;
   }
 
-  /* the contact strip becomes a swipeable row, scrollbar chrome hidden */
-  .strip-row {
-    justify-content: flex-start;
-    overflow-x: auto;
-    margin: 0 calc(-1 * var(--gutter));
-    padding: 0 var(--gutter);
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    scroll-snap-type: x proximity;
+  .showcase-item {
+    min-height: auto;
   }
 
-  .strip-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  .strip-item {
-    flex: 0 0 78vw;
-    scroll-snap-align: center;
-  }
-
-  .watch-note {
-    text-align: center;
+  .showcase-media,
+  .showcase-visual {
+    aspect-ratio: 4 / 3;
   }
 
   .page-head-inner,
@@ -1205,6 +1160,10 @@ body:has(.access-page) {
 
   .hero-visual {
     width: calc(100% + 16px);
+  }
+
+  .showcase {
+    padding: 0 var(--gutter);
   }
 
   .pricing-grid {

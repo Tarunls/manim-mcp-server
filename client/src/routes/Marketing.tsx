@@ -1,27 +1,8 @@
 import { useEffect } from "react";
 import { ChladniVisual } from "./ChladniVisual";
+import { CircleTriangleVisual } from "./CircleTriangleVisual";
 import { MarketingChrome } from "./MarketingChrome";
-
-// each still already carries its claim as the frame's own typography, so the
-// caption gives the other half of the pair: the sentence it was rendered from
-const STRIP = [
-  {
-    id: "accumulation",
-    sentence: "“Show me how adding up rectangles becomes the integral.”",
-    alt: "A lesson frame titled “The estimate stops being an estimate.”: the area under a curve, shaded, above the identity area equals the integral of f.",
-  },
-  {
-    id: "rotation",
-    sentence:
-      "“Show me why a sine wave is just something going round a circle.”",
-    alt: "A lesson frame titled “A rotation casts a wave.”: a hand turning on a circle beside the sine wave its height traces.",
-  },
-  {
-    id: "slope",
-    sentence: "“Show me what the derivative means at one point.”",
-    alt: "A lesson frame titled “That line's steepness is the derivative.”: a parabola with a tangent line touching at a marked point.",
-  },
-] as const;
+import { CausticVisual, CycloidVisual } from "./ShowcaseVisuals";
 
 export default function Marketing() {
   useEffect(() => {
@@ -46,9 +27,8 @@ export default function Marketing() {
 
   return (
     <MarketingChrome>
-      {/* 1 — hero: one plain-language promise and one large mathematical
-             visual. A vibrating plate turns disorder into standing-wave
-             geometry, showing the product's purpose before we explain it. */}
+      {/* 1 — hero: concentric rings unwrap into a triangle, making the area
+             of a circle visible with no labels or interface chrome. */}
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-inner">
           <div className="hero-copy">
@@ -61,36 +41,41 @@ export default function Marketing() {
               <a className="button button-primary" href="/studio">
                 Create a lesson
               </a>
-              <a className="text-link" href="#watch">
+              <a className="text-link" href="#examples">
                 Watch an example &rarr;
               </a>
             </div>
           </div>
 
-          <ChladniVisual />
+          <CircleTriangleVisual />
         </div>
       </section>
 
-      {/* 2 — watch one: a full-bleed lesson between two hairlines */}
-      <section className="watch" id="watch" aria-label="Watch one lesson">
-        <div className="watch-frame">
-          <span className="kicker watch-kicker">Watch one lesson</span>
-          <video
-            className="watch-video"
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            poster="/showcase/accumulation.jpg"
-            src="/showcase/accumulation.mp4"
-            aria-label="An Orune lesson: rectangles under a curve narrowing until the estimate becomes the integral."
-          />
+      {/* 2 — three quiet, continuously moving mathematical objects. */}
+      <section className="showcase" id="examples" aria-label="Animated mathematical ideas">
+        <div className="showcase-grid" data-reveal>
+          <figure className="showcase-item">
+            <h3>Standing waves</h3>
+            <ChladniVisual className="showcase-media" id="showcase-chladni" />
+            <figcaption className="visually-hidden">
+              A Chladni plate organizing grains into nodal lines.
+            </figcaption>
+          </figure>
+          <figure className="showcase-item">
+            <h3>Reflected light</h3>
+            <CausticVisual />
+            <figcaption className="visually-hidden">
+              Reflections inside a circle forming a caustic curve.
+            </figcaption>
+          </figure>
+          <figure className="showcase-item">
+            <h3>A rolling point</h3>
+            <CycloidVisual />
+            <figcaption className="visually-hidden">
+              A point on a rolling circle tracing a cycloid.
+            </figcaption>
+          </figure>
         </div>
-        <p className="watch-note">
-          Rendered by Orune from one sentence. Twelve seconds, exactly as it
-          came out of the renderer.
-        </p>
       </section>
 
       {/* 3 — the pen: the only annotated frame on the page */}
@@ -137,43 +122,16 @@ export default function Marketing() {
         </div>
       </section>
 
-      {/* 4 — three lessons: a contact strip, whitespace-separated */}
-      <section className="strip" id="examples" aria-labelledby="strip-title">
-        <span className="kicker strip-kicker">Three lessons</span>
-        <h2 className="strip-title" id="strip-title">
-          Every one of these was a sentence first.
-        </h2>
-        {/* on small screens this row scrolls, so it must be keyboard-reachable */}
-        <div
-          className="strip-row"
-          data-reveal
-          role="region"
-          aria-label="Three rendered lessons"
-          tabIndex={0}
-        >
-          {STRIP.map((lesson) => (
-            <figure
-              className="strip-item"
-              key={lesson.id}
-              id={`lesson-${lesson.id}`}
-            >
-              <img src={`/showcase/${lesson.id}.jpg`} alt={lesson.alt} />
-              <figcaption>{lesson.sentence}</figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
-
-      {/* 5 — close: the one sunken band, type only */}
+      {/* 4 — close: one memorable invitation, not another explanation. */}
       <section className="close" aria-labelledby="close-title">
         <div className="close-inner" data-reveal>
+          <span className="kicker">One idea is enough</span>
           <h2 id="close-title">
-            Every diagram is <em>computed</em>, not drawn.
+            Make the hard thing <em>visible.</em>
           </h2>
           <p>
-            A curve is its function sampled along its own domain, and a tangent
-            sits where the derivative puts it. Pick the idea you never quite
-            got, and watch it get built.
+            Start with the concept that never quite clicked. Describe it in
+            your own words, then watch Orune build the explanation.
           </p>
           <div className="hero-actions close-actions">
             <a className="button button-primary" href="/studio">
@@ -183,9 +141,6 @@ export default function Marketing() {
               See the plans &rarr;
             </a>
           </div>
-          <p className="close-note">
-            One lesson free, no card. Paid plans start at $20 a month.
-          </p>
         </div>
       </section>
     </MarketingChrome>

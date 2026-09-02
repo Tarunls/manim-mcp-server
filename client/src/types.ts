@@ -55,6 +55,7 @@ export interface RenderInfo {
   narration?: {
     status?: string;
     enabled?: boolean;
+    hasAudio?: boolean;
     provider?: string;
     model?: string;
     voice?: string;
@@ -109,8 +110,14 @@ export interface NarrationPreferences {
   voice?: NarrationVoice;
 }
 
+export type VideoFormat = "landscape" | "vertical";
+
 export interface GenerationPreferences {
   effort: GenerationEffort;
+  /** The frame the lesson is composed for. "vertical" is the 9:16 phone cut
+   * for TikTok and Reels; it changes the typographic grid, not just the output
+   * size, so it is chosen before the scene is written. */
+  format?: VideoFormat;
 }
 
 export interface StudioProject {

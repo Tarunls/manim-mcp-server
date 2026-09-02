@@ -34,6 +34,10 @@ const template = Template({
 }).fromDockerfile(path.join(root, "e2b", "Dockerfile"));
 
 const build = await Template.buildInBackground(template, `${name}:${version}`, {
+  // Manim rasterizes every frame and ffmpeg encodes them; both are compute
+  // bound, and sandbox CPU is a rounding error next to the LLM cost per job.
+  cpuCount: 4,
+  memoryMB: 4096,
   onBuildLogs: (entry) => process.stdout.write(`${entry}\n`),
   requestTimeoutMs: 60_000,
   signal: AbortSignal.timeout(Math.min(buildTimeoutMs, 2 * 60_000)),

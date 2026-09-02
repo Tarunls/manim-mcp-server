@@ -33,6 +33,7 @@ import type {
   ReviewStrictness,
   SendMessageResult,
   StudioProject,
+  VideoFormat,
 } from "./types";
 
 const Marketing = lazy(() => import("./routes/Marketing"));
@@ -501,8 +502,8 @@ export function App() {
             }) =>
               patchProjectPrefs("narration-preferences", changes)
             }
-            onGenerationPreferences={(effort: GenerationEffort) =>
-              patchProjectPrefs("generation-preferences", { effort })
+            onGenerationPreferences={(effort: GenerationEffort, format?: VideoFormat) =>
+              patchProjectPrefs("generation-preferences", { effort, format })
             }
             onNotify={notify}
             mode={chatMode}

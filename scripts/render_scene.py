@@ -24,10 +24,27 @@ QUALITY_ARGS = {
     # Browser default: full HD with smooth motion and half the frames of -qh.
     "balanced": ["-r", "1920,1080", "--fps", "30"],
     "high": ["-qh"],
+    # 9:16 for social. The draft cut keeps the same aspect on purpose, so a
+    # layout that only breaks when the frame is tall breaks during iteration
+    # rather than on the final render.
+    "vertical": ["-r", "1080,1920", "--fps", "30"],
+    "vertical-draft": ["-r", "540,960", "--fps", "30"],
 }
 
 ENGINE_CONTRACT_VERSION = 1
 SCENE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
+
+# The exact frame each format must produce, checked after the render so a
+# mismatched aspect can never reach the upload.
+EXPECTED_FRAME = {
+    "balanced": (1920, 1080),
+    "vertical": (1080, 1920),
+}
+
+# Iteration renders keep Manim's partial-movie cache so a re-render after an
+# edit only redraws the changed animations. Final-quality renders disable it:
+# they run once, and hashing every animation would only add overhead.
+CACHED_QUALITIES = {"draft", "low", "preview", "medium", "vertical-draft"}
 
 
 def fail(message: str) -> None:
@@ -262,6 +279,58 @@ def validate_generation_request(project_dir: Path, source: Path) -> None:
         fail("Generation freshness check failed: beat-plan.md does not appear to address the requested topic.")
 
 
+def validate_narration_script(project_dir: Path, quality: str) -> None:
+    """Enforce the narration rules that a markdown file cannot.
+
+    Every one of these started as a written instruction that a generated
+    lesson ignored: fragment narration read as a caption list rather than a
+    voice, a social cut that came in at seventeen seconds, and an opening that
+    was not the question the format is built around."""
+    config_file = project_dir / "narration-config.json"
+    if config_file.exists():
+        try:
+            if json.loads(config_file.read_text(encoding="utf-8")).get("enabled") is False:
+                return
+        except (json.JSONDecodeError, OSError):
+            fail("narration-config.json must contain valid JSON.")
+    script = project_dir / "narration.json"
+    if not script.exists():
+        return
+    try:
+        segments = json.loads(script.read_text(encoding="utf-8")).get("segments") or []
+    except (json.JSONDecodeError, OSError):
+        fail("narration.json must contain valid JSON.")
+    if not segments:
+        return
+    for index, segment in enumerate(segments, start=1):
+        words = len(str(segment.get("text", "")).split())
+        if words < 12:
+            fail(
+                f"Narration passage {index} is {words} words. A passage must be a "
+                "spoken sentence of at least 12 words (aim for 18-45), not a caption "
+                "fragment - fragments read as a list of labels instead of a voice."
+            )
+        if words > 60:
+            fail(f"Narration passage {index} is {words} words; split it, the limit is 60.")
+    starts = [float(segment.get("start", 0)) for segment in segments]
+    if starts != sorted(starts):
+        fail("Narration passages must be in ascending order of start time.")
+    if quality.startswith("vertical"):
+        opening = str(segments[0].get("text", "")).lower()
+        if "wondered" not in opening:
+            fail(
+                "A vertical lesson opens on the question the format is built around: "
+                "the first narration line must ask 'Have you ever wondered why ...'. "
+                f"It currently begins: {str(segments[0].get('text',''))[:80]!r}"
+            )
+        finish = max(float(segment.get("end") or 0) for segment in segments)
+        if finish < 30:
+            fail(
+                f"The narration only runs to {finish:.1f}s. A vertical lesson is 35-45 "
+                "seconds; give the transformation beat the room it needs."
+            )
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         fail("Usage: render_scene.py PROJECT_DIR [draft|preview|balanced|high]")
@@ -330,6 +399,23 @@ def main() -> None:
         )
     if "assert_scene_safe(" not in code:
         fail("scene.py must call assert_scene_safe for its important visual groups.")
+    narrated = (project_dir / "narration.json").exists()
+    if narrated:
+        config_file = project_dir / "narration-config.json"
+        try:
+            narrated = config_file.exists() and json.loads(
+                config_file.read_text(encoding="utf-8")
+            ).get("enabled") is not False
+        except (json.JSONDecodeError, OSError):
+            narrated = True
+    if narrated and "hold_for_narration" not in called:
+        fail(
+            "This lesson is narrated, so every beat must end with "
+            "manim_paper.hold_for_narration(self, beats, index) using timings from "
+            "narration_beats('.'). Pacing a narrated beat with a bare self.wait() is "
+            "what lets the voice drift ahead of or behind the picture."
+        )
+    validate_narration_script(project_dir, quality)
     if not has_layout_call(code, "assert_no_overlap", 2):
         fail("scene.py must call assert_no_overlap with at least two independent peer objects.")
     if not has_layout_call(code, "watch_no_overlap", 3):
@@ -355,7 +441,7 @@ def main() -> None:
         "-m",
         "manim",
         *QUALITY_ARGS[quality],
-        "--disable_caching",
+        *([] if quality in CACHED_QUALITIES else ["--disable_caching"]),
         "--media_dir",
         str(media_dir),
         str(source),
@@ -393,6 +479,19 @@ def main() -> None:
     if not candidates:
         fail("Manim completed but no GeneratedScene.mp4 was found.")
     rendered = max(candidates, key=lambda item: item.stat().st_mtime)
+    expected = EXPECTED_FRAME.get(quality)
+    if expected:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+             "stream=width,height", "-of", "csv=p=0:s=x", str(rendered)],
+            text=True, capture_output=True, timeout=60,
+        )
+        actual = probe.stdout.strip()
+        if actual != f"{expected[0]}x{expected[1]}":
+            fail(
+                f"The render produced {actual or 'an unreadable frame'}, but "
+                f"{quality} must be {expected[0]}x{expected[1]}."
+            )
     output = project_dir / "output.mp4"
     optimized = project_dir / "output.faststart.mp4"
     faststart = subprocess.run(
