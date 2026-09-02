@@ -79,7 +79,7 @@ export class ScopedNarrationService {
       if (voice.provider === "speechify") {
         const client = new SpeechifyClient({ token: apiKey });
         const response = await client.audio.speech({
-          input: `<speak><speechify:style emotion="warm"><prosody rate="+8%">${escapeXml(text)}</prosody></speechify:style></speak>`,
+          input: `<speak><speechify:style emotion="warm">${escapeXml(text)}</speechify:style></speak>`,
           voice_id: voice.voiceId,
           model: "simba-3.2",
           audio_format: "mp3",
@@ -93,7 +93,7 @@ export class ScopedNarrationService {
           model: "simba-3.2",
           voice: voice.key,
           voiceId: voice.voiceId,
-          rate: "+8%",
+          rate: "natural",
         };
       }
 
@@ -129,7 +129,7 @@ export class ScopedNarrationService {
         model: ELEVENLABS_MODEL,
         voice: voice.key,
         voiceId: voice.voiceId,
-        rate: `${NARRATION_SPEED}x`,
+        rate: NARRATION_SPEED === 1 ? "natural" : `${NARRATION_SPEED}x`,
       };
     } catch (error) {
       await this.db.query(

@@ -2,7 +2,7 @@
 /** Generate timed narration segments and mux them into a project video. */
 
 import { SpeechifyClient } from "@speechify/api";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -24,6 +24,67 @@ function run(command, args, options = {}) {
     const stderr = typeof error?.stderr === "string" ? error.stderr.slice(-2500) : "";
     fail(stderr || `${command} failed.`);
   }
+}
+
+function runCapture(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    timeout: options.timeout || 180_000,
+  });
+  if (result.error || result.status !== 0) {
+    fail((result.stderr || "").slice(-2500) || `${command} failed.`);
+  }
+  return { stdout: result.stdout || "", stderr: result.stderr || "" };
+}
+
+const LOUDNESS = { i: -16, tp: -1.5, lra: 11 };
+
+// Trim the provider's leading and trailing padding and nothing else. Pauses
+// inside a passage are prosody and must survive untouched.
+//
+// The previous filter used stop_periods=-1, which does not mean "cap unusually
+// long gaps" - it strips every silence in the passage. Measured on a clip whose
+// pauses were 0.60s and 1.49s, it returned 0.23s and 0.23s: unrelated pauses
+// flattened to the same length, so the delivery rushed some phrases and stalled
+// on others. Raising the threshold did not help - at stop_duration=1.0 the same
+// 0.60s pause came back as 0.05s. Only trimming the ends leaves both pauses
+// exactly as spoken.
+const CLEAN_FILTER = [
+  "silenceremove=start_periods=1:start_duration=0.05:start_threshold=-50dB:start_silence=0.05",
+  "areverse",
+  "silenceremove=start_periods=1:start_duration=0.02:start_threshold=-50dB:start_silence=0.08",
+  "areverse",
+].join(",");
+
+/** Measure a segment so loudness can be corrected with one fixed gain. */
+function measureLoudness(file) {
+  const { stderr } = runCapture("ffmpeg", [
+    "-hide_banner", "-nostats", "-i", file,
+    "-af", `loudnorm=I=${LOUDNESS.i}:TP=${LOUDNESS.tp}:LRA=${LOUDNESS.lra}:print_format=json`,
+    "-f", "null", "-",
+  ]);
+  const start = stderr.lastIndexOf("{");
+  const end = stderr.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  try {
+    const measured = JSON.parse(stderr.slice(start, end + 1));
+    return ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"]
+      .every((key) => Number.isFinite(Number(measured[key]))) ? measured : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Single-pass loudnorm rides gain continuously, so on a track that is mostly
+// silence it lifts the noise floor between passages and ducks each entry: the
+// pumping reads as the voice surging and fading. Measuring first lets the
+// second pass apply one static gain (linear=true) instead.
+function loudnormFilter(measured) {
+  const base = `loudnorm=I=${LOUDNESS.i}:TP=${LOUDNESS.tp}:LRA=${LOUDNESS.lra}`;
+  if (!measured) return base;
+  return `${base}:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}` +
+    `:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}` +
+    `:offset=${measured.target_offset}:linear=true`;
 }
 
 async function main() {
@@ -94,7 +155,7 @@ async function main() {
   fs.mkdirSync(audioDir, { recursive: true });
   const model = voice.provider === "elevenlabs" ? "eleven_multilingual_v2" : "simba-3.2";
   const outputFormat = voice.provider === "elevenlabs" ? "mp3_44100_128" : "mp3_24000_160";
-  const rate = voice.provider === "elevenlabs" ? "1.08x" : "+8%";
+  const rate = "natural";
   const speechifyClient = apiKey && voice.provider === "speechify"
     ? new SpeechifyClient({ token: apiKey })
     : undefined;
@@ -110,10 +171,15 @@ async function main() {
 
   for (let index = 0; index < normalized.length; index += 1) {
     const segment = normalized[index];
-    const ssml = `<speak><speechify:style emotion="warm"><prosody rate="+8%">${escapeXml(segment.text)}</prosody></speechify:style></speak>`;
+    const ssml = `<speak><speechify:style emotion="warm">${escapeXml(segment.text)}</speechify:style></speak>`;
     const cacheKey = createHash("sha256").update(JSON.stringify({ text: segment.text, voiceKey, voiceId: voice.voiceId, model, outputFormat, rate })).digest("hex").slice(0, 16);
     const rawTarget = path.join(audioDir, `${voice.provider}-${cacheKey}-raw.mp3`);
-    const target = path.join(audioDir, `${voice.provider}-${cacheKey}-compact.mp3`);
+    const trimmed = path.join(audioDir, `${voice.provider}-${cacheKey}-trim.wav`);
+    // The intermediates are PCM on purpose. Re-encoding each passage to MP3
+    // stacked a second lossy generation on the provider's output and prepended
+    // encoder delay, so every passage drifted a little later than the timeline
+    // said it should.
+    const target = path.join(audioDir, `${voice.provider}-${cacheKey}-clean.wav`);
     if (!fs.existsSync(rawTarget)) {
       let response;
       try {
@@ -141,7 +207,7 @@ async function main() {
                     similarity_boost: 0.8,
                     style: 0.2,
                     use_speaker_boost: true,
-                    speed: 1.08,
+                    speed: 1,
                   },
                 }),
                 signal: AbortSignal.timeout(120_000),
@@ -174,12 +240,14 @@ async function main() {
     }
     if (!fs.existsSync(target)) {
       run("ffmpeg", [
-        "-y", "-i", rawTarget,
-        "-af",
-        "silenceremove=start_periods=1:start_duration=0.04:start_threshold=-45dB:start_silence=0.03:" +
-          "stop_periods=-1:stop_duration=0.45:stop_threshold=-45dB:stop_silence=0.18",
-        "-c:a", "libmp3lame", "-b:a", "160k", target,
+        "-y", "-i", rawTarget, "-af", CLEAN_FILTER,
+        "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", trimmed,
       ]);
+      run("ffmpeg", [
+        "-y", "-i", trimmed, "-af", loudnormFilter(measureLoudness(trimmed)),
+        "-ar", "48000", "-ac", "1", "-c:a", "pcm_s16le", target,
+      ]);
+      fs.rmSync(trimmed, { force: true });
     }
     audioFiles.push(target);
     const segmentDuration = Number(run("ffprobe", [
@@ -211,20 +279,27 @@ async function main() {
   const labels = [];
   normalized.forEach((segment, index) => {
     const label = `a${index}`;
-    const fadeOutStart = Math.max(0, audioDurations[index] - 0.10).toFixed(3);
+    // Short fades only exist to stop a click at the splice. On a very short
+    // passage a fixed 100ms tail would eat the last word, so both edges stay a
+    // fraction of the passage.
+    const fadeIn = Math.min(0.025, audioDurations[index] / 8).toFixed(3);
+    const fadeOut = Math.min(0.08, audioDurations[index] / 8);
+    const fadeOutStart = Math.max(0, audioDurations[index] - fadeOut).toFixed(3);
     chains.push(
-      `[${index}:a]afade=t=in:st=0:d=0.025,afade=t=out:st=${fadeOutStart}:d=0.10,` +
+      `[${index}:a]afade=t=in:st=0:d=${fadeIn},afade=t=out:st=${fadeOutStart}:d=${fadeOut.toFixed(3)},` +
       `adelay=${Math.round(segment.start * 1000)}:all=1[${label}]`,
     );
     labels.push(`[${label}]`);
   });
+  // Each passage is already at the target loudness, and passages never overlap,
+  // so the mix needs no second normalisation pass.
   chains.push(
     `${labels.join("")}amix=inputs=${labels.length}:duration=longest:normalize=0,` +
-    `loudnorm=I=-16:TP=-1.5:LRA=11,apad,atrim=0:${duration.toFixed(3)}[aout]`,
+    `apad,atrim=0:${duration.toFixed(3)}[aout]`,
   );
   ffmpeg.push(
     "-filter_complex", chains.join(";"), "-map", "[aout]",
-    "-c:a", "aac", "-b:a", "160k", narrationAudio,
+    "-c:a", "aac", "-b:a", "160k", "-ar", "48000", narrationAudio,
   );
   run("ffmpeg", ffmpeg);
 
@@ -248,7 +323,8 @@ async function main() {
     audioFormat: outputFormat,
     style: voice.provider === "elevenlabs" ? "expressive" : "warm",
     rate,
-    pausePolicy: "silence-over-450ms-capped-at-180ms",
+    loudness: `I=${LOUDNESS.i} TP=${LOUDNESS.tp} linear`,
+    pausePolicy: "provider-padding-trimmed-spoken-pauses-preserved",
     disclosure: "AI-generated voice",
   }));
 }

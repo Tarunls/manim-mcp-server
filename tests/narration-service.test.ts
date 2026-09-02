@@ -12,7 +12,7 @@ test("narration text removes pause-heavy formatting", () => {
   );
 });
 
-test("selected ElevenLabs voice is enforced with short-form pacing", async () => {
+test("selected ElevenLabs voice is enforced at natural delivery speed", async () => {
   const previousKey = process.env.ELEVENLABS_API_KEY;
   process.env.ELEVENLABS_API_KEY = "test-elevenlabs-key";
   let requestUrl = "";
@@ -69,7 +69,7 @@ test("selected ElevenLabs voice is enforced with short-form pacing", async () =>
       similarity_boost: 0.8,
       style: 0.2,
       use_speaker_boost: true,
-      speed: 1.08,
+      speed: 1,
     });
     assert.equal(result.provider, "elevenlabs");
     assert.equal(result.voice, "seductive-male");
