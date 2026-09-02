@@ -16,7 +16,7 @@ Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact curr
 - Migration job: `lesson-studio-staging-migrate`
 - Legacy service `lesson-studio`: do not modify
 
-The deployed image/template are currently `5f7c9d7` (deployed 2026-09-02; E2B smoke and the silent staging smoke passed). That release restores nine commits from 2026-08-30/31 (`bb9b604`..`2452405`, the showcase landing page and the 9:16 vertical format) that had been built and deployed from a local clone but never pushed; their trees were recovered from the Cloud Build source archives onto branch `recover/aug30-31-local-work` and merged.
+The deployed image/template are currently `81b9483` (deployed 2026-09-02; E2B smoke and the silent staging smoke passed). It rewrites the narration audio assembly — see "Narration audio" below. That release restores nine commits from 2026-08-30/31 (`bb9b604`..`2452405`, the showcase landing page and the 9:16 vertical format) that had been built and deployed from a local clone but never pushed; their trees were recovered from the Cloud Build source archives onto branch `recover/aug30-31-local-work` and merged.
 
 **Before any release, verify nothing is unpushed:** compare the `COMMIT_SHA` values in `gcloud builds list` and the live services' image tags against `git branch -r --contains <sha>`. A SHA git does not know means local work that must be recovered from `gs://educationalvideo-506219_cloudbuild/source/` before deploying over it.
 
@@ -24,7 +24,7 @@ One item is outstanding, and one caveat applies:
 
 1. **Narrated generation is not yet re-proven end to end.** ElevenLabs is enabled and verified at the provider (see below), but a full narrated job has not run since. `smoke:staging-payment` cannot cover it while `BILLING_MODE_REQUIRED=live`, because that script pays with Stripe's `4242…` test card. Prove narration with a staff-account generation instead, or temporarily use a sandbox Stripe key.
 
-2. **Terraform drift.** `E2B_TEMPLATE_VERSION=5f7c9d7` was set with `gcloud run services update` before Terraform ran. `staging.auto.tfvars` is now reconstructed on the release machine and the plan is clean; keep `image`/`e2b_template_version` in it current so future plans reconcile instead of reverting.
+2. **Terraform drift.** `E2B_TEMPLATE_VERSION=81b9483` was set with `gcloud run services update` before Terraform ran. `staging.auto.tfvars` is now reconstructed on the release machine and the plan is clean; keep `image`/`e2b_template_version` in it current so future plans reconcile instead of reverting.
 
 ### ElevenLabs narration (enabled 2026-09-02)
 
@@ -39,6 +39,20 @@ terraform -chdir=infra/terraform import \
   'google_secret_manager_secret_iam_member.api_existing["elevenlabs_api_key"]' \
   "projects/educationalvideo-506219/secrets/elevenlabs_api_key roles/secretmanager.secretAccessor serviceAccount:ls-staging-api@educationalvideo-506219.iam.gserviceaccount.com"
 ```
+
+### Narration audio
+
+`scripts/generate_narration.mjs` assembles the voice track. Three rules, each learned from a defect that shipped:
+
+1. **Never use `silenceremove` with `stop_periods=-1`.** It strips every silence in a passage rather than capping unusual ones. Measured on a clip whose pauses were 0.60s and 1.49s it returned 0.23s and 0.23s, so unrelated pauses collapsed to the same length and delivery alternately rushed and stalled. Raising `stop_duration` to 1.0 made it worse (0.60s → 0.05s). Trim the ends only; spoken pauses are prosody.
+2. **Never run `loudnorm` single-pass over the mixed track.** Single-pass loudnorm rides gain, so on a mostly-silent track it lifts the floor between passages and ducks each entry. Measure per passage (`print_format=json`), then apply with `measured_*` and `linear=true`, and do not normalise the mix again.
+3. **Keep intermediates PCM and pin `-ar 48000`.** MP3 intermediates stack a second lossy generation and prepend encoder delay, drifting each passage off its timeline slot. loudnorm resamples to 192kHz internally, so without an explicit rate the muxed track came out as 96kHz AAC.
+
+Do not ask a provider to speak off-tempo (`speed`, `<prosody rate>`): it warps synthesised prosody. `NARRATION_SPEED` is 1 deliberately. Pacing belongs in how much text a passage carries.
+
+Because spoken pauses are now preserved, passages are slightly longer than under the old filter, so a passage can overrun its visual slot. That failure is intentional and its message is actionable ("Shorten the passage or extend the scene"); do not fix it by compressing audio again.
+
+There is no ffmpeg on the WSL release machine. Verify audio changes in a throwaway Cloud Run job on the app image: A/B the filter chains with `silencedetect` and compare gap positions, then run the real script end to end against a stub provider via `NARRATION_PROXY_URL` (the stub must be its own process — `execFileSync` blocks the event loop).
 
 ## Release invariants
 
