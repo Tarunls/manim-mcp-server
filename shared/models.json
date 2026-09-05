@@ -1,9 +1,21 @@
 {
-  "script": { "model": "gpt-5.6-terra", "reasoning": "low" },
+  "script": {
+    "model": "gpt-5.4-mini",
+    "reasoning": "low"
+  },
   "code": {
-    "quick": { "model": "gpt-5.6-terra", "reasoning": "low" },
-    "balanced": { "model": "gpt-5.6-terra", "reasoning": "medium" },
-    "thorough": { "model": "gpt-5.6-sol", "reasoning": "high" }
+    "quick": {
+      "model": "gpt-5.6-terra",
+      "reasoning": "low"
+    },
+    "balanced": {
+      "model": "gpt-5.6-terra",
+      "reasoning": "medium"
+    },
+    "thorough": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high"
+    }
   },
   "env": {
     "scriptModel": "ORUNE_SCRIPT_MODEL",

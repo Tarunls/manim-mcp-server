@@ -157,3 +157,21 @@ variable "secret_ids" {
     staff_emails       = "staff_emails"
   }
 }
+
+variable "script_model" {
+  description = "OpenAI model that writes the storyboard. Small and fast is right here."
+  type        = string
+  default     = "gpt-5.4-mini"
+}
+
+variable "code_model" {
+  description = "OpenAI model that writes and repairs the Manim scene for Faster and Balanced work."
+  type        = string
+  default     = "gpt-5.6-terra"
+}
+
+variable "code_model_thorough" {
+  description = "OpenAI model that writes and repairs the Manim scene for Try harder work."
+  type        = string
+  default     = "gpt-5.6-sol"
+}
