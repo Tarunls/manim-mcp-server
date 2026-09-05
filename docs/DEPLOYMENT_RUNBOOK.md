@@ -16,14 +16,14 @@ Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact curr
 - Migration job: `lesson-studio-staging-migrate`
 - Legacy service `lesson-studio`: do not modify
 
-The deployed image/template are currently `3e443ec` (deployed 2026-09-05; E2B smoke passed, Terraform clean). This release replaces the Codex agent with the fixed pipeline in `scripts/lesson_pipeline.mjs` (script call, voice, scene call, one render) and removes every content gate from the renderer. `CODEX_MAX_OUTPUT_TOKENS_PER_CALL` is 32000 so a whole scene plus reasoning fits one response.
+The deployed image/template are currently `d002d82` (deployed 2026-09-05; E2B smoke passed, Terraform clean). This release replaces the Codex agent with the fixed pipeline in `scripts/lesson_pipeline.mjs` (script call, voice, scene call, one render, the model's own look at the frames on Balanced and Try harder) and removes every content gate from the renderer. Models: gpt-5.4-mini writes the script; gpt-5.6-terra (Faster, Balanced) and gpt-5.6-sol (Try harder) write the scene, set through the `script_model` / `code_model` / `code_model_thorough` Terraform variables.
 
-**Outstanding on 2026-09-05: the OpenAI organization behind `openai_api_key` has no credits** (`insufficient_quota`, "You have no credits remaining"). Every hosted generation fails at "Writing the script" until credits are added; the failure is clean and refunds the credit. Once credits exist, prove the release with:
+Proven on 2026-09-05 after OpenAI credits were added: the five-brief narrated eval (`lesson-studio-staging-eval-d002d82`, results under `gs://educationalvideo-506219-lesson-studio-staging-artifacts/eval/cloud2/`) completed every lesson in 2-3 minutes, and hosted free-plan generations through the public API completed in 58-95 seconds. Narration providers are called one at a time (Speechify's plan allows one request per second).
+
+To re-prove a release:
 
 ```sh
-# five real briefs through the pipeline inside GCP, results in gs://.../eval/<run>/
-gcloud run jobs execute lesson-studio-staging-eval-3e443ec --region us-central1 --wait
-# one hosted generation through the public API with a disposable free account
+gcloud run jobs execute lesson-studio-staging-eval-<sha> --region us-central1 --wait   # clone the job for the new image first
 APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 node --import tsx scripts/staging_generate.ts --brief "..." --format vertical
 ```
 
