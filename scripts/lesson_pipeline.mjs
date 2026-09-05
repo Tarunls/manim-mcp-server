@@ -96,8 +96,8 @@ const REVIEW_SCHEMA = {
 
 function frameFacts(format) {
   return format === "vertical"
-    ? { width: 1080, height: 1920, units: "4.5 units wide by 8 units tall (x from -2.25 to 2.25, y from -4 to 4)", label: "9:16 vertical, for phones" }
-    : { width: 1920, height: 1080, units: "14.22 units wide by 8 units tall (x from -7.11 to 7.11, y from -4 to 4)", label: "16:9 widescreen" };
+    ? { width: 1080, height: 1920, units: "8 units wide by 14.22 units tall (x from -4 to 4, y from -7.11 to 7.11); ORIGIN is the centre of the screen", label: "9:16 vertical, for phones" }
+    : { width: 1920, height: 1080, units: "14.22 units wide by 8 units tall (x from -7.11 to 7.11, y from -4 to 4); ORIGIN is the centre of the screen", label: "16:9 widescreen" };
 }
 
 function describeDesign(design) {
@@ -216,7 +216,7 @@ function scriptContent({ brief, format, narrationEnabled, previous, revisionRequ
     `Brief:\n${brief}`,
     "",
     `Frame: ${frame.label}.`,
-    format === "vertical" ? "On phones the social app's own captions and buttons cover roughly the bottom fifth of the frame." : "",
+    format === "vertical" ? "On phones the social app's own captions and buttons cover roughly the bottom fifth of the frame, so nothing important should sit there. Do not draw anything to mark that area." : "",
     narrationEnabled
       ? "The video is narrated. Each beat's narration is synthesised as one clip; the clips decide the timing."
       : "The video is silent: leave every narration field empty and put any words the viewer needs on screen into the visual description.",
@@ -245,11 +245,13 @@ function sceneInstructions({ format, design, assets }) {
 Facts about the render environment:
 - The file must define one class named GeneratedScene that subclasses Scene. That is the class the renderer runs.
 - There is no LaTeX installed, so Tex, MathTex and anything that shells out to LaTeX will fail. Use Text and MarkupText for everything, including formulas.
-- The frame is ${frame.width}x${frame.height} pixels (${frame.label}). Manim maps it to ${frame.units}.
+- The frame is ${frame.width}x${frame.height} pixels (${frame.label}). Manim maps it to ${frame.units}. One unit is 135 pixels. For scale: Text at font_size=48 is about 0.58 units tall and a 12-character line at that size is about 3.6 units wide; font_size=32 is about 0.39 units tall. Default constants like UP, DOWN, LEFT, RIGHT are one unit; to_edge and to_corner respect this frame.
 - Installed font families: "Orune Serif", "Orune Serif Text", "DejaVu Sans", "DejaVu Sans Mono".
 - ${describeDesign(design)}
 - The scene must not read files other than listed images, must not make network requests, and must not depend on any module beyond manim, numpy and the standard library.
 ${assetLines ? `- ${assetLines}` : ""}
+
+Rendering cost: the renderer takes roughly 0.1 seconds of CPU per frame in which anything changes, at 30 frames per second, and a still frame held with self.wait costs nothing. So ten seconds of continuous motion costs about thirty seconds to render, and a scene where several always_redraw objects change on every frame for a minute takes many minutes. Recreating Text inside always_redraw is especially slow. Spend motion where it carries the idea.
 
 Timing: each beat in the storyboard has a start and an end in seconds. The narration clips are laid onto the finished video at exactly those times and nothing else keeps voice and picture together, so the scene's elapsed time must track them: the run_time of the animations you play for a beat plus any self.wait() should add up to that beat's duration, and the total run time should equal the final end time. When a beat needs to hold on the finished picture, use self.wait for the remaining seconds.`;
 }
@@ -332,12 +334,24 @@ function pythonCommand() {
 /** Render the project. Returns the renderer's metadata on success; on failure
  * the error message carries the tail of the renderer output for the repair
  * step. */
-export async function renderProject({ root, projectDir, quality, signal, env = process.env, timeoutMs = 20 * 60_000 }) {
-  const result = await runCommand(
-    pythonCommand(),
-    [path.join(root, "scripts", "render_scene.py"), projectDir, quality],
-    { cwd: projectDir, env, signal, timeoutMs },
-  );
+export async function renderProject({ root, projectDir, quality, signal, env = process.env, timeoutMs = 12 * 60_000 }) {
+  let result;
+  try {
+    result = await runCommand(
+      pythonCommand(),
+      [path.join(root, "scripts", "render_scene.py"), projectDir, quality],
+      { cwd: projectDir, env, signal, timeoutMs },
+    );
+  } catch (error) {
+    if (signal?.aborted || !/exceeded \d+ seconds/.test(String(error?.message))) throw error;
+    const slow = new Error(
+      `The render did not finish within ${Math.round(timeoutMs / 60_000)} minutes and was stopped. `
+      + "Rendering costs roughly 0.1 seconds per frame in which something changes (30 frames per second), so long stretches of continuous per-frame animation are what make a scene this slow. "
+      + "Keep the same beats and timing, but make the scene cheaper to render: animate only what the viewer needs to see move, hold still frames with self.wait, and avoid always_redraw or updaters on objects that do not need to change every frame (especially Text).",
+    );
+    slow.renderFailure = true;
+    throw slow;
+  }
   if (result.code !== 0) {
     const detail = (result.stderr || result.stdout || "Manim render failed.").trim();
     const error = new Error(detail.slice(-6000));

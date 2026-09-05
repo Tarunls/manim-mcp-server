@@ -106,6 +106,37 @@ writer_module.SceneFileWriter.encode_and_write_frame = encode_and_write_frame
 writer_module.SceneFileWriter.close_partial_movie_stream = close_partial_movie_stream
 
 
+def _portrait_frame():
+    """Give a portrait render a portrait coordinate frame.
+
+    Manim keeps its 14.22 x 8 unit frame whatever the pixel size, so a
+    1080x1920 render maps a wide frame onto a tall canvas: everything is
+    squashed sideways and a full-size drawing fills a sixth of the screen.
+    For portrait output the frame becomes 8 units wide by 14.22 tall, which
+    keeps the same 135 pixels per unit as the landscape frame so text and
+    stroke widths read the same size in both formats.
+    """
+    from manim import config
+
+    if config.pixel_height > config.pixel_width:
+        config.frame_width = 8.0
+        config.frame_height = 8.0 * config.pixel_height / config.pixel_width
+
+
+from manim.scene import scene as scene_module
+
+_original_scene_init = scene_module.Scene.__init__
+
+
+def _scene_init_with_portrait_frame(self, *args, **kwargs):
+    # The CLI has applied -r by now and the camera has not been built yet.
+    _portrait_frame()
+    _original_scene_init(self, *args, **kwargs)
+
+
+scene_module.Scene.__init__ = _scene_init_with_portrait_frame
+
+
 if __name__ == "__main__":
     from manim.__main__ import main
 

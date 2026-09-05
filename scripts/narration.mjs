@@ -110,6 +110,28 @@ function escapeXml(value) {
     .replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
+function isRateLimited(error) {
+  const message = String(error?.message || error || "");
+  return /429|rate.?limit|concurrency|too many requests/i.test(message) || error?.statusCode === 429;
+}
+
+/** Providers meter narration tightly (Speechify's plan allows one request at
+ * a time and one per second), so a 429 is normal and just means wait. */
+async function requestAudioWithRetry(options) {
+  let lastError;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (options.signal?.aborted) throw new Error("Narration was cancelled.");
+    try {
+      return await requestAudio(options);
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimited(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1_200 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 async function requestAudio({ voice, text, index, provider, signal }) {
   const directKey = voice.provider === "elevenlabs" ? provider.elevenLabsKey : provider.speechifyKey;
   if (directKey) {
@@ -168,8 +190,11 @@ async function requestAudio({ voice, text, index, provider, signal }) {
  * Clips are cached by text and voice, so a revision that keeps a line's words
  * does not pay for it again.
  */
-export async function synthesizeSegments({ projectDir, texts, voiceKey, provider, concurrency = 4, signal }) {
+export async function synthesizeSegments({ projectDir, texts, voiceKey, provider, concurrency, signal }) {
   const voice = resolveVoice(voiceKey);
+  // ElevenLabs takes a few requests at once; Speechify's plan allows exactly
+  // one in flight, and the sandbox bridge inherits whichever it fronts.
+  concurrency ??= voice.provider === "elevenlabs" && provider?.elevenLabsKey ? 3 : 1;
   const audioDir = path.join(projectDir, ".narration");
   fs.mkdirSync(audioDir, { recursive: true });
   const results = new Array(texts.length);
@@ -193,7 +218,9 @@ export async function synthesizeSegments({ projectDir, texts, voiceKey, provider
       const trimmed = path.join(audioDir, `${voice.provider}-${cacheKey}-trim.wav`);
       const clean = path.join(audioDir, `${voice.provider}-${cacheKey}-clean.wav`);
       if (!fs.existsSync(raw)) {
-        const response = await requestAudio({ voice, text, index, provider, signal });
+        const response = await requestAudioWithRetry({ voice, text, index, provider, signal });
+        // One request per second is the tightest plan limit among the providers.
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
         fs.writeFileSync(raw, response.audio);
         providerInfo.provider = response.provider || providerInfo.provider;
         providerInfo.model = response.model || providerInfo.model;

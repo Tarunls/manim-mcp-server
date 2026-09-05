@@ -61,12 +61,14 @@ function probe(file, entries) {
   return execFileSync("ffprobe", ["-v", "error", "-show_entries", entries, "-of", "json", file], { encoding: "utf8" });
 }
 
-/** Share of quarter-second samples where the picture changed at all. */
+/** Share of quarter-second samples where the picture changed at all. A sample
+ * counts as moving when at least 0.15% of its pixels changed noticeably, so a
+ * small dot travelling across a big frame still registers. */
 function motionShare(video, workDir) {
   const frames = path.join(workDir, "motion");
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
-  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", "fps=4,scale=96:-2,format=gray", path.join(frames, "%05d.png")]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", "fps=4,scale=240:-2,format=gray", path.join(frames, "%05d.png")]);
   const script = `
 import glob, sys
 from PIL import Image
@@ -76,7 +78,7 @@ prev = None; moving = 0; total = 0; timeline = []
 for f in files:
     a = np.asarray(Image.open(f), dtype=np.float32)
     if prev is not None:
-        d = np.abs(a - prev).mean(); total += 1; m = d > 0.6; moving += m; timeline.append("#" if m else ".")
+        changed = (np.abs(a - prev) > 24).mean(); total += 1; m = changed > 0.0015; moving += m; timeline.append("#" if m else ".")
     prev = a
 print(round(100 * moving / max(total, 1)), "".join("#" if "#" in timeline[i:i+4] else "." for i in range(0, len(timeline), 4)))
 `;
