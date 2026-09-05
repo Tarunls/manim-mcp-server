@@ -398,7 +398,7 @@ export async function authorLesson(options) {
     signal,
     log = () => {},
     maxRepairs = 3,
-    review = effort === "thorough",
+    review = effort !== "quick",
     env = process.env,
   } = options;
   if (!brief?.trim()) throw new Error("A brief is required.");
@@ -539,6 +539,10 @@ export async function authorLesson(options) {
       checkCancelled();
       if (!error?.renderFailure || attempt >= maxRepairs) throw error;
       log(`render failed: ${String(error.message).slice(-800)}`);
+      // Keep the failed attempt and its error beside the project so a slow or
+      // broken scene can be studied afterwards; only scene.py is rendered.
+      fs.writeFileSync(path.join(projectDir, `scene.failed-${attempt + 1}.py`), scene);
+      fs.appendFileSync(path.join(projectDir, "render-errors.log"), `--- attempt ${attempt + 1}\n${error.message}\n\n`);
       await progress("authoring", `Fixing a render error (${attempt + 1} of ${maxRepairs})`);
       const repaired = await client.json({
         stage: "repair",
@@ -556,7 +560,9 @@ export async function authorLesson(options) {
     }
   }
 
-  // 5. Optional look at the result, only when the user asked for the most effort.
+  // 5. The model looks at its own render (Balanced and Try harder). This is
+  // not a rule: it is the same model deciding whether what it drew is what it
+  // meant, with the frames in front of it.
   const contactSheet = path.join(projectDir, "contact-sheet.png");
   if (review && fs.existsSync(contactSheet)) {
     await progress("inspecting", "Looking over the rendered frames");

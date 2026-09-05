@@ -146,7 +146,9 @@ async function evaluate(item, runDir) {
       narration: result.metadata.narration,
       storyboard: result.storyboard.beats.map((beat) => ({ id: beat.id, start: beat.start, end: beat.end, narration: beat.narration, visual: beat.visual })),
     });
-    for (const file of ["output.mp4", "storyboard.json", "scene.py", "contact-sheet.png", "poster.png", "metadata.json", "narration.json"]) {
+    const keep = ["output.mp4", "storyboard.json", "scene.py", "contact-sheet.png", "poster.png", "metadata.json", "narration.json", "render-errors.log",
+      ...fs.readdirSync(projectDir).filter((name) => /^scene\.failed-\d+\.py$/.test(name))];
+    for (const file of keep) {
       if (fs.existsSync(path.join(projectDir, file))) fs.copyFileSync(path.join(projectDir, file), path.join(outDir, file));
     }
     execFileSync("ffmpeg", ["-v", "error", "-y", "-i", video, "-vf", "fps=1/2.5,scale=270:-2,tile=6x4:padding=6:margin=6:color=white", "-frames:v", "1", path.join(outDir, "frames.png")]);

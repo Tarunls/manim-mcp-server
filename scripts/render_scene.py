@@ -125,6 +125,21 @@ def main() -> None:
     if not candidates:
         fail("Manim completed but no GeneratedScene.mp4 was found.")
     rendered = max(candidates, key=lambda item: item.stat().st_mtime)
+    # The scene's own clock decides the length. A runaway wait or run_time
+    # would otherwise cost a ten-minute encode before anyone noticed.
+    length_probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(rendered)],
+        text=True, capture_output=True, timeout=60,
+    )
+    try:
+        rendered_seconds = float(length_probe.stdout.strip())
+    except ValueError:
+        rendered_seconds = 0.0
+    if rendered_seconds > 15 * 60:
+        fail(
+            f"The scene runs for {rendered_seconds / 60:.1f} minutes. A wait or run_time in scene.py is far "
+            "longer than the storyboard's timeline; the scene's elapsed time must match the beat start and end times."
+        )
     expected = EXPECTED_FRAME.get(quality)
     if expected:
         probe = subprocess.run(
@@ -149,7 +164,7 @@ def main() -> None:
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
             "-an", "-movflags", "+faststart", str(optimized),
         ],
-        text=True, capture_output=True, timeout=600,
+        text=True, capture_output=True, timeout=900,
     )
     if encode.returncode != 0:
         fail(encode.stderr[-2000:] or "Could not encode the browser video.")
