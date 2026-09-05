@@ -69,7 +69,10 @@ def open_partial_movie_stream(self, file_path=None):
     self._orune_pts = 0
     self._orune_durations = collections.deque()
     self.queue = writer_module.Queue()
-    self.writer_thread = writer_module.Thread(target=self.listen_and_write, args=())
+    # A daemon thread: when the scene raises, Manim exits the main thread but
+    # a non-daemon writer blocked on queue.get() would keep the process alive
+    # forever. That turned a two-second Python error into a twelve-minute stall.
+    self.writer_thread = writer_module.Thread(target=self.listen_and_write, args=(), daemon=True)
     self.writer_thread.start()
 
 
