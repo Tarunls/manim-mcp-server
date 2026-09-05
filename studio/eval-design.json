@@ -1,0 +1,6 @@
+{
+  "fontCategory": "serif",
+  "font": { "manim": "Orune Serif", "css": "\"Orune Serif\", Georgia, serif", "character": "editorial book serif" },
+  "colorPalette": "paper",
+  "colors": { "background": "#FBFAF7", "surface": "#FFFFFF", "text": "#1A1917", "muted": "#8A857D", "rule": "#D9D4CA", "primary": "#2E5266", "accent": "#B07548" }
+}
