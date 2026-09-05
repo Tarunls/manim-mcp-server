@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-const maximumRequestBytes = 16 * 1024;
+const maximumRequestBytes = 64 * 1024;
 const maximumResponseBytes = 24 * 1024 * 1024;
 
 function readBody(request) {
@@ -33,7 +33,7 @@ export async function startNarrationProxy({ callbackUrl, callbackToken, fetchImp
       const input = JSON.parse((await readBody(request)).toString("utf8"));
       const index = Number(input?.index);
       const text = typeof input?.text === "string" ? input.text.trim() : "";
-      if (!Number.isInteger(index) || index < 0 || index >= 40 || !text || text.length > 1800) {
+      if (!Number.isInteger(index) || index < 0 || index >= 40 || !text || text.length > 6000) {
         response.writeHead(400, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: "Narration segment is invalid." }));
         return;

@@ -22,10 +22,15 @@ test("selected ElevenLabs voice is enforced at natural delivery speed", async ()
     requestUrl = String(input);
     requestHeaders = init?.headers;
     requestBody = JSON.parse(String(init?.body));
-    return new Response(Buffer.from("test-mp3"), {
-      status: 200,
-      headers: { "content-type": "audio/mpeg" },
-    });
+    // The with-timestamps endpoint answers JSON: audio plus per-character times.
+    return new Response(JSON.stringify({
+      audio_base64: Buffer.from("test-mp3").toString("base64"),
+      alignment: {
+        characters: ["F", "i", "r", "s", "t", " ", "i", "d", "e", "a", "."],
+        character_start_times_seconds: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        character_end_times_seconds: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1],
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
   };
   const client = {
     query: async (text: string) => {
@@ -61,7 +66,7 @@ test("selected ElevenLabs voice is enforced at natural delivery speed", async ()
       index: 0,
       text: "First idea...\nThen the payoff!!!",
     });
-    assert.match(requestUrl, /KH1SQLVulwP6uG4O3nmT/);
+    assert.match(requestUrl, /KH1SQLVulwP6uG4O3nmT\/with-timestamps/);
     assert.equal(new Headers(requestHeaders).get("xi-api-key"), "test-elevenlabs-key");
     assert.equal(requestBody.text, "First idea. Then the payoff!");
     assert.deepEqual(requestBody.voice_settings, {
@@ -74,6 +79,12 @@ test("selected ElevenLabs voice is enforced at natural delivery speed", async ()
     assert.equal(result.provider, "elevenlabs");
     assert.equal(result.voice, "seductive-male");
     assert.equal(result.audioData, Buffer.from("test-mp3").toString("base64"));
+    // Word marks are derived from the character alignment so the sandbox can
+    // place each beat at the moment its words are spoken.
+    assert.deepEqual(result.marks, [
+      { start: 0, end: 5, startTime: 0, endTime: 0.5 },
+      { start: 6, end: 11, startTime: 0.6, endTime: 1.1 },
+    ]);
   } finally {
     if (previousKey === undefined) delete process.env.ELEVENLABS_API_KEY;
     else process.env.ELEVENLABS_API_KEY = previousKey;

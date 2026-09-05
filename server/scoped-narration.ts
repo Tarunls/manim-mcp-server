@@ -6,6 +6,8 @@ import type { HostedJob } from "./hosted-generation-service.js";
 import {
   compactNarrationText,
   ELEVENLABS_MODEL,
+  marksFromElevenLabs,
+  marksFromSpeechify,
   ELEVENLABS_OUTPUT_FORMAT,
   NARRATION_SPEED,
   narrationVoiceDefinition,
@@ -54,7 +56,7 @@ export class ScopedNarrationService {
     await this.assertNarrationEntitlement(job.ownerId);
     const index = Number(input.index);
     const text = typeof input.text === "string" ? compactNarrationText(input.text) : "";
-    if (!Number.isInteger(index) || index < 0 || index >= 40 || !text || text.length > 1800) {
+    if (!Number.isInteger(index) || index < 0 || index >= 40 || !text || text.length > 6000) {
       throw new Error("Narration segment is invalid.");
     }
     const requestHash = createHash("sha256").update(`${voice.key}:${text}`).digest("hex");
@@ -89,6 +91,7 @@ export class ScopedNarrationService {
         if (!response.audio_data) throw new Error("Speechify returned no audio data.");
         return {
           audioData: response.audio_data,
+          marks: marksFromSpeechify((response as { speech_marks?: unknown }).speech_marks),
           provider: voice.provider,
           model: "simba-3.2",
           voice: voice.key,
@@ -98,7 +101,7 @@ export class ScopedNarrationService {
       }
 
       const response = await this.fetchImpl(
-        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.voiceId)}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.voiceId)}/with-timestamps?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
         {
           method: "POST",
           headers: {
@@ -120,11 +123,13 @@ export class ScopedNarrationService {
         },
       );
       if (!response.ok) throw new Error(`ElevenLabs returned HTTP ${response.status}.`);
-      const audio = Buffer.from(await response.arrayBuffer());
+      const payload = (await response.json()) as { audio_base64?: string; alignment?: unknown };
+      const audio = Buffer.from(String(payload.audio_base64 || ""), "base64");
       if (!audio.length || audio.length > 24 * 1024 * 1024)
         throw new Error("ElevenLabs returned invalid audio data.");
       return {
         audioData: audio.toString("base64"),
+        marks: marksFromElevenLabs(payload.alignment),
         provider: voice.provider,
         model: ELEVENLABS_MODEL,
         voice: voice.key,

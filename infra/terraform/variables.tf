@@ -159,9 +159,9 @@ variable "secret_ids" {
 }
 
 variable "script_model" {
-  description = "OpenAI model that writes the storyboard. Small and fast is right here."
+  description = "OpenAI model that writes the storyboard. The narration's flow comes from here, so it is worth the few extra seconds over the mini model."
   type        = string
-  default     = "gpt-5.4-mini"
+  default     = "gpt-5.4"
 }
 
 variable "code_model" {

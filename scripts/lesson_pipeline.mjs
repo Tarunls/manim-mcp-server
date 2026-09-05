@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import modelCatalog from "../shared/models.json" with { type: "json" };
-import { buildTimeline, narrationProviderFromEnv, synthesizeSegments } from "./narration.mjs";
+import { buildTimeline, narrationProviderFromEnv, synthesizeScript } from "./narration.mjs";
 
 export const STORYBOARD_FILE = "storyboard.json";
 export const SCENE_FILE = "scene.py";
@@ -208,7 +208,8 @@ const SCRIPT_INSTRUCTIONS = `You write short educational videos that are rendere
 You are given a brief. Decide everything yourself: the angle, the opening, the length, the tone, the number of beats, what gets shown and in what order.
 The rest of the pipeline needs only a list of beats. For each beat give the narration exactly as it will be spoken, and a concrete description of what is on screen and how it moves.
 Assume the viewer just arrived with no context and has never seen the topic. Make sure they know what they are looking at before anything is done with it, and that whatever the narration mentions is visible when it is mentioned.
-The narration is read aloud by a text-to-speech voice, so write it as spoken words: say symbols and formulas the way a person would say them out loud, and keep the written characters for the screen.`;
+The narration is read aloud by a text-to-speech voice as ONE continuous take, in beat order, and the beats are only where the picture changes. So write the narration as a single flowing piece of speech that happens to be split across beats: every line continues the thought of the line before it, names things before pronouns stand in for them, and sounds like one person talking, not a list of captions.
+The speech engine reads exactly what is written. It says single letters as letter names, and it reads "pi r" as the letters P R, so write symbols and formulas the way they should be spoken, for example "pi times r squared". Keep the written characters for the screen.`;
 
 function scriptContent({ brief, format, narrationEnabled, previous, revisionRequest }) {
   const frame = frameFacts(format);
@@ -460,41 +461,62 @@ export async function authorLesson(options) {
     seconds: Math.max(1, Number(beat.seconds) || 4),
   }));
   if (!beats.length) throw new Error("The script came back with no beats.");
+  if (env.ORUNE_STORYBOARD_ONLY) {
+    fs.writeFileSync(path.join(projectDir, STORYBOARD_FILE), JSON.stringify({ version: 2, title: storyboardResult.title, brief, format, beats }, null, 2));
+    return { storyboard: { title: storyboardResult.title, beats }, scene: "", metadata: {} };
+  }
 
-  // 2. Voice, then the timeline. Real durations, not estimates.
+  // 2. Voice, then the timeline. The script is read continuously and each
+  // beat's start and end come from the provider's word timestamps.
   let narrationMeta = { enabled: false };
   const spokenIndexes = beats.map((beat, index) => (beat.narration ? index : -1)).filter((index) => index >= 0);
   if (narration.enabled !== false && spokenIndexes.length) {
-    await progress("authoring", `Recording ${spokenIndexes.length} narration lines`);
-    const synthesized = await synthesizeSegments({
+    await progress("authoring", `Recording the narration (${spokenIndexes.length} lines)`);
+    const synthesized = await synthesizeScript({
       projectDir,
-      texts: beats.map((beat) => beat.narration),
+      beats: beats.map((beat) => ({ id: beat.id, narration: beat.narration })),
       voiceKey: narration.voice,
       provider: tts,
       signal,
     });
     checkCancelled();
-    let clock = 0.4;
+    const chunkByFirstBeat = new Map(synthesized.chunks.map((chunk) => [chunk.beats[0].id, chunk]));
+    const beatOffsets = new Map(synthesized.chunks.flatMap((chunk) => chunk.beats.map((beat) => [beat.id, beat])));
     const gap = 0.45;
+    let clock = 0.4;
+    let chunkStart = 0;
+    let activeChunk = null;
     const segments = [];
-    beats.forEach((beat, index) => {
-      const clip = synthesized.segments[index];
-      const duration = clip ? clip.duration : beat.seconds;
-      beat.start = Number(clock.toFixed(3));
-      beat.end = Number((clock + duration).toFixed(3));
-      beat.duration = Number((beat.end - beat.start).toFixed(3));
-      if (clip) {
-        beat.narration = clip.text;
-        segments.push({ beat: beat.id, start: beat.start, end: beat.end, text: clip.text, audio: clip.audio, duration: clip.duration });
+    for (const beat of beats) {
+      const chunk = chunkByFirstBeat.get(beat.id);
+      if (chunk) {
+        activeChunk = chunk;
+        chunkStart = clock;
+        segments.push({ start: Number(chunkStart.toFixed(3)), end: Number((chunkStart + chunk.duration).toFixed(3)), text: chunk.text, audio: chunk.audio, duration: chunk.duration, beats: chunk.beats.map((entry) => entry.id) });
       }
-      clock = beat.end + gap;
-    });
+      const offsets = beatOffsets.get(beat.id);
+      if (offsets && activeChunk) {
+        beat.start = Number((chunkStart + offsets.startOffset).toFixed(3));
+        beat.end = Number((chunkStart + offsets.endOffset).toFixed(3));
+        if (activeChunk.beats.at(-1).id === beat.id) {
+          clock = chunkStart + activeChunk.duration + gap;
+          activeChunk = null;
+        }
+      } else {
+        beat.start = Number(clock.toFixed(3));
+        beat.end = Number((clock + beat.seconds).toFixed(3));
+        clock = beat.end;
+      }
+      beat.duration = Number((beat.end - beat.start).toFixed(3));
+    }
     narrationMeta = {
       enabled: true,
       provider: synthesized.provider,
       model: synthesized.model,
       voice: synthesized.voice,
       voiceId: synthesized.voiceId,
+      continuousReads: synthesized.chunks.length,
+      wordTimestamps: synthesized.chunks.every((chunk) => chunk.hasMarks),
     };
     fs.writeFileSync(path.join(projectDir, NARRATION_FILE), JSON.stringify({ ...narrationMeta, segments }, null, 2));
   } else {
