@@ -14,9 +14,7 @@ This repository includes a local prompt-to-video studio. Every lesson is rendere
 
 Rendered revisions include a seven-frame filmstrip. Pause anywhere, select **Review frame**, draw with the default pen or choose a circle, arrow, or rectangle, add a note, and send the clean plus annotated frame to the model as direct high-detail image inputs. The reviewer isolates the smallest marked target and records nearby objects that must remain unchanged.
 
-The agent automatically decides whether authentic imagery would help. When it would, it searches Wikimedia Commons with a context-rich query, downloads local candidate previews, visually checks at least three, and imports only a semantic match with creator, description, license, source URL, and SHA-256 digest. The manual asset picker remains available. Project settings expose a plain-language Thinking control, font categories, color palettes, voice control, review focus, and review depth; generation reads those settings from versioned JSON files.
-
-New projects default to Balanced thinking, the Orune Serif type preset, and the studio's paper visual language: a warm paper ground, an editorial left margin, one working colour, and one payoff colour used once per lesson. There are no cards, eyebrow labels, or dark cinematic backgrounds. The rules live in [studio/references/DEFAULT_VISUAL_LANGUAGE.md](studio/references/DEFAULT_VISUAL_LANGUAGE.md) and are restated in the agent instructions and in each project's `design-config.json`. Rendering is blocked until the current request has a fresh topic-specific beat plan and fresh `scene.py`. The request selector can force a new video or a revision; Auto starts standalone video prompts and failed first attempts in a fresh project instead of quietly reusing an old plan.
+Images imported through the asset picker (Wikimedia Commons, with creator, license, source URL, and SHA-256 digest recorded) are listed to the scene model with their paths so it can use them. Project settings expose a plain-language Thinking control, font categories, colour palettes, and voice control; the font and palette are offered to the model as defaults, not enforced. The request selector can force a new video or a revision; Auto starts standalone video prompts in a fresh project.
 
 ### Run it
 
@@ -61,9 +59,9 @@ npm run dev
 
 Never put the key in a `VITE_*` variable. Vite exposes those values to browser code. Narration is generated server-side through `https://api.speechify.ai` with Speechify `simba-3.2`; the UI labels the result as an AI voice. The default voice is `geffen_32`, configurable through `SPEECHIFY_VOICE_ID`.
 
-Narration uses 3-5 chapter-length passages instead of isolated sentence clips. The server adds warm SSML delivery, a slightly slower speaking rate, 160 kbps source audio, short fades, and loudness normalization. Timing is validated against the scene: a render fails if a passage overlaps the next visual chapter. Fallback TTS providers are forbidden, and completed videos are accepted only when metadata confirms Speechify `simba-3.2` and FFprobe finds a real audio track.
+Narration is one clip per storyboard beat, synthesised before the scene is written so the real clip lengths set the timeline. Each clip is trimmed of provider padding and loudness-corrected with one static gain, then mixed in at its start time; if the picture ends before the voice, the last frame is held. Fallback TTS providers are not used.
 
-Local mode starts an isolated Codex App Server authenticated with `OPENAI_API_KEY`, so generation is usage-billed through the OpenAI API and never reuses a developer's ChatGPT/Codex OAuth session. Hosted E2B workers instead receive an active-job-scoped proxy token in `.env`; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. Codex uses the current Responses WebSocket transport through the same authenticated relay. The compatible Codex CLI is installed as a project dependency by `npm install`; the server places its temporary API credential cache outside the developer's normal Codex profile. Orune presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon. Jobs may make up to 64 provider calls, but independent estimated-cost limits stop normal work at $2 and Try harder work at $4.
+Local mode calls the OpenAI Responses API directly with `OPENAI_API_KEY`. Hosted E2B workers instead receive an active-job-scoped proxy token; the upstream OpenAI key remains in the API service and direct E2B access to `api.openai.com` is blocked. Orune presents Faster, Balanced, and Try harder choices instead of model or reasoning jargon; the choice picks the code model and its reasoning effort. A normal job makes three to six model calls, and independent estimated-cost limits stop normal work at $2 and Try harder work at $4.
 
 ### Billing
 
@@ -136,13 +134,18 @@ If the app reports that Manim or FFmpeg is unavailable, confirm `.venv/bin/pytho
 
 ### How generation works
 
-1. The Node backend signs an isolated Codex worker into API-key mode, then starts one long-lived `codex app-server` process over stdio.
-2. Each video gets its own folder under `studio/projects/` and its own Codex thread.
-3. Codex writes `scene.py`, a single Manim `GeneratedScene`, in the studio's paper visual style.
-4. `scripts/render_scene.py` produces 1920×1080 video at 30 fps, validates layout, optimizes MP4 seeking, extracts a poster and twelve-frame contact sheet, and records the renderer in metadata.
-5. If `narration.json` and a server API key are present, timed speech segments are generated and muxed into the MP4.
-6. Every successful result is copied to an immutable `versions/vNNN/` folder, so older revisions remain playable in the same conversation.
-7. Server-sent events stream normalized agent and render state to the browser. Raw reasoning and command output stay on the backend.
+There is no agent. A lesson is a fixed sequence of plain model calls and one render, and every creative choice in it belongs to the model:
+
+1. **Script.** One call to the fast model turns the brief into a storyboard: a title and a list of beats, each with the narration as it will be spoken and a concrete description of what is on screen. No hook is imposed, no length, no word counts, no house style.
+2. **Voice.** Every narration line is synthesised immediately (ElevenLabs or Speechify, chosen by the project's voice) and measured. The real clip lengths become the timeline: each beat starts when its line starts. Nothing about timing is guessed.
+3. **Scene.** One call to the code model writes `scene.py` from the storyboard and that timeline. It is told the frame size, the installed fonts, that LaTeX is unavailable, and the exact seconds each beat occupies. It writes whatever Manim it wants.
+4. **Render.** `scripts/render_scene.py` renders once at final quality, mixes the clips in at their start times, and extracts a poster and contact sheet. If Manim fails, the error and the scene go back to the model for a fix, up to three times. "Try harder" adds one look at the rendered frames.
+
+Models are named in `shared/models.json` and can be overridden with `ORUNE_SCRIPT_MODEL`, `ORUNE_CODE_MODEL`, and `ORUNE_CODE_MODEL_THOROUGH` (plus matching `*_REASONING` variables). Hosted jobs make these calls from inside the E2B sandbox through the job-scoped proxy, which picks the model per stage; local mode calls OpenAI directly with the server key.
+
+The renderer checks only what makes a video unplayable: the scene defines `GeneratedScene`, Manim succeeds, the frame matches the chosen format, and a narrated lesson carries its audio track. Held frames are written once with their duration and turned into a constant 30 fps file in a single FFmpeg pass, which is most of why a render now takes tens of seconds rather than minutes.
+
+Every successful result is copied to an immutable `versions/vNNN/` folder alongside its `storyboard.json`, so a revision can hand the previous storyboard and scene back to the model, and older revisions remain playable in the same conversation.
 
 Local mode binds to `127.0.0.1` and should not be exposed directly. Hosted mode already places rendering in isolated E2B workers and uses Identity Platform, rate limits, PostgreSQL ownership checks, Cloud Tasks, and private object storage. Follow the production architecture and checklist rather than exposing the local mode.
 

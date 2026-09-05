@@ -32,8 +32,6 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@google-cloud/storage": "^8.0.1",
     "@google-cloud/tasks": "^7.0.0",
-    "@openai/codex": "^0.147.0",
-    "@openai/codex-sdk": "^0.149.1",
     "@phosphor-icons/react": "^2.1.10",
     "@speechify/api": "^4.0.1",
     "e2b": "^2.45.0",

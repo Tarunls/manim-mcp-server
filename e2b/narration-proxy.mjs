@@ -33,7 +33,7 @@ export async function startNarrationProxy({ callbackUrl, callbackToken, fetchImp
       const input = JSON.parse((await readBody(request)).toString("utf8"));
       const index = Number(input?.index);
       const text = typeof input?.text === "string" ? input.text.trim() : "";
-      if (!Number.isInteger(index) || index < 0 || index >= 12 || !text || text.length > 1800) {
+      if (!Number.isInteger(index) || index < 0 || index >= 40 || !text || text.length > 1800) {
         response.writeHead(400, { "Content-Type": "application/json" });
         response.end(JSON.stringify({ error: "Narration segment is invalid." }));
         return;

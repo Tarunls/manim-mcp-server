@@ -23,7 +23,7 @@ locals {
     # repair, so keep the ceiling finite without cutting normal work short.
     CODEX_MAX_API_CALLS_PER_JOB               = tostring(var.codex_max_api_calls_per_job)
     CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB = tostring(var.codex_max_estimated_cost_microusd_per_job)
-    CODEX_MAX_OUTPUT_TOKENS_PER_CALL          = "12000"
+    CODEX_MAX_OUTPUT_TOKENS_PER_CALL          = "32000"
     CODEX_UPSTREAM_TIMEOUT_MS                 = "2700000"
     E2B_SANDBOX_TIMEOUT_MS                    = "1800000"
     E2B_DISPATCH_LEASE_MS                     = "300000"

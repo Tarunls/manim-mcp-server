@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "./database.js";
 import type { HostedJob } from "./hosted-generation-service.js";
+import { resolveModels } from "../scripts/lesson_pipeline.mjs";
 
 function boundedInteger(
   value: string | undefined,
@@ -34,14 +35,25 @@ type ReservedCall = {
   model: string;
 };
 
-export function codexPolicy(effort: HostedJob["effort"]) {
+export type PipelineStage = "script" | "code" | "repair" | "review";
+
+/** Which upstream model a sandbox request may use. The stage comes from the
+ * pipeline's x-orune-stage header: the script is written by the fast model,
+ * everything that produces or fixes code by the tier the user paid for. The
+ * sandbox's own model field is always overwritten. */
+export function stageFromHeader(value: unknown): PipelineStage {
+  return value === "script" || value === "repair" || value === "review" ? value : "code";
+}
+
+export function codexPolicy(effort: HostedJob["effort"], stage: PipelineStage = "code") {
+  const models = resolveModels(effort, process.env);
   return {
-    model: effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
+    model: stage === "script" ? models.script.model : models.code.model,
     maxOutputTokens: boundedInteger(
       process.env.CODEX_MAX_OUTPUT_TOKENS_PER_CALL,
-      12_000,
-      1_000,
       32_000,
+      1_000,
+      128_000,
     ),
   } as const;
 }
@@ -60,10 +72,11 @@ export function constrainCodexRequest(
   job: HostedJob,
   body: unknown,
   compact = false,
+  stage: PipelineStage = "code",
 ) {
   if (!body || typeof body !== "object" || Array.isArray(body))
     throw new Error("OpenAI request is invalid.");
-  const policy = codexPolicy(job.effort);
+  const policy = codexPolicy(job.effort, stage);
   const request: Record<string, unknown> = {
     ...(body as Record<string, unknown>),
     model: policy.model,
@@ -274,11 +287,12 @@ export class ScopedCodexProxy {
     options: {
       headers?: Record<string, string | undefined>;
       compact?: boolean;
+      stage?: PipelineStage;
     } = {},
   ) {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error("OpenAI is not configured.");
-    const constrained = constrainCodexRequest(job, body, options.compact);
+    const constrained = constrainCodexRequest(job, body, options.compact, options.stage);
     const serialized = JSON.stringify(constrained);
     if (!serialized || serialized.length > 16 * 1024 * 1024)
       throw new Error("OpenAI request is invalid.");

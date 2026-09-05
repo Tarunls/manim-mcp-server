@@ -57,7 +57,7 @@ There is no ffmpeg on the WSL release machine. Verify audio changes in a throwaw
 ## Release invariants
 
 1. Application and E2B releases use immutable commit tags, never only `latest`.
-2. If `e2b/`, renderer code, renderer dependencies, or the Codex bootstrap changes, build and smoke the matching E2B template before deploying the application.
+2. If `e2b/`, renderer code, renderer dependencies, or the pipeline bootstrap changes, build and smoke the matching E2B template before deploying the application.
 3. Run migrations before dispatcher and API.
 4. API and dispatcher must receive the same `E2B_TEMPLATE_VERSION`; the API persists it on job submission and the dispatcher starts that exact version.
 5. Review every Terraform plan. Do not accept unexpected replacement/destruction of Cloud SQL, GCS, networking, edge, IAM, secrets, or state.
@@ -97,7 +97,7 @@ E2B_TEMPLATE_VERSION=<commit> \
 npm run smoke:e2b
 ```
 
-The smoke must use the exact immutable tag, disable arbitrary internet access, execute `/opt/lesson-studio/app/.venv/bin/python -m manim --version`, import the Codex SDK, find FFmpeg, write/read the workspace, and terminate the sandbox in all outcomes.
+The smoke must use the exact immutable tag, disable arbitrary internet access, execute `/opt/lesson-studio/app/.venv/bin/python -m manim --version`, import the lesson pipeline module, find FFmpeg, write/read the workspace, and terminate the sandbox in all outcomes.
 
 Do not treat an existence check of `.venv/bin/manim` as sufficient. E2B image mounting can invalidate console-script shebangs; production renderers intentionally use `python -m manim`.
 

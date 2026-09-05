@@ -13,7 +13,7 @@ const checks = [
   ],
   [
     "renderer dependencies",
-    "cd /opt/lesson-studio/app && node -e \"import('@openai/codex-sdk')\" && ffmpeg -version >/dev/null && test -x e2b/bootstrap.mjs && test -f studio/AGENTS.md && test -f studio/references/DEFAULT_VISUAL_LANGUAGE.md",
+    "cd /opt/lesson-studio/app && node -e \"import('./scripts/lesson_pipeline.mjs')\" && ffmpeg -version >/dev/null && test -x e2b/bootstrap.mjs && test -f scripts/manim_runner.py && test -f scripts/render_scene.py",
   ],
   [
     "blocked internet egress",

@@ -3,10 +3,10 @@ import type { AgentAction, StudioProject } from "../types";
 import { generationLabel, stageLabel } from "../lib/studio";
 
 const STAGES = [
-  { key: "brief", label: "Plan" },
-  { key: "authoring", label: "Draw" },
+  { key: "brief", label: "Script" },
+  { key: "authoring", label: "Voice & scene" },
   { key: "rendering", label: "Render" },
-  { key: "inspecting", label: "Review" },
+  { key: "inspecting", label: "Check" },
 ] as const;
 
 /* The feed stays readable on long runs: the last few steps in full, with a

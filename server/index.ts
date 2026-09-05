@@ -38,8 +38,8 @@ import { HostedMediaService } from "./hosted-media-service.js";
 import {
   CodexBudgetExceededError,
   ScopedCodexProxy,
+  stageFromHeader,
 } from "./scoped-codex-proxy.js";
-import { attachScopedCodexWebSocketProxy } from "./scoped-codex-websocket.js";
 import { routeAllowedForService, type ServiceRole } from "./service-role.js";
 import type {
   BillingPlanId,
@@ -232,7 +232,7 @@ function hostedRuntime() {
     generations.configured &&
     generationQueue.configured &&
     artifacts.configured;
-  return { codex: ready, manim: ready, ffmpeg: ready };
+  return { model: ready, manim: ready, ffmpeg: ready };
 }
 
 // What the browser needs to know is whether this service can ACCEPT a
@@ -553,6 +553,7 @@ app.post(
           ].map((name) => [name, request.header(name)]),
         ),
         compact: request.path.endsWith("/compact"),
+        stage: stageFromHeader(request.header("x-orune-stage")),
       });
       response.status(upstream.status);
       for (const header of [
@@ -1451,11 +1452,7 @@ app.post("/api/projects/:id/reviews", async (request, response) => {
           result = await generations.submit({
             ownerId: userId(request),
             project,
-            prompt: `Frame-specific review for ${versionId}, frame ${review.frame} at ${review.time.toFixed(3)} seconds.
-
-The first attachment is the clean rendered frame. The second is the same frame with reviewer markup. Compare them visually before opening source. Read scene-plan.json and map the smallest enclosed or touched visual to its exact stable object id.
-
-Before editing, write review-interpretation.json with targetObjectId, visualEvidence, requestedPropertyChange, and preserveObjectIds. Treat the markup as a spatial pointer only. Change only targetObjectId, preserve every listed object and unrelated beat, rerender, then inspect the same timestamp again.
+            prompt: `Frame review of ${versionId} at ${review.time.toFixed(2)} seconds (frame ${review.frame}). The first attached image is the clean rendered frame; the second is the same frame with the reviewer's red markup showing what to change. Change only what the markup and note ask for and keep the rest of the video as it is.
 
 Requested change: ${note}`,
             effort: project.generationPreferences.effort,
@@ -1677,7 +1674,6 @@ if (process.env.NODE_ENV === "production") {
 const server = app.listen(port, host, () => {
   console.log(`Orune is running at http://${host}:${port}`);
 });
-attachScopedCodexWebSocketProxy(server, { generations, proxy: scopedCodex });
 
 if (!generations.configured) void studio.initialize();
 
@@ -1719,7 +1715,7 @@ function shutdown() {
   shuttingDown = true;
   if (outboxTimer) clearInterval(outboxTimer);
   if (reconciliationTimer) clearInterval(reconciliationTimer);
-  studio.bridge.stop();
+  studio.stop();
   // Open SSE streams would keep server.close() waiting forever.
   for (const response of sseResponses) response.end();
   sseResponses.clear();

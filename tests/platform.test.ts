@@ -20,6 +20,8 @@ test("runtime prefers the local hidden virtualenv and supports the visible E2B e
 test("the sandbox renderer invokes Manim through the virtualenv interpreter", () => {
   const root = path.resolve(import.meta.dirname, "..");
   const source = fs.readFileSync(path.join(root, "scripts", "render_scene.py"), "utf8");
-  assert.match(source, /str\(python\)[\s\S]{0,100}"-m",[\s\S]{0,40}"manim"/);
+  // Manim runs as a script under the virtualenv interpreter, never through a
+  // console-script launcher whose shebang can go stale inside a snapshot.
+  assert.match(source, /str\(python\),[\s\S]{0,120}manim_runner\.py/);
   assert.doesNotMatch(source, /str\(manim\)/);
 });

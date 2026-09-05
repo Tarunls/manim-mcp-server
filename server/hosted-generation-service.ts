@@ -1,24 +1,14 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import { PRICING_PLANS } from "./billing-service.js";
-import { effortRank, generationCost, titleFromPrompt } from "./plan.js";
+import { completionMessage, effortRank, generationCost, titleFromPrompt } from "./plan.js";
+
+export { completionMessage };
 import type { Database } from "./database.js";
 import type { GenerationEffort, StudioProject } from "./types.js";
 import type { VerifiedArtifact } from "./artifact-service.js";
 
 type JobStatus = "queued" | "dispatching" | "running" | "uploading" | "complete" | "failed" | "cancelled";
-
-/** What the owner reads when a draft lands. Written from the probed file
- * rather than from the agent's own sign-off, which is a build report meant
- * for whoever ran the tool - sandbox paths, source filenames, vendor model
- * names - and reads like a stack trace to the person who asked for a lesson. */
-export function completionMessage(number: number, render: StudioProject["versions"][number]["render"]) {
-  const opening = number === 1 ? "First draft ready" : `Revision ${number} ready`;
-  const seconds = Math.round(Number(render?.duration) || 0);
-  if (!seconds) return `${opening}.`;
-  const narrated = render?.narration?.hasAudio ? ", with narration" : "";
-  return `${opening} - ${seconds} seconds${narrated}.`;
-}
 
 export type HostedJob = {
   id: string;
@@ -465,7 +455,7 @@ export class HostedGenerationService {
       typeof input.label === "string" ? input.label.replace(/\s+/g, " ").trim() : "",
       90,
     );
-    const allowedStages = new Set(["authoring", "rendering", "inspecting"]);
+    const allowedStages = new Set(["brief", "authoring", "rendering", "inspecting"]);
     const stage =
       typeof input.stage === "string" && allowedStages.has(input.stage)
         ? (input.stage as StudioProject["stage"])

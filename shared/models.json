@@ -1,0 +1,16 @@
+{
+  "script": { "model": "gpt-5.6-terra", "reasoning": "low" },
+  "code": {
+    "quick": { "model": "gpt-5.6-terra", "reasoning": "low" },
+    "balanced": { "model": "gpt-5.6-terra", "reasoning": "medium" },
+    "thorough": { "model": "gpt-5.6-sol", "reasoning": "high" }
+  },
+  "env": {
+    "scriptModel": "ORUNE_SCRIPT_MODEL",
+    "scriptReasoning": "ORUNE_SCRIPT_REASONING",
+    "codeModel": "ORUNE_CODE_MODEL",
+    "codeReasoning": "ORUNE_CODE_REASONING",
+    "thoroughModel": "ORUNE_CODE_MODEL_THOROUGH",
+    "thoroughReasoning": "ORUNE_CODE_REASONING_THOROUGH"
+  }
+}

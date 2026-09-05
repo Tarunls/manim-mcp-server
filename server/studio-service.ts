@@ -4,34 +4,30 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { CodexBridge } from "./codex-bridge.js";
 import { fetchVerifiedCommonsImage } from "./hosted-media-service.js";
-import { manimPath } from "./platform.js";
-import { titleFromPrompt } from "./plan.js";
 import { narrationVoiceOrDefault } from "./narration.js";
-import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, NarrationVoice, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject, VideoFormat } from "./types.js";
+import { manimPath } from "./platform.js";
+import { completionMessage, titleFromPrompt } from "./plan.js";
+import { authorLesson, resolveModels } from "../scripts/lesson_pipeline.mjs";
+import type { Storyboard } from "../scripts/lesson_pipeline.mjs";
+import type { AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, NarrationVoice, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject, VideoFormat } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const RENDERER: RendererKind = "manim";
-const DEFAULT_MODEL: AgentModel = "gpt-5.6-sol";
 const DEFAULT_GENERATION_EFFORT: GenerationEffort = "balanced";
-const GENERATION_EFFORTS: Record<GenerationEffort, { model: AgentModel; reasoningEffort: AgentReasoningEffort }> = {
-  quick: { model: "gpt-5.6-terra", reasoningEffort: "medium" },
-  balanced: { model: DEFAULT_MODEL, reasoningEffort: "high" },
-  thorough: { model: DEFAULT_MODEL, reasoningEffort: "xhigh" },
-};
 
 export function generationPreferencesFor(
   effort: GenerationEffort,
   format: VideoFormat = "landscape",
 ): StudioProject["generationPreferences"] {
-  return { effort, format, ...GENERATION_EFFORTS[effort] };
+  const models = resolveModels(effort);
+  return { effort, format, model: models.code.model, reasoningEffort: models.code.reasoning };
 }
 
 function normalizeGenerationPreferences(preferences?: Partial<StudioProject["generationPreferences"]>) {
   const effort = preferences?.effort === "quick" || preferences?.effort === "balanced" || preferences?.effort === "thorough"
     ? preferences.effort
-    : preferences?.model === "gpt-5.6-terra" ? "quick" : DEFAULT_GENERATION_EFFORT;
+    : DEFAULT_GENERATION_EFFORT;
   return generationPreferencesFor(
     effort,
     preferences?.format === "vertical" ? "vertical" : "landscape",
@@ -42,17 +38,14 @@ export const DEFAULT_FONT_CATEGORY: FontCategory = "serif";
 export const DEFAULT_COLOR_PALETTE: ColorPalette = "paper";
 
 // The repository ships "Orune Serif"; the images install it as a system family.
-// The alternates name faces that are guaranteed present in the render images so
-// a generated scene never silently falls back to an unknown generic sans.
+// The alternates name faces that are guaranteed present in the render images.
 const FONT_PRESETS = {
   serif: { manim: "Orune Serif", css: '"Orune Serif", "Newsreader", Georgia, serif', character: "editorial book serif" },
   sans: { manim: "DejaVu Sans", css: '"Inter", "DejaVu Sans", sans-serif', character: "plain grotesque sans" },
   mono: { manim: "DejaVu Sans Mono", css: '"JetBrains Mono", "DejaVu Sans Mono", monospace', character: "precise monospaced" },
 } as const;
 
-// Every palette is grounded on paper. There is no dark background anywhere:
-// `primary` is the single working colour for the mathematical object and
-// `accent` is the payoff colour, used once per lesson.
+// Palettes are offered to the model as defaults; nothing enforces them.
 const COLOR_PRESETS = {
   paper: { background: "#FBFAF7", surface: "#FFFFFF", text: "#1A1917", muted: "#8A857D", rule: "#D9D4CA", primary: "#2E5266", accent: "#B07548" },
   ochre: { background: "#FCF9F2", surface: "#FFFFFF", text: "#1B1813", muted: "#8C8474", rule: "#DED6C4", primary: "#7A5B23", accent: "#9B4722" },
@@ -64,16 +57,14 @@ export function fontCategoryOrDefault(value: unknown): FontCategory {
   return Object.hasOwn(FONT_PRESETS, String(value)) ? (value as FontCategory) : DEFAULT_FONT_CATEGORY;
 }
 
-// Projects saved before the paper house style name palettes that no longer
-// exist ("cinematic", "ocean", ...). Those rows must still load, so an
+// Projects saved before the current palettes existed still have to load, so an
 // unrecognised name resolves to the default instead of throwing.
 export function colorPaletteOrDefault(value: unknown): ColorPalette {
   return Object.hasOwn(COLOR_PRESETS, String(value)) ? (value as ColorPalette) : DEFAULT_COLOR_PALETTE;
 }
 
-// Documents written before the studio became Manim-only, and before the paper
-// house style replaced the dark presets, are still in local and hosted storage.
-// Normalizing them on read is what keeps those projects openable.
+// Documents written by earlier versions of the studio are still in local and
+// hosted storage. Normalizing them on read is what keeps them openable.
 export function normalizeStoredProject<T extends StudioProject>(project: T): T {
   project.renderer = RENDERER;
   project.designPreferences = {
@@ -87,77 +78,8 @@ export function normalizeStoredProject<T extends StudioProject>(project: T): T {
   return project;
 }
 
-const COMMON_AGENT_INSTRUCTIONS = `You are the rendering agent for a programmatic educational-video studio. Every video is rendered with Manim Community Edition.
-
-Turn the user's teaching goal into one coherent editable Manim video in the studio's paper house style.
-
-House style — these rules are proven and are not open to reinterpretation:
-- The ground is warm paper. There is no dark background, no gradient, no glow, no vignette, and no drop shadow anywhere in the video.
-- Ink is used for primary text, a lighter muted tone for a small running head, and the rule colour for axes and rules. Exactly one working colour carries the mathematical object, and one payoff colour appears once in the whole lesson, at the moment the idea lands.
-- No cards, no rounded boxes, no uppercase eyebrow tags, no chips, no badges, and no decorative rules. A beat is a small running head, one sentence of claim, and the mathematical object. Nothing else.
-- Keep an editorial left margin: every beat's running head, claim, and visual align to the same left edge. Do not centre text.
-- The claim is a full sentence in sentence case at about 40pt. The running head is about 19pt in the muted colour. Authority comes from size, tight leading, and space — never from bold weight and never from colour.
-- Fills are pale, roughly 0.14-0.22 opacity, so the curve or edge stays readable on top of them.
-- Never morph one sentence into another. ReplacementTransform between two Text mobjects smears the glyphs into an unreadable mess mid-tween: always FadeOut the old sentence and FadeIn the new one.
-- Never Transform between two Riemann-rectangle groups (or any two grids) with different element counts; mid-tween the viewer sees two misaligned grids. Cross-fade instead with FadeOut(old) and FadeIn(new).
-- Draw axes with include_tip=False and include_ticks=False, stroke_width about 1.6, in the rule colour. No arrowheads.
-- Keep generous margins, one idea on screen at a time, and make each beat visibly transform the previous one.
-
-Requirements:
-- Start by writing a short beat plan for yourself: one teaching purpose, one dominant visual, and one narration passage per beat. Avoid adding a second panel when changing or replacing the current visual would teach the point more clearly.
-- Before scene.py, read ../../references/SCENE_PLAN_CONTRACT.md and write scene-plan.json with version 1, the lessonGoal, and a beats array. Each beat needs id, purpose, dominantVisual, optional weight, and objects with stable id, role, and changePolicy (flexible or preserve). Reuse an object's id when it persists across beats.
-- Pass those exact object ids as literal names=[...] values to every assert_inside, assert_scene_safe, assert_no_overlap, and watch_no_overlap call. The renderer uses them to produce targeted repair context; unnamed layout guards are rejected.
-- Use the studio's production standard unless the user asks for a different format: about four beats and 35-45 seconds, one claim sentence plus one large focused visual, generous negative space, and a clear visual transformation from one beat to the next. This is a quality floor, not a template to copy literally.
-- Each beat should have one memorable visual claim that can be understood from a paused frame. Do not fill the frame with interchangeable panels, decorative widgets, or simultaneous mini-explanations.
-- Compose for a 16:9 frame with the configured palette, readable type, consistent spacing, and purposeful motion.
-- Treat layout as a constraint problem, not a visual guess. Identify independent peer objects for every beat, give each a reserved region, and keep at least 3% of the frame width between unrelated objects.
-- A bounding box intersecting another bounding box counts as a collision unless the overlap is intentional (for example, a curve drawn on top of its own pale fill). Group intentional composites and audit the composites against their peers.
-- Check layout at the beginning, midpoint, and end of every transition—not only on the final frame. Text reflow, transforms, and entering/exiting objects can collide between key poses.
-- Prefer replacing, transforming, or fading a visual before introducing more simultaneous objects. Keep no more than 5 independent visual groups on screen unless the lesson truly requires it.
-- Read narration-config.json before planning. When enabled is false, make a silent video, do not depend on narration.json, and verify metadata.json reports narration.enabled false. When enabled is true, write narration.json before rendering as {"segments":[{"start":0.0,"text":"..."}]} with 3-5 chapter-length passages aligned to the visual beats.
-- For enabled narration, each passage should be 18-45 words, explain cause and effect, and lead naturally into the next idea. Keep the delivery continuous: avoid ellipses, blank lines, dramatic punctuation, isolated sentence fragments, and more than 0.35 seconds of intentional silence between spoken passages. Write mathematical pronunciation as natural speech, budget roughly 165 spoken words per minute, and target 24-45 seconds unless the user asks for a different duration.
-- Enabled narration uses the voice selected in narration-config.json through an approved Speechify or ElevenLabs model, with faster delivery, long-silence compression, timing guards, fades, and loudness normalization. Never create or substitute a fallback voice. After rendering, verify metadata.json reports narration status ready and the selected voice.
-- Inspect poster.png, contact-sheet.png, review-frames.json, and layout-audit.json. The contact sheet prioritizes stable beats and transition boundaries; map its cells to review-frames.json and check every one for clipping, crowded panels, uneven spacing, poor contrast, accidental occlusion, and objects crossing during transitions. If any issue exists, fix the source and render again.
-- If review-config.json exists, read ../../skills/educational-video-reviewer/SKILL.md and follow it after rendering. Write review-report.json, validate it, and repair blocking issues once before finishing.
-- Read design-config.json before authoring and use its chosen font category and palette consistently. Do not silently replace the selected visual system with your own defaults.
-- Every Text and MarkupText must set font to the exact family named by design-config.json font.manim. Never hardcode a system font such as Arial, Helvetica, Segoe UI, or DejaVu Sans, and never leave the font argument off and accept Manim's silent generic fallback.
-- Before authoring, write asset-decision.json with needsAuthenticImage and reason. Authentic imagery usually helps for a real person, place, artifact, organism, or historical context; skip it for abstract explanations that are clearer with native shapes.
-- When imagery is useful, run node ../../../scripts/studio_asset.mjs . search "a precise context-rich query". Inspect at least three downloaded candidate previews and their descriptions. Never choose the top result merely because it is attractive; reject candidates that depict the wrong person, era, object, location, or causal context. Import the best verified match with node ../../../scripts/studio_asset.mjs . import <candidate-id>. If no result is genuinely relevant, use renderer-native visuals instead.
-- If assets.json exists, use only assets listed there. Preserve credits and licenses. Load an asset's localPath with ImageMobject. Generated scene source must not make network requests.
-- If the request cites a frame review, inspect both directly attached images before editing. Compare clean.png with annotated.png, identify the smallest exact object enclosed or touched by red markup, and map it to its stable id in scene-plan.json. Write reviews/<review-id>/interpretation.json with targetObjectId, visualEvidence, requestedPropertyChange, preserveObjectIds, and excludedNearbyObjects before changing source. Do not reproduce the markup in the video and do not generalize a local edit to sibling labels.
-- output.mp4 must exist before you finish. Never return base64 or paste the full source into chat.
-- Revisions must preserve unrelated source and must stay in the paper house style.
-- Your final response is one or two short sentences describing what changed. Begin with "First draft ready:" or "Revision N ready:" using the target named in the turn request. For frame feedback, name the exact targeted object and a nearby object intentionally left unchanged. Do not expose hidden reasoning or raw command logs.`;
-
-const AGENT_INSTRUCTIONS = `${COMMON_AGENT_INSTRUCTIONS}
-
-Manim requirements:
-- Keep the source of truth in scene.py and define exactly one renderable Scene subclass named GeneratedScene. Use Manim Community Edition exclusively; do not create React, HTML, or CSS source.
-- Set the scene background to the palette's background colour explicitly; never rely on Manim's default dark canvas.
-- Use only Manim CE APIs available in the local environment. Prefer shapes, NumberPlane, Axes, graphs, and deterministic animations; text exists only through manim_paper. Avoid MathTex unless you first verify LaTeX is installed.
-- Import fit_inside, stack_in_panel, assert_inside, assert_scene_safe, assert_no_overlap, and watch_no_overlap from manim_layout.
-- Create ALL text through manim_paper: load_design() once, then running_head, claim, swap_claim, label, caption, expr, and text(design, body, role=...). Never call Text() directly and never hand-position text with fixed coordinates - the renderer rejects scenes that skip the manim_paper import, because freehand text is how frames end up with inconsistent size, alignment, and spacing.
-- Place every primary visual with manim_paper.fit_stage(...) so it stays inside the stage band between the claim and the caption; the head band and caption band belong to text alone.
-- A label names the thing it touches: create it with manim_paper.label so it sits adjacent to its object in that object's colour. Never draw a pointer line from a label to a distant object, and never leave a label floating over unrelated content.
-- When labelling marks inside a grid or a subgroup inside a larger shape, the label goes OUTSIDE the whole group, aligned over the marks it names (see the paper-house-style exemplars). A label placed beside an interior mark lands on its neighbours. Include every label in assert_no_overlap; a collision there is a bug in the layout, not a check to relax with allow_pairs.
-- Compose for a 16:9 frame. Keep all important objects at least 0.32 Manim units from the frame edge.
-- Call assert_inside(panel, *panel_contents, padding=0.16) before animating each panel. Call assert_scene_safe on every major group before its first animation. Rendering intentionally fails when these checks detect overflow.
-- Call assert_no_overlap on the independent peer objects in every stable key pose. Install watch_no_overlap for peer objects that move concurrently so every rendered animation frame is checked. Do not compare a container with its own contents; group those intentional composites first. Use allow_pairs only for named, deliberate overlaps and add a short source comment explaining each exception.
-- Type sizes come only from manim_paper roles. Keep labels at least 0.18 units apart.
-- Render by running: python3 ../../../scripts/render_scene.py . balanced
-- Before finishing, confirm metadata.json reports renderer manim and ensure no warnings were bypassed by removing required layout assertions.`;
-
 function now() {
   return new Date().toISOString();
-}
-
-function commandLabel(command: string, target: string) {
-  if (/studio_asset\.mjs.*\bsearch\b/i.test(command)) return `Searching licensed assets · ${target}`;
-  if (/studio_asset\.mjs.*\bimport\b/i.test(command)) return `Adding verified asset · ${target}`;
-  if (/render_scene\.py|\bmanim\b/i.test(command)) return `Rendering ${target}`;
-  if (/ffmpeg|ffprobe/i.test(command)) return `Inspecting ${target} frame by frame`;
-  if (/scene\.py|apply_patch/i.test(command)) return `Building ${target}`;
-  return `Working on ${target}`;
 }
 
 function normalizedPrompt(prompt: string) {
@@ -181,16 +103,13 @@ interface ProjectSeedPreferences {
 }
 
 interface SendMessageOptions {
-  agentRequest?: string;
-  localImagePaths?: string[];
+  /** A revision request that differs from the chat text, e.g. a frame review. */
+  revisionRequest?: string;
+  images?: Array<{ path: string; label?: string }>;
   requestKind?: string;
   chatAttachment?: { type: "frameReview"; imageUrl: string; label: string };
   intent?: GenerationIntent;
   requestedEffort?: GenerationEffort;
-}
-
-function generationTarget(project: StudioProject) {
-  return project.versions.length ? `revision ${project.versions.length + 1}` : "first draft";
 }
 
 function plainMetadata(value: unknown) {
@@ -207,17 +126,22 @@ function safeFileStem(value: string) {
   return value.replace(/^File:/i, "").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "asset";
 }
 
+function readJsonFile<T>(file: string): T | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+  } catch {
+    return undefined;
+  }
+}
+
 export class StudioService extends EventEmitter {
   readonly root: string;
   readonly dataRoot: string;
   readonly projectRoot: string;
-  readonly bridge: CodexBridge;
   private projects = new Map<string, StudioProject>();
-  private threadToProject = new Map<string, string>();
-  private assistantMessageByItem = new Map<string, string>();
-  private agentMessagePhaseByItem = new Map<string, string | null>();
+  private running = new Map<string, AbortController>();
   private authState: AuthState = { connected: false };
-  private runtimeState: RuntimeState = { codex: false, manim: false, ffmpeg: false };
+  private runtimeState: RuntimeState = { model: false, manim: false, ffmpeg: false };
   private readonly localPersistence: boolean;
 
   constructor(root: string, dataRoot = root) {
@@ -226,55 +150,28 @@ export class StudioService extends EventEmitter {
     this.dataRoot = dataRoot;
     this.projectRoot = path.join(dataRoot, "studio", "projects");
     this.localPersistence = process.env.EXECUTION_MODE !== "e2b";
-    this.bridge = new CodexBridge(root);
     fs.mkdirSync(this.projectRoot, { recursive: true });
     if (this.localPersistence) this.loadProjects();
-    this.bridge.on("notification", (message) => this.onCodexNotification(message as { method: string; params: any }));
-    this.bridge.on("ready", () => {
-      this.runtimeState.codex = true;
-      this.emitEvent({ type: "runtime", runtime: this.runtimeState });
-    });
-    this.bridge.on("exit", () => {
-      this.runtimeState.codex = false;
-      for (const project of this.projects.values()) {
-        if (project.status !== "running") continue;
-        project.status = "error";
-        project.stage = "ready";
-        project.error = "The generation agent stopped unexpectedly. Send the request again.";
-        project.turnId = undefined;
-        for (const action of project.actions) if (action.status === "running") action.status = "failed";
-        this.updateProject(project);
-      }
-      this.emitEvent({ type: "runtime", runtime: this.runtimeState });
-    });
-    this.bridge.on("diagnostic", (message) => {
-      if (process.env.DEBUG_CODEX) console.error(`[codex] ${message}`);
-    });
   }
 
   private get storePath() {
     return path.join(this.dataRoot, "studio", "projects.json");
   }
 
+  private get modelConfigured() {
+    return Boolean(process.env.OPENAI_API_KEY?.trim());
+  }
+
   private loadProjects() {
     try {
       const stored = JSON.parse(fs.readFileSync(this.storePath, "utf8")) as StudioProject[];
       for (const project of stored) {
-        const migrated = project as StudioProject & {
-          timeline?: unknown;
-          quality?: unknown;
-          proxyUrl?: unknown;
-        };
-        const cameFromTimelineStudio = Object.hasOwn(migrated, "timeline");
-        if (cameFromTimelineStudio) {
-          // Keep chat and rendered revisions, but start the next request in a
-          // fresh thread so it receives the current renderer-specific instructions.
-          project.threadId = undefined;
-          project.turnId = undefined;
-          delete migrated.timeline;
-          delete migrated.quality;
-          delete migrated.proxyUrl;
-        }
+        const migrated = project as StudioProject & { timeline?: unknown; quality?: unknown; proxyUrl?: unknown };
+        delete migrated.timeline;
+        delete migrated.quality;
+        delete migrated.proxyUrl;
+        project.threadId = undefined;
+        project.turnId = undefined;
         normalizeStoredProject(project);
         project.ownerId ||= "__legacy__";
         project.favorite = project.favorite === true;
@@ -282,10 +179,6 @@ export class StudioService extends EventEmitter {
         project.reviews ||= [];
         project.assets ||= [];
         project.reviewPreferences ||= { focus: "balanced", strictness: "normal" };
-        project.narrationPreferences = {
-          enabled: project.narrationPreferences?.enabled !== false,
-          voice: narrationVoiceOrDefault(project.narrationPreferences?.voice),
-        };
         project.generationPreferences = normalizeGenerationPreferences(project.generationPreferences);
         fs.mkdirSync(path.join(this.projectRoot, project.id), { recursive: true });
         this.writeReviewConfig(project);
@@ -296,7 +189,6 @@ export class StudioService extends EventEmitter {
           project.stage = "ready";
         }
         this.projects.set(project.id, project);
-        if (project.threadId) this.threadToProject.set(project.threadId, project.id);
         if (project.status === "complete" && this.currentRenderNeedsArchive(project)) {
           const archived = this.archiveVersion(project);
           if (archived) {
@@ -318,14 +210,17 @@ export class StudioService extends EventEmitter {
   }
 
   async initialize() {
-    const [codex, manim, ffmpeg] = await Promise.all([
-      this.bridge.start().then(() => true).catch(() => false),
+    const [manim, ffmpeg] = await Promise.all([
       fs.promises.access(manimPath(this.root)).then(() => true).catch(() => false),
       execFileAsync("ffmpeg", ["-version"]).then(() => true).catch(() => false),
     ]);
-    this.runtimeState = { codex, manim, ffmpeg };
-    if (codex) await this.refreshAuth();
+    this.runtimeState = { model: this.modelConfigured, manim, ffmpeg };
+    await this.refreshAuth();
     this.emitEvent({ type: "runtime", runtime: this.runtimeState });
+  }
+
+  stop() {
+    for (const controller of this.running.values()) controller.abort();
   }
 
   listProjects(ownerId?: string) {
@@ -364,28 +259,15 @@ export class StudioService extends EventEmitter {
     fs.writeFileSync(path.join(projectDir, "review-config.json"), JSON.stringify(project.reviewPreferences, null, 2));
   }
 
-  private writeDesignConfig(project: StudioProject) {
-    const projectDir = path.join(this.projectRoot, project.id);
-    // A project restored from storage can still name a retired preset, so
-    // resolve both through the legacy-tolerant lookups before indexing.
+  private designConfig(project: StudioProject) {
     const fontCategory = fontCategoryOrDefault(project.designPreferences?.fontCategory);
     const colorPalette = colorPaletteOrDefault(project.designPreferences?.colorPalette);
-    fs.writeFileSync(path.join(projectDir, "design-config.json"), JSON.stringify({
-      fontCategory,
-      font: FONT_PRESETS[fontCategory],
-      colorPalette,
-      colors: COLOR_PRESETS[colorPalette],
-      productionStyle: {
-        reference: "paper editorial math explainer",
-        ground: "warm paper; never a dark background, gradient, glow, vignette, or drop shadow",
-        pacing: "about four beats over 35-45 seconds unless the user asks otherwise",
-        composition: "a small running head, one sentence of claim, and one mathematical object, all on a shared left margin",
-        typography: "claim about 40pt sentence case, running head about 19pt in the muted colour; authority from size and space, never bold weight or colour",
-        forbidden: "cards, rounded boxes, uppercase eyebrow tags, chips, badges, decorative rules, centred text",
-        colorUse: "primary carries the mathematical object; accent appears exactly once, when the idea lands",
-        motion: "replace or transform the dominant visual between beats; cross-fade text and mismatched groups instead of morphing them",
-      },
-    }, null, 2));
+    return { fontCategory, font: FONT_PRESETS[fontCategory], colorPalette, colors: COLOR_PRESETS[colorPalette] };
+  }
+
+  private writeDesignConfig(project: StudioProject) {
+    const projectDir = path.join(this.projectRoot, project.id);
+    fs.writeFileSync(path.join(projectDir, "design-config.json"), JSON.stringify(this.designConfig(project), null, 2));
   }
 
   private writeNarrationConfig(project: StudioProject) {
@@ -425,24 +307,6 @@ export class StudioService extends EventEmitter {
       voice: narrationVoiceOrDefault(voice ?? project.narrationPreferences?.voice),
     };
     this.writeNarrationConfig(project);
-    const narrationOnlyFailure = !enabled
-      && project.status === "error"
-      && /narration was rejected|speechify|elevenlabs/i.test(project.error || "");
-    if (narrationOnlyFailure) {
-      const projectDir = path.join(this.projectRoot, project.id);
-      const validationError = this.renderValidationError(projectDir, false);
-      if (!validationError && this.currentRenderNeedsArchive(project)) {
-        const version = this.archiveVersion(project);
-        if (version) {
-          project.status = "complete";
-          project.stage = "complete";
-          project.error = undefined;
-          project.videoUrl = version.videoUrl;
-          project.posterUrl = version.posterUrl;
-          project.actions.push({ id: randomUUID(), label: "Accepted finished video without AI voice", status: "done", createdAt: now() });
-        }
-      }
-    }
     this.updateProject(project);
     return project;
   }
@@ -513,23 +377,16 @@ export class StudioService extends EventEmitter {
     fs.writeFileSync(path.join(reviewDir, "review.json"), JSON.stringify(review, null, 2));
     project.reviews.push(review);
     this.updateProject(project);
-    const relative = `reviews/${id}`;
     const visibleText = `Frame review · ${input.versionId} · ${review.time.toFixed(2)}s\n${review.note}`;
-    const agentRequest = `Revise the existing animation from this frame-specific visual review.
+    const revisionRequest = `Frame review of ${input.versionId} at ${review.time.toFixed(2)} seconds (frame ${review.frame}). The first attached image is the clean rendered frame; the second is the same frame with the reviewer's red markup showing what to change. Change only what the markup and note ask for and keep the rest of the video as it is.
 
-You have two directly attached images in this order: (1) the clean rendered frame and (2) the same frame with red reviewer markup. You MUST visually compare both before opening or editing source.
-
-Review id: ${id}
-Version: ${input.versionId}
-Frame: ${review.frame}
-Time: ${review.time.toFixed(3)} seconds
-Files: ${relative}/clean.png and ${relative}/annotated.png
-User note: ${review.note}
-
-First read scene-plan.json and write ${relative}/interpretation.json containing: targetObjectId (the stable id for the smallest exact object enclosed or touched by red markup), visualEvidence, requestedPropertyChange, preserveObjectIds, and excludedNearbyObjects. Red marks are spatial pointers only and must not appear in the video. Apply the requested property change only to targetObjectId. Nearby labels, siblings, repeated styles, and every preserveObjectId must remain unchanged unless also explicitly marked. After rerendering, inspect the same timestamp and confirm the target changed while every preserved nearby object stayed unchanged.`;
-    await this.sendMessage(project.id, visibleText, {
-      agentRequest,
-      localImagePaths: [path.join(reviewDir, "clean.png"), path.join(reviewDir, "annotated.png")],
+Requested change: ${review.note}`;
+    await this.sendMessage(projectId, visibleText, {
+      revisionRequest,
+      images: [
+        { path: path.join(reviewDir, "clean.png"), label: "Clean rendered frame" },
+        { path: path.join(reviewDir, "annotated.png"), label: "Reviewer-annotated frame" },
+      ],
       requestKind: "frame review",
       chatAttachment: { type: "frameReview", imageUrl: review.annotatedFrameUrl, label: `${input.versionId} · ${review.time.toFixed(2)}s` },
     });
@@ -614,36 +471,10 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
 
   private updateProject(project: StudioProject) {
     project.updatedAt = now();
-    project.actions = project.actions.slice(-5);
+    project.actions = project.actions.slice(-8);
     this.projects.set(project.id, project);
     this.persist();
     this.emitEvent({ type: "project", project });
-  }
-
-  private planningSatisfied(project: StudioProject) {
-    const projectDir = path.join(this.projectRoot, project.id);
-    const requestPath = path.join(projectDir, "generation-request.json");
-    if (!fs.existsSync(requestPath)) return true;
-    try {
-      const request = JSON.parse(fs.readFileSync(requestPath, "utf8")) as { mode?: string; startedAt?: string };
-      if (request.mode !== "first-draft") return true;
-      const startedAt = Date.parse(request.startedAt || "");
-      const planPath = path.join(projectDir, "beat-plan.md");
-      return Number.isFinite(startedAt)
-        && fs.existsSync(planPath)
-        && fs.statSync(planPath).size >= 180
-        && fs.statSync(planPath).mtimeMs >= startedAt - 1_000;
-    } catch {
-      return false;
-    }
-  }
-
-  private advanceFromPlanning(project: StudioProject) {
-    if (project.stage !== "brief" || !this.planningSatisfied(project)) return false;
-    for (const action of project.actions) if (action.status === "running") action.status = "done";
-    project.stage = "authoring";
-    project.actions.push({ id: randomUUID(), label: `Building ${generationTarget(project)}`, status: "running", createdAt: now() });
-    return true;
   }
 
   private archiveVersion(project: StudioProject): ProjectVersion | undefined {
@@ -657,7 +488,7 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
     const versionDir = path.join(projectDir, "versions", id);
     fs.mkdirSync(versionDir, { recursive: true });
 
-    const assets = ["scene.py", "scene-plan.json", "generation-request.json", "assets.json", "asset-decision.json", "review-config.json", "review-report.json", "review-frames.json", "layout-audit.json", "repair-context.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
+    const assets = ["scene.py", "storyboard.json", "generation-request.json", "assets.json", "review-config.json", "design-config.json", "narration-config.json", "output.mp4", "poster.png", "contact-sheet.png", "metadata.json", "narration.json", "narration.m4a"];
     for (const asset of assets) {
       const source = path.join(projectDir, asset);
       if (fs.existsSync(source)) fs.copyFileSync(source, path.join(versionDir, asset));
@@ -665,12 +496,7 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
     const publicAssets = path.join(projectDir, "public", "assets");
     if (fs.existsSync(publicAssets)) fs.cpSync(publicAssets, path.join(versionDir, "public", "assets"), { recursive: true });
 
-    let render: RenderInfo | undefined;
-    try {
-      render = JSON.parse(fs.readFileSync(path.join(versionDir, "metadata.json"), "utf8")) as RenderInfo;
-    } catch {
-      render = undefined;
-    }
+    const render = readJsonFile<RenderInfo>(path.join(versionDir, "metadata.json"));
     const createdAt = now();
     const latestPrompt = [...project.messages].reverse().find((message) => message.role === "user")?.text || project.prompt;
     const version: ProjectVersion = {
@@ -699,28 +525,19 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
     return digest(current) !== digest(archived);
   }
 
+  /** The only things checked after a render: it is a Manim render, and a
+   * narrated lesson with spoken lines actually carries an audio track. */
   private renderValidationError(projectDir: string, narrationEnabled: boolean) {
     try {
-      const metadata = JSON.parse(fs.readFileSync(path.join(projectDir, "metadata.json"), "utf8")) as RenderInfo;
+      const metadata = readJsonFile<RenderInfo>(path.join(projectDir, "metadata.json"));
+      if (!metadata) return "The render finished without metadata.";
       if (metadata.renderer !== RENDERER) {
         return `Render metadata reported ${metadata.renderer || "no renderer"}; every video is rendered with ${RENDERER}.`;
       }
-      const narration = metadata.narration;
-      if (!narrationEnabled) {
-        if (narration?.enabled === true) return "Voice is disabled, but the render still contains generated narration.";
-        return undefined;
-      }
-      if (!fs.existsSync(path.join(projectDir, "narration.json"))) return "Voice is enabled, but narration.json was not created.";
-      if (
-        narration?.status !== "ready"
-        || narration.enabled !== true
-        || !(
-          (narration.provider === "speechify" && narration.model === "simba-3.2")
-          || (narration.provider === "elevenlabs" && narration.model === "eleven_multilingual_v2")
-        )
-      ) {
-        return "Narration was rejected because it was not generated by an approved voice provider.";
-      }
+      if (!narrationEnabled) return undefined;
+      const narration = readJsonFile<{ segments?: unknown[] }>(path.join(projectDir, "narration.json"));
+      if (!narration?.segments?.length) return undefined;
+      if (metadata.narration?.status !== "ready") return "The narration could not be attached to the video.";
       const audioCodec = execFileSync("ffprobe", [
         "-v", "error", "-select_streams", "a:0",
         "-show_entries", "stream=codec_name", "-of", "default=noprint_wrappers=1:nokey=1",
@@ -734,14 +551,10 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
   }
 
   async refreshAuth() {
-    // The bridge logs in with the server's API key at startup; a running
-    // bridge is the only account state there is.
-    try {
-      await this.bridge.start();
-      this.authState = { connected: true, plan: "usage-based", mode: "api" };
-    } catch {
-      this.authState = { connected: false };
-    }
+    this.authState = this.modelConfigured
+      ? { connected: true, plan: "usage-based", mode: "api" }
+      : { connected: false };
+    this.runtimeState.model = this.modelConfigured;
     this.emitEvent({ type: "auth", auth: this.authState });
     return this.authState;
   }
@@ -755,8 +568,6 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
       favorite: false,
       title: prompt ? titleFromPrompt(prompt) : "Untitled video",
       prompt,
-      // Persisted so stored documents keep a stable shape; there is only one
-      // renderer now, so nothing chooses it.
       renderer: RENDERER,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -772,10 +583,7 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
         fontCategory: fontCategoryOrDefault(seed.designPreferences?.fontCategory),
         colorPalette: colorPaletteOrDefault(seed.designPreferences?.colorPalette),
       },
-      narrationPreferences: {
-        enabled: seed.narrationPreferences?.enabled !== false,
-        voice: narrationVoiceOrDefault(seed.narrationPreferences?.voice),
-      },
+      narrationPreferences: { ...(seed.narrationPreferences || { enabled: true }) },
       generationPreferences: normalizeGenerationPreferences(seed.generationPreferences),
     };
     fs.mkdirSync(path.join(this.projectRoot, id), { recursive: true });
@@ -790,10 +598,10 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
   async sendMessage(projectId: string, text: string, options: SendMessageOptions = {}): Promise<SendMessageResult> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Project not found.");
-    if (project.status === "running") throw new Error("The agent is already working on this project.");
+    if (project.status === "running") throw new Error("The studio is already working on this project.");
     if (!this.authState.connected) throw new Error("The generation service is not configured. Add OPENAI_API_KEY on the server.");
-    const hasPriorWork = Boolean(project.threadId || project.messages.length || project.versions.length);
-    const shouldStartFresh = hasPriorWork && !options.agentRequest && (
+    const hasPriorWork = Boolean(project.messages.length || project.versions.length);
+    const shouldStartFresh = hasPriorWork && !options.revisionRequest && (
       options.intent === "new"
       || (options.intent !== "revise" && (project.versions.length === 0 || looksLikeIndependentVideoRequest(text, project)))
     );
@@ -803,24 +611,20 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
         designPreferences: project.designPreferences,
         narrationPreferences: project.narrationPreferences,
         generationPreferences: options.requestedEffort
-          ? generationPreferencesFor(
-              options.requestedEffort,
-              project.generationPreferences?.format,
-            )
+          ? generationPreferencesFor(options.requestedEffort, project.generationPreferences?.format)
           : project.generationPreferences,
       }, project.ownerId);
       const result = await this.sendMessage(freshProject.id, text, { ...options, intent: "auto" });
       return { ...result, startedFresh: true };
     }
     if (options.requestedEffort)
-      project.generationPreferences = generationPreferencesFor(
-        options.requestedEffort,
-        project.generationPreferences?.format,
-      );
+      project.generationPreferences = generationPreferencesFor(options.requestedEffort, project.generationPreferences?.format);
     if (!this.runtimeState.manim) throw new Error("Manim is not installed. Run npm run setup:manim first.");
 
     const projectDir = path.join(this.projectRoot, project.id);
-    const isRevision = Boolean(project.threadId && project.versions.length);
+    const isRevision = project.versions.length > 0
+      && fs.existsSync(path.join(projectDir, "storyboard.json"))
+      && fs.existsSync(path.join(projectDir, "scene.py"));
     const targetVersion = project.versions.length + 1;
     project.messages.push({ id: randomUUID(), role: "user", text, createdAt: now(), attachment: options?.chatAttachment });
     project.prompt ||= text;
@@ -828,184 +632,111 @@ First read scene-plan.json and write ${relative}/interpretation.json containing:
     project.status = "running";
     project.stage = "brief";
     project.error = undefined;
-    project.actions.push({ id: randomUUID(), label: isRevision ? `Preparing revision ${targetVersion}${options?.requestKind ? ` · ${options.requestKind}` : ""}` : "Planning first draft", status: "running", createdAt: now() });
+    project.actions = [];
+    project.actions.push({
+      id: randomUUID(),
+      label: isRevision ? `Preparing revision ${targetVersion}${options?.requestKind ? ` · ${options.requestKind}` : ""}` : "Writing the script",
+      status: "running",
+      createdAt: now(),
+    });
     fs.writeFileSync(path.join(projectDir, "generation-request.json"), JSON.stringify({
       id: randomUUID(),
       mode: isRevision ? "revision" : "first-draft",
       prompt: text,
       startedAt: now(),
       renderer: project.renderer,
-      requirements: isRevision
-        ? ["Preserve unrelated successful work", "Update scene-plan.json", "Produce a fresh validated render"]
-        : ["Write a fresh beat-plan.md", "Write scene-plan.json", "Create scene.py after this request"],
-      engineContract: 1,
     }, null, 2));
+    this.writeDesignConfig(project);
+    this.writeNarrationConfig(project);
     this.updateProject(project);
 
+    void this.runGeneration(project, {
+      isRevision,
+      request: options.revisionRequest || text,
+      images: options.images || [],
+    });
+    return { project, startedFresh: false, mode: isRevision ? "revision" : "first-draft" };
+  }
+
+  private async runGeneration(project: StudioProject, input: { isRevision: boolean; request: string; images: Array<{ path: string; label?: string }> }) {
+    const projectDir = path.join(this.projectRoot, project.id);
+    const controller = new AbortController();
+    this.running.set(project.id, controller);
+    const previousStoryboard = input.isRevision ? readJsonFile<Storyboard>(path.join(projectDir, "storyboard.json")) : undefined;
+    const previousScene = input.isRevision ? fs.readFileSync(path.join(projectDir, "scene.py"), "utf8") : undefined;
     try {
-      if (!project.threadId) {
-        const response = await this.bridge.startThread(projectDir, AGENT_INSTRUCTIONS, project.generationPreferences.model);
-        project.threadId = response.thread.id;
-        this.threadToProject.set(project.threadId, project.id);
-      } else {
-        await this.bridge.resumeThread(project.threadId, projectDir);
-      }
-
-      const productionContext = isRevision
-        ? "This is a genuine revision of the current video's content. Preserve unrelated successful work and make the requested change deliberately."
-        : "This is a brand-new independent production in a clean project and thread. Plan the teaching content from scratch even if the user has submitted a similar prompt before. Do not inspect or copy another project's plan or narration. Read generation-request.json, then read ../../references/DEFAULT_VISUAL_LANGUAGE.md and follow its paper house style exactly, then write a new beat-plan.md before authoring scene.py. Rendering is intentionally blocked until the request-specific plan and fresh source exist.";
-      const requestBody = options.agentRequest || (isRevision
-        ? `Create revision ${targetVersion} of the existing animation with this request: ${text}`
-        : `Create the first editable Manim video for this prompt: ${text}`);
-      const request = `Current project workflow for this turn:
-- ${productionContext}
-- Read design-config.json and preserve its selected font category and palette.
-- Read narration-config.json. Voice is ${project.narrationPreferences.enabled ? `enabled with the ${narrationVoiceOrDefault(project.narrationPreferences.voice)} preset; create and verify the configured narration` : "disabled; render and validate a silent video without calling a narration provider"}.
-- Read review-config.json and apply ../../skills/educational-video-reviewer/SKILL.md after rendering.
-- Create or update scene-plan.json before scene.py. Use its stable object ids as literal names=[...] in every layout guard so a failed render can identify the smallest repair target.
-- If this request introduces a real person, place, artifact, organism, or historical context, reconsider asset-decision.json and use the licensed candidate search workflow. Inspect at least three candidate previews before importing. For a localized revision, preserve existing assets unless the user asks to change them.
-- The target output is ${generationTarget(project)}.
-- Begin the final response with "${project.versions.length ? `Revision ${targetVersion} ready:` : "First draft ready:"}" so the user always knows which generation completed.
-
-${requestBody}`;
-      const response = await this.bridge.startTurn(
-        project.threadId,
+      await authorLesson({
+        root: this.root,
         projectDir,
-        request,
-        options.localImagePaths || [],
-        project.generationPreferences.model,
-        project.generationPreferences.reasoningEffort,
-      );
-      project.turnId = response.turn.id;
-      this.updateProject(project);
-      return { project, startedFresh: false, mode: isRevision ? "revision" : "first-draft" };
+        brief: input.isRevision && previousStoryboard?.brief ? previousStoryboard.brief : input.request,
+        format: project.generationPreferences.format,
+        effort: project.generationPreferences.effort,
+        narration: project.narrationPreferences,
+        design: this.designConfig(project),
+        assets: project.assets.map((asset) => ({ localPath: asset.localPath, title: asset.title })),
+        revision: input.isRevision && previousStoryboard && previousScene
+          ? { request: input.request, storyboard: previousStoryboard, scene: previousScene, attachments: input.images }
+          : undefined,
+        openai: {
+          baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+          apiKey: process.env.OPENAI_API_KEY?.trim() || "",
+        },
+        onProgress: ({ stage, label }) => {
+          const current = this.projects.get(project.id);
+          if (!current || current.status !== "running") return;
+          current.stage = stage;
+          for (const action of current.actions) if (action.status === "running") action.status = "done";
+          current.actions.push({ id: randomUUID(), label, status: "running", createdAt: now() });
+          this.updateProject(current);
+        },
+        signal: controller.signal,
+        log: (line) => {
+          if (process.env.DEBUG_PIPELINE) console.error(`[pipeline ${project.id}] ${line}`);
+        },
+      });
+      const current = this.projects.get(project.id);
+      if (!current || current.status !== "running") return;
+      for (const action of current.actions) if (action.status === "running") action.status = "done";
+      const renderError = this.renderValidationError(projectDir, current.narrationPreferences.enabled);
+      if (renderError || !this.currentRenderNeedsArchive(current)) {
+        current.status = "error";
+        current.stage = "ready";
+        current.error = renderError || "The pipeline finished without a new playable render.";
+        this.updateProject(current);
+        return;
+      }
+      const version = this.archiveVersion(current);
+      current.status = "complete";
+      current.stage = "complete";
+      if (version) {
+        current.videoUrl = version.videoUrl;
+        current.posterUrl = version.posterUrl;
+        current.messages.push({ id: randomUUID(), role: "assistant", text: completionMessage(version.number, version.render), createdAt: now() });
+      }
+      this.updateProject(current);
     } catch (error) {
-      project.status = "error";
-      project.stage = "ready";
-      project.error = error instanceof Error ? error.message : "Could not start the agent.";
-      const active = project.actions.at(-1);
-      if (active) active.status = "failed";
-      this.updateProject(project);
-      throw error;
+      const current = this.projects.get(project.id);
+      if (!current) return;
+      if (current.status === "running") {
+        current.status = controller.signal.aborted ? "cancelled" : "error";
+        current.stage = "ready";
+        current.error = controller.signal.aborted ? undefined : (error instanceof Error ? error.message : "The video could not be generated.");
+        for (const action of current.actions) if (action.status === "running") action.status = "failed";
+        this.updateProject(current);
+      }
+    } finally {
+      this.running.delete(project.id);
     }
   }
 
   async cancel(projectId: string) {
     const project = this.projects.get(projectId);
     if (!project) return;
-    // Interrupt when a turn is live, but always leave the project stopped: a
-    // project stuck "running" without a turn id would otherwise be
-    // uncancellable.
-    if (project.threadId && project.turnId) await this.bridge.interrupt(project.threadId, project.turnId);
+    this.running.get(projectId)?.abort();
     project.status = "cancelled";
     project.stage = "ready";
     project.turnId = undefined;
     for (const action of project.actions) if (action.status === "running") action.status = "failed";
     this.updateProject(project);
-  }
-
-  private onCodexNotification(message: { method: string; params: any }) {
-    if (message.method === "account/updated" || message.method === "account/login/completed") {
-      void this.refreshAuth();
-      return;
-    }
-
-    const threadId = message.params?.threadId as string | undefined;
-    if (!threadId) return;
-    const projectId = this.threadToProject.get(threadId);
-    if (!projectId) return;
-    const project = this.projects.get(projectId);
-    if (!project) return;
-
-    if (message.method === "turn/started") {
-      project.turnId = message.params.turn.id;
-      this.advanceFromPlanning(project);
-      this.updateProject(project);
-      return;
-    }
-
-    if (message.method === "item/started") {
-      const item = message.params.item;
-      if (item?.type === "agentMessage") {
-        this.agentMessagePhaseByItem.set(item.id, item.phase || null);
-        return;
-      }
-      if (item?.type === "commandExecution") {
-        if (!this.planningSatisfied(project)) {
-          this.updateProject(project);
-          return;
-        }
-        this.advanceFromPlanning(project);
-        for (const action of project.actions) if (action.status === "running") action.status = "done";
-        const label = commandLabel(item.command || "", generationTarget(project));
-        project.stage = label.includes("Render") ? "rendering" : label.includes("Inspect") ? "inspecting" : "authoring";
-        project.actions.push({ id: item.id, label, status: "running", createdAt: now() });
-        this.updateProject(project);
-      } else if (item?.type === "fileChange") {
-        this.advanceFromPlanning(project);
-        if (project.stage !== "brief") project.stage = "authoring";
-        this.updateProject(project);
-      }
-      return;
-    }
-
-    if (message.method === "item/completed") {
-      const item = message.params.item;
-      const action = project.actions.find((candidate) => candidate.id === item?.id);
-      if (action) {
-        action.status = item.status === "failed" ? "failed" : "done";
-        this.updateProject(project);
-      }
-      if (!action && this.advanceFromPlanning(project)) this.updateProject(project);
-      return;
-    }
-
-    if (message.method === "item/agentMessage/delta") {
-      const itemId = message.params.itemId as string;
-      if (this.agentMessagePhaseByItem.get(itemId) === "commentary") return;
-      let messageId = this.assistantMessageByItem.get(itemId);
-      if (!messageId) {
-        messageId = randomUUID();
-        this.assistantMessageByItem.set(itemId, messageId);
-        project.messages.push({ id: messageId, role: "assistant", text: "", createdAt: now(), streaming: true });
-      }
-      const chatMessage = project.messages.find((candidate) => candidate.id === messageId);
-      if (chatMessage) chatMessage.text += message.params.delta;
-      this.emitEvent({ type: "assistant_delta", projectId, messageId, delta: message.params.delta });
-      return;
-    }
-
-    if (message.method === "turn/completed") {
-      for (const chatMessage of project.messages) chatMessage.streaming = false;
-      for (const item of message.params.turn.items || []) {
-        this.assistantMessageByItem.delete(item.id);
-        this.agentMessagePhaseByItem.delete(item.id);
-      }
-      for (const action of project.actions) if (action.status === "running") action.status = "done";
-
-      const output = path.join(this.projectRoot, project.id, "output.mp4");
-      const poster = path.join(this.projectRoot, project.id, "poster.png");
-      const renderError = this.renderValidationError(path.join(this.projectRoot, project.id), project.narrationPreferences.enabled);
-      const hasFreshRender = this.currentRenderNeedsArchive(project);
-      if (message.params.turn.status === "completed" && fs.existsSync(output) && hasFreshRender && !renderError) {
-        const version = this.archiveVersion(project);
-        project.status = "complete";
-        project.stage = "complete";
-        if (version) {
-          project.videoUrl = version.videoUrl;
-          project.posterUrl = version.posterUrl;
-        } else {
-          const cacheKey = fs.statSync(output).mtimeMs.toFixed(0);
-          project.videoUrl = `/media/${project.id}/output.mp4?v=${cacheKey}`;
-          if (fs.existsSync(poster)) project.posterUrl = `/media/${project.id}/poster.png?v=${cacheKey}`;
-        }
-      } else {
-        project.status = "error";
-        project.stage = "ready";
-        project.error = renderError || message.params.turn.error?.message || "The agent finished without a new playable render.";
-      }
-      project.turnId = undefined;
-      this.updateProject(project);
-    }
   }
 }

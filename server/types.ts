@@ -3,9 +3,11 @@ export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "insp
 // The studio renders every lesson with Manim. The field is kept on stored
 // project documents so rows written before the Manim-only change still parse.
 export type RendererKind = "manim";
-export type AgentModel = "gpt-5.6-sol" | "gpt-5.6-terra";
+// Model names are configuration (shared/models.json plus ORUNE_* overrides),
+// so the stored preference only records what a generation used.
+export type AgentModel = string;
 export type GenerationEffort = "quick" | "balanced" | "thorough";
-export type AgentReasoningEffort = "medium" | "high" | "xhigh";
+export type AgentReasoningEffort = string;
 export type GenerationIntent = "auto" | "new" | "revise";
 export type BillingPlanId = "free" | "creator" | "pro" | "studio";
 export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
@@ -38,22 +40,6 @@ export interface RenderInfo {
   height?: number;
   fps?: number;
   bitRate?: number;
-  review?: {
-    strategy?: "beat-aware-v1" | "uniform-v1";
-    sampleCount?: number;
-    manifest?: string;
-  };
-  layoutAudit?: {
-    status?: "pass" | "failed";
-    checks?: {
-      inside?: number;
-      safeArea?: number;
-      overlap?: number;
-      watchedFrames?: number;
-    };
-    namedObjects?: string[];
-    violations?: number;
-  };
   narration?: {
     status?: string;
     enabled?: boolean;
@@ -209,7 +195,8 @@ export interface AuthState {
 }
 
 export interface RuntimeState {
-  codex: boolean;
+  /** A model endpoint is configured, so scripts and scenes can be written. */
+  model: boolean;
   manim: boolean;
   ffmpeg: boolean;
 }

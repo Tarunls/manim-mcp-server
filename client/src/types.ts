@@ -181,7 +181,7 @@ export interface AuthState {
 }
 
 export interface RuntimeState {
-  codex: boolean;
+  model: boolean;
   manim: boolean;
   ffmpeg: boolean;
 }

@@ -54,7 +54,7 @@ export class ScopedNarrationService {
     await this.assertNarrationEntitlement(job.ownerId);
     const index = Number(input.index);
     const text = typeof input.text === "string" ? compactNarrationText(input.text) : "";
-    if (!Number.isInteger(index) || index < 0 || index >= 12 || !text || text.length > 1800) {
+    if (!Number.isInteger(index) || index < 0 || index >= 40 || !text || text.length > 1800) {
       throw new Error("Narration segment is invalid.");
     }
     const requestHash = createHash("sha256").update(`${voice.key}:${text}`).digest("hex");
@@ -65,7 +65,7 @@ export class ScopedNarrationService {
         "SELECT count(*)::text AS count FROM job_provider_calls WHERE job_id = $1 AND provider = 'narration'",
         [job.id],
       );
-      if (Number(count.rows[0]?.count || 0) >= 12) throw new Error("Narration segment limit reached.");
+      if (Number(count.rows[0]?.count || 0) >= 40) throw new Error("Narration segment limit reached.");
       const result = await client.query(
         `INSERT INTO job_provider_calls (id, job_id, provider, idempotency_key, request_hash)
          VALUES ($1, $2, 'narration', $3, $4)

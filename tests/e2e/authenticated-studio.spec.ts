@@ -140,7 +140,7 @@ async function mockStudio(page: Page, projects: unknown[]) {
     projects,
     auth: { connected: true },
     billing,
-    runtime: { codex: true, manim: true, ffmpeg: true },
+    runtime: { model: true, manim: true, ffmpeg: true },
   });
   await page.route("**/api/events", (route) => route.fulfill({
     status: 200,

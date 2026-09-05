@@ -19,21 +19,13 @@ test("artifact signatures reject files disguised by content type", () => {
   assert.equal(hasExpectedSignature("metadata", Buffer.from('{"duration":0}')), false);
 });
 
-test("render metadata accepts bounded review and layout audit summaries", () => {
+test("render metadata keeps the narration summary and ignores fields it does not know", () => {
   const metadata = validateRenderMetadata({
     renderer: "manim",
     duration: 38,
-    review: { strategy: "beat-aware-v1", sampleCount: 12, manifest: "review-frames.json" },
-    layoutAudit: {
-      status: "pass",
-      checks: { inside: 4, safeArea: 8, overlap: 1200, watchedFrames: 1180 },
-      namedObjects: ["curve", "integral-label"],
-      violations: 0,
-    },
+    narration: { enabled: true, hasAudio: true, provider: "elevenlabs", segments: 6 },
+    somethingNew: { nested: true },
   });
-  assert.equal(metadata.layoutAudit?.status, "pass");
-  assert.throws(() => validateRenderMetadata({
-    duration: 38,
-    review: { strategy: "all-frames", sampleCount: 9000, manifest: "frames.json" },
-  }), /review strategy/);
+  assert.equal(metadata.narration?.hasAudio, true);
+  assert.equal(metadata.narration?.segments, 6);
 });

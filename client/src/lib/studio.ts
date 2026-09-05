@@ -12,7 +12,7 @@ export const CONTACT_EMAIL = "tarun.l.sankar@gmail.com";
 export const EMPTY_AUTH: AuthState = { connected: false };
 
 export const EMPTY_RUNTIME: RuntimeState = {
-  codex: false,
+  model: false,
   manim: false,
   ffmpeg: false,
 };
@@ -74,12 +74,12 @@ export function videoEngineIsReady(runtime: RuntimeState) {
 
 export function stageLabel(stage: ProjectStage) {
   return stage === "brief"
-    ? "Planning the lesson"
+    ? "Writing the script"
     : stage === "rendering"
       ? "Rendering the video"
       : stage === "inspecting"
-        ? "Inspecting frames"
-        : "Building the visuals";
+        ? "Checking the video"
+        : "Recording the voice and building the animation";
 }
 
 export function generationLabel(project: StudioProject) {

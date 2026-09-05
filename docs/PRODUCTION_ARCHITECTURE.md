@@ -10,7 +10,7 @@ This document is the implementation contract for the hosted SaaS. Production mus
 2. Every protected request verifies that cookie and derives the user ID from its signed subject. A user ID supplied in a URL or JSON body is never trusted as identity.
 3. The API writes user, project, billing, credit-ledger, and generation-job changes to PostgreSQL in transactions.
 4. A generation request commits a job, credit reservation, and outbox event atomically. The dispatcher publishes that job to Cloud Tasks.
-5. The private dispatch endpoint starts one E2B sandbox from the pinned renderer template, records the sandbox ID, starts the Codex/render bootstrap, and acknowledges the task.
+5. The private dispatch endpoint starts one E2B sandbox from the pinned renderer template, records the sandbox ID, starts the pipeline bootstrap (script, voice, scene, render), and acknowledges the task.
 6. The sandbox has no upstream OpenAI, GCP, database, Identity Platform, Stripe, E2B, Speechify, or ElevenLabs credential. Its `.env` contains a job-scoped OpenAI proxy token. The trusted bootstrap separately holds a callback token and narrowly scoped artifact upload URLs.
 7. The API validates completion callbacks, verifies uploaded artifacts, commits the final version, and exposes short-lived signed read URLs after checking ownership.
 
@@ -50,9 +50,9 @@ Production starts with `REQUIRE_DATABASE=true`; this makes the service fail clos
 
 ## Sandbox secret policy
 
-Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. The sandbox creates `.env` with a job-scoped proxy token and proxy base URL, mode `0600`; it never receives the upstream OpenAI key, never logs the file, excludes it from archives, and deletes it before completion. The proxy token is accepted only while its job is active and is capped at 64 upstream calls by default. The Codex child environment does not receive the callback credential, and archive-bound files are rejected if they contain raw sandbox credential material, links, special files, or unsafe paths.
+Production secrets remain in Secret Manager. The dispatcher supplies a minimal environment to E2B. The sandbox receives a job-scoped proxy token and proxy base URL in its environment; it never receives the upstream OpenAI key. The proxy token is accepted only while its job is active, is capped in calls and estimated cost, and the proxy chooses the upstream model per pipeline stage (the script by the fast model, code by the purchased tier). Archive-bound files are rejected if they contain raw sandbox credential material, links, special files, or unsafe paths.
 
-The Codex process must never inherit the web service environment. Speechify and ElevenLabs are exposed through a bootstrap-owned loopback bridge, not through provider keys or raw callback credentials. Generated rendering code can submit only bounded narration requests to localhost; the trusted bridge validates them and attaches the active job callback credential while forwarding to the API. Each job can request at most twelve segments. The API calls the selected provider, so provider keys never cross the service boundary.
+Speechify and ElevenLabs are exposed through a bootstrap-owned loopback bridge, not through provider keys or raw callback credentials. The pipeline submits bounded narration requests to localhost; the trusted bridge validates them and attaches the active job callback credential while forwarding to the API. Each job can request at most forty segments. The API calls the selected provider, so provider keys never cross the service boundary.
 
 The loopback bridge is unit/security tested, but the final live narrated staging flow remains unverified as of 2026-08-29 because the deployed E2B image failed earlier during Manim startup. See `docs/IMPLEMENTATION_STATUS.md`.
 
