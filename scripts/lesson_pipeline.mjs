@@ -334,13 +334,29 @@ function pythonCommand() {
 /** Render the project. Returns the renderer's metadata on success; on failure
  * the error message carries the tail of the renderer output for the repair
  * step. */
-export async function renderProject({ root, projectDir, quality, signal, env = process.env, timeoutMs = 12 * 60_000 }) {
+export async function renderProject({ root, projectDir, quality, signal, env = process.env, timeoutMs = 12 * 60_000, onProgress }) {
   let result;
+  let buffered = "";
+  let lastReport = 0;
+  const onStderr = (chunk) => {
+    if (!onProgress) return;
+    buffered += chunk;
+    const lines = buffered.split("\n");
+    buffered = lines.pop() || "";
+    for (const line of lines) {
+      const match = line.match(/^render-progress (\d+)\/(\d+)/);
+      if (!match) continue;
+      const now = Date.now();
+      if (now - lastReport < 15_000 && Number(match[1]) < Number(match[2])) continue;
+      lastReport = now;
+      onProgress(`Rendering: ${match[1]} of ${match[2]} animations done`);
+    }
+  };
   try {
     result = await runCommand(
       pythonCommand(),
       [path.join(root, "scripts", "render_scene.py"), projectDir, quality],
-      { cwd: projectDir, env, signal, timeoutMs },
+      { cwd: projectDir, env, signal, timeoutMs, onStderr },
     );
   } catch (error) {
     if (signal?.aborted || !/exceeded \d+ seconds/.test(String(error?.message))) throw error;
@@ -533,7 +549,7 @@ export async function authorLesson(options) {
   for (let attempt = 0; ; attempt += 1) {
     await progress("rendering", attempt ? `Rendering again (fix ${attempt} of ${maxRepairs})` : "Rendering the video");
     try {
-      metadata = await renderProject({ root, projectDir, quality, signal, env });
+      metadata = await renderProject({ root, projectDir, quality, signal, env, onProgress: (label) => progress("rendering", label) });
       break;
     } catch (error) {
       checkCancelled();

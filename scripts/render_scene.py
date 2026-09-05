@@ -62,6 +62,128 @@ def defines_generated_scene(code: str) -> bool:
     return False
 
 
+def progress(message: str) -> None:
+    """Progress lines go to stderr so the pipeline can relay them to the UI."""
+    print(message, file=sys.stderr, flush=True)
+
+
+def count_animations(base_command: list[str], source: Path, media_dir: Path, project_dir: Path, environment: dict) -> int:
+    """Run the scene with every animation skipped and read back how many there were."""
+    env = dict(environment)
+    env["ORUNE_PRINT_ANIMATION_COUNT"] = "1"
+    result = subprocess.run(
+        [*base_command, "-s", "--media_dir", str(media_dir / "count"), str(source), "GeneratedScene"],
+        cwd=project_dir, text=True, capture_output=True, timeout=600, env=env,
+    )
+    if result.returncode != 0:
+        fail((result.stderr or result.stdout or "Manim render failed.")[-6000:])
+    match = re.search(r"ORUNE_ANIMATIONS=(\d+)", result.stderr)
+    return int(match.group(1)) if match else 0
+
+
+def run_manim_worker(command: list[str], project_dir: Path, environment: dict, on_line) -> subprocess.Popen:
+    process = subprocess.Popen(
+        command, cwd=project_dir, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=environment,
+    )
+    process.orune_lines = []
+
+    def pump() -> None:
+        assert process.stderr is not None
+        for line in process.stderr:
+            process.orune_lines.append(line)
+            on_line(line)
+
+    import threading
+    process.orune_thread = threading.Thread(target=pump, daemon=True)
+    process.orune_thread.start()
+    return process
+
+
+def render_in_parallel(base_command: list[str], source: Path, media_dir: Path, project_dir: Path, environment: dict, quality: str) -> Path:
+    """Render the scene across several processes and join the pieces.
+
+    Manim's -n a,b renders only animations a..b and skips the rest at almost
+    no cost, so a scene with continuous motion can be cut into ranges and
+    rendered on every CPU at once. Each worker writes its own contiguous
+    chunk; the chunks are concatenated in order without re-encoding.
+    """
+    total = count_animations(base_command, source, media_dir, project_dir, environment)
+    workers = int(os.environ.get("ORUNE_RENDER_WORKERS", "0") or 0) or min(4, os.cpu_count() or 1)
+    workers = max(1, min(workers, total if total else 1))
+    if quality in CACHED_QUALITIES:
+        workers = 1
+    done = {"count": 0}
+    last_report = {"at": 0.0}
+
+    def on_line(line: str) -> None:
+        if "Partial movie file written" in line:
+            done["count"] += 1
+            now = time.time()
+            if now - last_report["at"] >= 3 or done["count"] == total:
+                last_report["at"] = now
+                progress(f"render-progress {done['count']}/{max(total, done['count'])}")
+
+    if workers <= 1 or total < 2:
+        process = run_manim_worker(
+            [*base_command, "--media_dir", str(media_dir), str(source), "GeneratedScene"], project_dir, environment, on_line,
+        )
+        try:
+            process.wait(timeout=1200)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            fail("Manim render exceeded its time limit.")
+        process.orune_thread.join(timeout=5)
+        if process.returncode != 0:
+            fail(("".join(process.orune_lines) or "Manim render failed.")[-6000:])
+        candidates = list((media_dir / "videos").rglob("GeneratedScene.mp4"))
+        if not candidates:
+            fail("Manim completed but no GeneratedScene.mp4 was found.")
+        return max(candidates, key=lambda item: item.stat().st_mtime)
+
+    progress(f"render-workers {workers} animations {total}")
+    bounds = [round(index * total / workers) for index in range(workers + 1)]
+    processes = []
+    for index in range(workers):
+        first, last = bounds[index], bounds[index + 1] - 1
+        if last < first:
+            continue
+        worker_media = media_dir / f"w{index}"
+        command = [*base_command, "-n", f"{first},{last}", "--media_dir", str(worker_media), str(source), "GeneratedScene"]
+        processes.append((index, worker_media, run_manim_worker(command, project_dir, environment, on_line)))
+    deadline = time.time() + 1200
+    for index, worker_media, process in processes:
+        try:
+            process.wait(timeout=max(1, deadline - time.time()))
+        except subprocess.TimeoutExpired:
+            for _, _, other in processes:
+                other.kill()
+            fail("Manim render exceeded its time limit.")
+    chunks = []
+    for index, worker_media, process in processes:
+        process.orune_thread.join(timeout=5)
+        if process.returncode != 0:
+            for _, _, other in processes:
+                if other.poll() is None:
+                    other.kill()
+            fail(("".join(process.orune_lines) or "Manim render failed.")[-6000:])
+        candidates = list((worker_media / "videos").rglob("GeneratedScene.mp4"))
+        if not candidates:
+            fail(f"Render worker {index} produced no video.")
+        chunks.append(max(candidates, key=lambda item: item.stat().st_mtime))
+    if len(chunks) == 1:
+        return chunks[0]
+    list_file = media_dir / "chunks.txt"
+    list_file.write_text("".join(f"file '{chunk.as_posix()}'\n" for chunk in chunks), encoding="utf-8")
+    merged = media_dir / "GeneratedScene.merged.mp4"
+    concat = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(merged)],
+        text=True, capture_output=True, timeout=300,
+    )
+    if concat.returncode != 0:
+        fail(concat.stderr[-2000:] or "Could not join the rendered chunks.")
+    return merged
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         fail("Usage: render_scene.py PROJECT_DIR [draft|preview|balanced|high|vertical|vertical-draft]")
@@ -94,37 +216,14 @@ def main() -> None:
         fail("Manim is not installed in the project virtual environment. Run: npm run setup:manim")
 
     media_dir = project_dir / ".media"
-    command = [
-        str(python),
-        str(root / "scripts" / "manim_runner.py"),
-        "render",
-        *QUALITY_ARGS[quality],
-        *([] if quality in CACHED_QUALITIES else ["--disable_caching"]),
-        "--media_dir",
-        str(media_dir),
-        str(source),
-        "GeneratedScene",
-    ]
     started = time.time()
     environment = dict(os.environ)
     environment["PYTHONPATH"] = str(project_dir) + os.pathsep + environment.get("PYTHONPATH", "")
-    result = subprocess.run(
-        command,
-        cwd=project_dir,
-        text=True,
-        capture_output=True,
-        timeout=1200,
-        env=environment,
-    )
-    if result.returncode != 0:
-        output = result.stderr or result.stdout or "Manim render failed."
-        # Manim prints a boxed traceback; keep the end, which names the error.
-        fail(output[-6000:])
+    base_command = [str(python), str(root / "scripts" / "manim_runner.py"), "render", *QUALITY_ARGS[quality]]
+    if quality not in CACHED_QUALITIES:
+        base_command.append("--disable_caching")
+    rendered = render_in_parallel(base_command, source, media_dir, project_dir, environment, quality)
 
-    candidates = list((media_dir / "videos").rglob("GeneratedScene.mp4"))
-    if not candidates:
-        fail("Manim completed but no GeneratedScene.mp4 was found.")
-    rendered = max(candidates, key=lambda item: item.stat().st_mtime)
     # The scene's own clock decides the length. A runaway wait or run_time
     # would otherwise cost a ten-minute encode before anyone noticed.
     length_probe = subprocess.run(

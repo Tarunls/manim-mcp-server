@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import collections
 import os
+import sys
 
 from manim.scene import scene_file_writer as writer_module
 
@@ -135,6 +136,20 @@ def _scene_init_with_portrait_frame(self, *args, **kwargs):
 
 
 scene_module.Scene.__init__ = _scene_init_with_portrait_frame
+
+_original_scene_render = scene_module.Scene.render
+
+
+def _scene_render_with_count(self, *args, **kwargs):
+    """Report how many animations the scene plays, so the render script can
+    split the work across processes with -n ranges."""
+    result = _original_scene_render(self, *args, **kwargs)
+    if os.environ.get("ORUNE_PRINT_ANIMATION_COUNT"):
+        print(f"ORUNE_ANIMATIONS={self.renderer.num_plays}", file=sys.stderr, flush=True)
+    return result
+
+
+scene_module.Scene.render = _scene_render_with_count
 
 
 if __name__ == "__main__":
