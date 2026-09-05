@@ -1,6 +1,6 @@
 # GCP deployment runbook
 
-Updated: 2026-09-02
+Updated: 2026-09-05
 
 Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact current release and the incomplete narrated-generation certification.
 
@@ -16,7 +16,16 @@ Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact curr
 - Migration job: `lesson-studio-staging-migrate`
 - Legacy service `lesson-studio`: do not modify
 
-The deployed image/template are currently `81b9483` (deployed 2026-09-02; E2B smoke and the silent staging smoke passed). It rewrites the narration audio assembly — see "Narration audio" below. That release restores nine commits from 2026-08-30/31 (`bb9b604`..`2452405`, the showcase landing page and the 9:16 vertical format) that had been built and deployed from a local clone but never pushed; their trees were recovered from the Cloud Build source archives onto branch `recover/aug30-31-local-work` and merged.
+The deployed image/template are currently `3e443ec` (deployed 2026-09-05; E2B smoke passed, Terraform clean). This release replaces the Codex agent with the fixed pipeline in `scripts/lesson_pipeline.mjs` (script call, voice, scene call, one render) and removes every content gate from the renderer. `CODEX_MAX_OUTPUT_TOKENS_PER_CALL` is 32000 so a whole scene plus reasoning fits one response.
+
+**Outstanding on 2026-09-05: the OpenAI organization behind `openai_api_key` has no credits** (`insufficient_quota`, "You have no credits remaining"). Every hosted generation fails at "Writing the script" until credits are added; the failure is clean and refunds the credit. Once credits exist, prove the release with:
+
+```sh
+# five real briefs through the pipeline inside GCP, results in gs://.../eval/<run>/
+gcloud run jobs execute lesson-studio-staging-eval-3e443ec --region us-central1 --wait
+# one hosted generation through the public API with a disposable free account
+APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 node --import tsx scripts/staging_generate.ts --brief "..." --format vertical
+```
 
 **Before any release, verify nothing is unpushed:** compare the `COMMIT_SHA` values in `gcloud builds list` and the live services' image tags against `git branch -r --contains <sha>`. A SHA git does not know means local work that must be recovered from `gs://educationalvideo-506219_cloudbuild/source/` before deploying over it.
 
