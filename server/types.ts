@@ -3,7 +3,7 @@ export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "insp
 // The studio renders every lesson with Manim. The field is kept on stored
 // project documents so rows written before the Manim-only change still parse.
 export type RendererKind = "manim";
-export type AgentModel = "gpt-5.6-sol" | "gpt-5.6-terra";
+export type AgentModel = "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra";
 export type GenerationEffort = "quick" | "balanced" | "thorough";
 export type AgentReasoningEffort = "medium" | "high" | "xhigh";
 export type GenerationIntent = "auto" | "new" | "revise";

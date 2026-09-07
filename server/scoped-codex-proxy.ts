@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "./database.js";
 import type { HostedJob } from "./hosted-generation-service.js";
+import { generationModelPolicy } from "./generation-models.js";
 
 function boundedInteger(
   value: string | undefined,
@@ -36,7 +37,7 @@ type ReservedCall = {
 
 export function codexPolicy(effort: HostedJob["effort"]) {
   return {
-    model: effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
+    ...generationModelPolicy(effort),
     maxOutputTokens: boundedInteger(
       process.env.CODEX_MAX_OUTPUT_TOKENS_PER_CALL,
       12_000,
@@ -71,6 +72,11 @@ export function constrainCodexRequest(
   };
   delete request.metadata;
   if (!compact) {
+    const reasoning = request.reasoning && typeof request.reasoning === "object" && !Array.isArray(request.reasoning)
+      ? request.reasoning as Record<string, unknown> : {};
+    request.reasoning = { ...reasoning, effort: policy.reasoningEffort };
+    // An agent cannot opt into priority/Fast pricing or a higher reasoning tier.
+    request.service_tier = "default";
     const requested = Number(request.max_output_tokens);
     request.max_output_tokens =
       Number.isSafeInteger(requested) && requested > 0
@@ -146,16 +152,25 @@ async function boundedResponseBody(response: Response, maximumBytes: number) {
   }
 }
 
-function estimatedCostMicrousd(model: string, usage: Usage) {
-  const prices =
-    model === "gpt-5.6-sol"
-      ? { input: 5, cached: 0.5, output: 30 }
-      : { input: 2.5, cached: 0.25, output: 15 };
+export function estimatedCostMicrousd(model: string, usage: Usage) {
+  // USD per million tokens equals micro-USD per token. Astra rates verified
+  // 2026-09-07: https://developers.openai.com/api/docs/models/gpt-6-astra
+  // Conservatively allow the 1.25x cache-write rate on uncached Astra input:
+  // this relay's usage shape does not distinguish writes from ordinary input.
+  // Legacy rates remain conservative for historic jobs. Never price an
+  // unknown model as Terra: fail closed before silently undercounting spend.
+  const rates: Record<string, { input: number; cached: number; output: number }> = {
+    "gpt-6-astra": { input: 12.5, cached: 1, output: 50 },
+    "gpt-5.6-sol": { input: 5, cached: 0.5, output: 30 },
+    "gpt-5.6-terra": { input: 2.5, cached: 0.25, output: 15 },
+  };
+  const prices = rates[model];
+  if (!prices) throw new Error(`Missing model pricing: ${model}`);
+  const longContext = model === "gpt-6-astra" && usage.inputTokens > 272_000;
   const uncached = Math.max(0, usage.inputTokens - usage.cachedInputTokens);
   return Math.round(
-    uncached * prices.input +
-      usage.cachedInputTokens * prices.cached +
-      usage.outputTokens * prices.output,
+    (uncached * prices.input + usage.cachedInputTokens * prices.cached) * (longContext ? 2 : 1) +
+      usage.outputTokens * prices.output * (longContext ? 1.5 : 1),
   );
 }
 

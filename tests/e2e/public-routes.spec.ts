@@ -25,8 +25,8 @@ test("homepage is responsive and links to real product routes", async ({ page },
   await expect(page.getByRole("link", { name: /Watch an example/ })).toHaveAttribute("href", "#watch");
   await expect(page.getByRole("link", { name: /See the plans/ })).toHaveAttribute("href", "/pricing");
   await expect(page.locator("video.watch-video")).toHaveAttribute("src", "/showcase/accumulation.mp4");
-  await expect(page.locator("#how-it-works")).toHaveAttribute("aria-label", /standing-wave pattern/);
-  await expect(page.locator("#how-it-works canvas")).toBeVisible();
+  await expect(page.locator("#how-it-works")).toHaveAttribute("aria-label", "How Orune works");
+  await expect(page.locator("#hero-resonance canvas")).toBeVisible();
   // the old ask-then-get section is gone; the hero diagram replaced it
   await expect(page.locator(".ask")).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
@@ -43,7 +43,7 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
     for (const [name, locator] of [
       ["headline", page.locator(".hero h1")],
       ["cta", page.getByRole("link", { name: "Create a lesson" }).first()],
-      ["visual", page.locator("#how-it-works")],
+      ["visual", page.locator("#hero-resonance")],
       ["visual canvas", page.locator(".hero-chladni-canvas")],
     ] as const) {
       const box = await locator.boundingBox();
@@ -56,7 +56,7 @@ test("the hero, visual included, fits the first screen", async ({ page }, testIn
   }
 });
 
-test("the hero resonance remains animated with reduced motion", async ({ page }, testInfo) => {
+test("reduced motion starts paused and visitors can control the animation", async ({ page }, testInfo) => {
   test.skip(
     testInfo.project.name !== "desktop",
     "The canvas behavior is viewport-independent.",
@@ -68,7 +68,23 @@ test("the hero resonance remains animated with reduced motion", async ({ page },
   const firstFrame = await canvas.screenshot();
   await page.waitForTimeout(900);
   const secondFrame = await canvas.screenshot();
-  expect(firstFrame.equals(secondFrame)).toBe(false);
+  expect(firstFrame.equals(secondFrame)).toBe(true);
+  await page.getByRole("button", { name: "Play background animation" }).click();
+  await expect(page.getByRole("button", { name: "Pause background animation" })).toBeVisible();
+  await page.getByRole("button", { name: "Pause background animation" }).click();
+  await expect(page.getByRole("button", { name: "Play background animation" })).toBeVisible();
+});
+
+test("examples select playable lessons and mobile navigation exposes pricing", async ({ page }, testInfo) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: "Watch A circle becomes a wave" }).click();
+  await expect(page.locator("video.watch-video")).toHaveAttribute("src", "/showcase/rotation.mp4");
+  await expect(page.locator("video.watch-video")).toHaveAttribute("controls", "");
+  if (testInfo.project.name === "mobile") {
+    await page.locator(".mobile-site-menu summary").click();
+    await page.getByRole("navigation", { name: "Mobile site", exact: true }).getByRole("link", { name: "Pricing" }).click();
+    await expect(page).toHaveURL(/\/pricing$/);
+  }
 });
 
 // the examples gallery became the contact strip: all three lesson stills sit

@@ -5,23 +5,18 @@ import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { CodexBridge } from "./codex-bridge.js";
+import { generationModelPolicy } from "./generation-models.js";
 import { fetchVerifiedCommonsImage } from "./hosted-media-service.js";
 import { manimPath } from "./platform.js";
 import { titleFromPrompt } from "./plan.js";
-import type { AgentAction, AgentModel, AgentReasoningEffort, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
+import type { AgentAction, AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 const RENDERER: RendererKind = "manim";
-const DEFAULT_MODEL: AgentModel = "gpt-5.6-sol";
 const DEFAULT_GENERATION_EFFORT: GenerationEffort = "balanced";
-const GENERATION_EFFORTS: Record<GenerationEffort, { model: AgentModel; reasoningEffort: AgentReasoningEffort }> = {
-  quick: { model: "gpt-5.6-terra", reasoningEffort: "medium" },
-  balanced: { model: DEFAULT_MODEL, reasoningEffort: "high" },
-  thorough: { model: DEFAULT_MODEL, reasoningEffort: "xhigh" },
-};
 
 export function generationPreferencesFor(effort: GenerationEffort): StudioProject["generationPreferences"] {
-  return { effort, ...GENERATION_EFFORTS[effort] };
+  return { effort, ...generationModelPolicy(effort) };
 }
 
 function normalizeGenerationPreferences(preferences?: Partial<StudioProject["generationPreferences"]>) {

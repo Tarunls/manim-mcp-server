@@ -25,6 +25,19 @@ export function SiteNav({ links }: { links?: ReactNode }) {
             Start free
           </a>
         </nav>
+        <details className="mobile-site-menu" onClick={(event) => {
+          if ((event.target as HTMLElement).closest("a")) event.currentTarget.open = false;
+        }} onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector("summary")?.focus();
+          }
+        }}>
+          <summary>Menu</summary>
+          <nav aria-label="Mobile site">
+            {links ?? <><a href="/#examples">Examples</a><a href="/#how-it-works">How it works</a><a href="/pricing">Pricing</a></>}
+          </nav>
+        </details>
       </div>
     </header>
   );

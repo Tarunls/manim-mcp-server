@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ChladniVisual } from "./ChladniVisual";
 import { MarketingChrome } from "./MarketingChrome";
 
@@ -7,23 +7,27 @@ import { MarketingChrome } from "./MarketingChrome";
 const STRIP = [
   {
     id: "accumulation",
+    title: "Area under a curve",
     sentence: "“Show me how adding up rectangles becomes the integral.”",
     alt: "A lesson frame titled “The estimate stops being an estimate.”: the area under a curve, shaded, above the identity area equals the integral of f.",
   },
   {
     id: "rotation",
+    title: "A circle becomes a wave",
     sentence:
       "“Show me why a sine wave is just something going round a circle.”",
     alt: "A lesson frame titled “A rotation casts a wave.”: a hand turning on a circle beside the sine wave its height traces.",
   },
   {
     id: "slope",
+    title: "The meaning of a derivative",
     sentence: "“Show me what the derivative means at one point.”",
     alt: "A lesson frame titled “That line's steepness is the derivative.”: a parabola with a tangent line touching at a marked point.",
   },
 ] as const;
 
 export default function Marketing() {
+  const [selectedLesson, setSelectedLesson] = useState<(typeof STRIP)[number]>(STRIP[0]);
   useEffect(() => {
     const elements = document.querySelectorAll("[data-reveal]");
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -54,8 +58,8 @@ export default function Marketing() {
           <div className="hero-copy">
             <h1 id="hero-title">Turn ideas into beautiful animations.</h1>
             <p className="hero-lede">
-              Describe what you want to explain. Orune turns it into a narrated
-              visual story.
+              Explain a concept with a video made for it. Describe your idea,
+              watch it take shape, and draw on any frame to refine it.
             </p>
             <div className="hero-actions">
               <a className="button button-primary" href="/studio">
@@ -65,31 +69,40 @@ export default function Marketing() {
                 Watch an example &rarr;
               </a>
             </div>
+            <p className="hero-note">Your first generation is free. No card needed.</p>
           </div>
 
           <ChladniVisual />
         </div>
       </section>
 
+      <section className="how-it-works" id="how-it-works" aria-label="How Orune works">
+        <ol>
+          <li><span className="step-number">01</span><div><h2>Describe it.</h2><p>A concept, an audience, a little direction.</p></div></li>
+          <li><span className="step-number">02</span><div><h2>Make it yours.</h2><p>Review the video. Draw on a frame to request a change.</p></div></li>
+          <li><span className="step-number">03</span><div><h2>Press play.</h2><p>Download your video, ready to teach or share.</p></div></li>
+        </ol>
+      </section>
+
       {/* 2 — watch one: a full-bleed lesson between two hairlines */}
       <section className="watch" id="watch" aria-label="Watch one lesson">
         <div className="watch-frame">
-          <span className="kicker watch-kicker">Watch one lesson</span>
+          <div className="watch-heading"><span className="kicker">See it in motion</span><h2>{selectedLesson.title}</h2></div>
           <video
+            key={selectedLesson.id}
             className="watch-video"
-            autoPlay
+            controls
             muted
             loop
             playsInline
             preload="metadata"
-            poster="/showcase/accumulation.jpg"
-            src="/showcase/accumulation.mp4"
-            aria-label="An Orune lesson: rectangles under a curve narrowing until the estimate becomes the integral."
+            poster={`/showcase/${selectedLesson.id}.jpg`}
+            src={`/showcase/${selectedLesson.id}.mp4`}
+            aria-label={`Watch ${selectedLesson.title}`}
           />
         </div>
         <p className="watch-note">
-          Rendered by Orune from one sentence. Twelve seconds, exactly as it
-          came out of the renderer.
+          A short sample lesson. Press play to explore it.
         </p>
       </section>
 
@@ -107,6 +120,10 @@ export default function Marketing() {
               <img
                 src="/showcase/slope.jpg"
                 alt="A lesson frame: a parabola with a sienna tangent line touching at a marked point."
+                width={1440}
+                height={810}
+                loading="lazy"
+                decoding="async"
               />
               <svg
                 className="pen-annotation"
@@ -132,7 +149,7 @@ export default function Marketing() {
           </div>
           <p className="pen-body">
             Pause any frame, draw on what is wrong, and say what you want.
-            Orune re-renders only the scenes you touched.
+            Your marked frame and note guide the next revision.
           </p>
         </div>
       </section>
@@ -157,7 +174,10 @@ export default function Marketing() {
               key={lesson.id}
               id={`lesson-${lesson.id}`}
             >
-              <img src={`/showcase/${lesson.id}.jpg`} alt={lesson.alt} />
+              <a className="strip-preview" href="#watch" onClick={() => setSelectedLesson(lesson)} aria-label={`Watch ${lesson.title}`}>
+                <img src={`/showcase/${lesson.id}.jpg`} alt={lesson.alt} width={1440} height={810} loading="lazy" decoding="async" />
+                <span className="strip-play" aria-hidden="true">Play lesson <span>↗</span></span>
+              </a>
               <figcaption>{lesson.sentence}</figcaption>
             </figure>
           ))}
@@ -168,23 +188,22 @@ export default function Marketing() {
       <section className="close" aria-labelledby="close-title">
         <div className="close-inner" data-reveal>
           <h2 id="close-title">
-            Every diagram is <em>computed</em>, not drawn.
+            Give a difficult idea a <em>clearer explanation.</em>
           </h2>
           <p>
-            A curve is its function sampled along its own domain, and a tangent
-            sits where the derivative puts it. Pick the idea you never quite
-            got, and watch it get built.
+            Start with the concept you want to teach. Shape the explanation,
+            review the details, and make something worth watching.
           </p>
           <div className="hero-actions close-actions">
             <a className="button button-primary" href="/studio">
-              Start with one free lesson
+              Create your first lesson
             </a>
             <a className="text-link" href="/pricing">
               See the plans &rarr;
             </a>
           </div>
           <p className="close-note">
-            One lesson free, no card. Paid plans start at $20 a month.
+            One generation credit free each month. No card required.
           </p>
         </div>
       </section>

@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { Codex } from "@openai/codex-sdk";
 import { startNarrationProxy } from "./narration-proxy.mjs";
+import generationModels from "./generation-models.json" with { type: "json" };
 
 const execFileAsync = promisify(execFile);
 const job = JSON.parse(await fs.readFile("/workspace/job.json", "utf8"));
@@ -238,8 +239,8 @@ ${String(job.prompt).slice(0, 12000)}
     networkAccessEnabled: false,
     webSearchMode: "disabled",
     approvalPolicy: "never",
-    model: job.effort === "thorough" ? "gpt-5.6-sol" : "gpt-5.6-terra",
-    modelReasoningEffort: job.effort === "thorough" ? "xhigh" : job.effort === "balanced" ? "high" : "medium",
+    model: generationModels[job.effort].model,
+    modelReasoningEffort: generationModels[job.effort].reasoningEffort,
   });
   const requestedAgentTimeout = Number(process.env.GENERATION_AGENT_TIMEOUT_MS);
   const agentTimeoutMs = Number.isSafeInteger(requestedAgentTimeout) && requestedAgentTimeout >= 60_000

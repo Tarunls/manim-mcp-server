@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Grain = {
   x: number;
@@ -84,6 +84,10 @@ function projectToNode(x: number, y: number, blend: number) {
   return { x: px, y: py };
 }
 
+// The two standing modes do not change. Cache their grids rather than
+// recomputing thousands of trigonometric samples for every contour/frame.
+const contourGrids = new Map<number, Array<Array<[number, number]>>>();
+
 function contour(
   context: CanvasRenderingContext2D,
   blend: number,
@@ -91,15 +95,18 @@ function contour(
   size: number,
   resolution = 64,
 ) {
-  const values: number[][] = [];
-  for (let row = 0; row <= resolution; row += 1) {
-    const y = -1 + (row / resolution) * 2;
-    values[row] = [];
-    for (let column = 0; column <= resolution; column += 1) {
-      const x = -1 + (column / resolution) * 2;
-      values[row][column] = field(x, y, blend).value;
-    }
+  let grid = contourGrids.get(resolution);
+  if (!grid) {
+    grid = Array.from({ length: resolution + 1 }, (_, row) =>
+      Array.from({ length: resolution + 1 }, (_, column): [number, number] => {
+        const x = -1 + (column / resolution) * 2;
+        const y = -1 + (row / resolution) * 2;
+        return [mode(x, y, 4, 7).value, mode(x, y, 5, 8).value];
+      }),
+    );
+    contourGrids.set(resolution, grid);
   }
+  const values = grid.map((row) => row.map(([first, second]) => first + (second - first) * blend));
 
   const point = (column: number, row: number) => ({
     x: ((column / resolution) * 2 - 1) * (size / 2),
@@ -158,6 +165,15 @@ function contour(
 
 export function ChladniVisual() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const elapsedRef = useRef(0);
+  const [paused, setPaused] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const change = () => setPaused(preference.matches);
+    preference.addEventListener("change", change);
+    return () => preference.removeEventListener("change", change);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -174,36 +190,34 @@ export function ChladniVisual() {
       tone: hash(index, 6),
     }));
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let animationFrame = 0;
     let width = 0;
     let height = 0;
     let pixelRatio = 1;
-    let startedAt = 0;
     let lastFrameAt = 0;
+    let visible = true;
+    const shouldAnimate = () => !paused && visible && !document.hidden;
 
     const resize = () => {
       const bounds = canvas.getBoundingClientRect();
       width = bounds.width;
       height = bounds.height;
-      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
       canvas.width = Math.max(1, Math.round(width * pixelRatio));
       canvas.height = Math.max(1, Math.round(height * pixelRatio));
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     };
 
     const draw = (timestamp: number) => {
-      if (!reducedMotion.matches && timestamp - lastFrameAt < 30) {
+      if (shouldAnimate() && lastFrameAt && timestamp - lastFrameAt < 30) {
         animationFrame = requestAnimationFrame(draw);
         return;
       }
+      if (shouldAnimate() && lastFrameAt) elapsedRef.current += Math.min(timestamp - lastFrameAt, 100) / 1000;
       lastFrameAt = timestamp;
-      if (!startedAt) startedAt = timestamp;
-      const seconds = (timestamp - startedAt) / 1000;
-      // Reduced motion keeps the explanation alive at a calmer speed and
-      // amplitude instead of replacing the animation with a frozen frame.
-      const motionScale = reducedMotion.matches ? 0.28 : 1;
-      const motionSeconds = seconds * (reducedMotion.matches ? 0.52 : 1);
+      const seconds = paused && elapsedRef.current === 0 ? 3 : elapsedRef.current;
+      const motionScale = 1;
+      const motionSeconds = seconds;
       const plateSize = Math.min(width * 0.84, height * 0.82);
       const resonance = resonanceState(motionSeconds);
       const blend = resonance.blend;
@@ -323,29 +337,47 @@ export function ChladniVisual() {
       context.restore();
       context.restore();
 
-      animationFrame = requestAnimationFrame(draw);
+      animationFrame = shouldAnimate() ? requestAnimationFrame(draw) : 0;
     };
 
+    const restart = () => {
+      cancelAnimationFrame(animationFrame);
+      lastFrameAt = 0;
+      // One frame also redraws a paused canvas after a resize.
+      animationFrame = requestAnimationFrame(draw);
+    };
     const observer = new ResizeObserver(() => {
       resize();
+      restart();
+    });
+    const visibilityObserver = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      restart();
     });
     observer.observe(canvas);
+    visibilityObserver.observe(canvas);
+    document.addEventListener("visibilitychange", restart);
     resize();
-    animationFrame = requestAnimationFrame(draw);
+    restart();
 
     return () => {
       observer.disconnect();
+      visibilityObserver.disconnect();
+      document.removeEventListener("visibilitychange", restart);
       cancelAnimationFrame(animationFrame);
     };
-  }, []);
+  }, [paused]);
 
   return (
     <figure
       className="hero-visual hero-chladni"
-      id="how-it-works"
+      id="hero-resonance"
       aria-label="A vibrating plate organizing scattered grains into a standing-wave pattern"
     >
       <canvas ref={canvasRef} className="hero-chladni-canvas" aria-hidden="true" />
+      <button className="motion-toggle" type="button" onClick={() => setPaused((value) => !value)} aria-label={paused ? "Play background animation" : "Pause background animation"}>
+        {paused ? "Play motion" : "Pause motion"}
+      </button>
       <figcaption className="visually-hidden">
         A simple vibration moves scattered grains into the intricate nodal lines
         of a Chladni figure, revealing the geometry of a standing wave.

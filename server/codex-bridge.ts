@@ -7,11 +7,10 @@ import readline from "node:readline";
 
 import { spawnThroughShell } from "./platform.js";
 import type { AgentModel, AgentReasoningEffort } from "./types.js";
+import { generationModelPolicy } from "./generation-models.js";
 
-// Keep the studio's quality/cost setting local to this app. The regular Codex
-// desktop/CLI configuration can remain on Sol for other work.
-const STUDIO_MODEL = "gpt-5.6-sol";
-const STUDIO_REASONING_EFFORT = "high";
+// This only controls the studio, independently of the developer's Codex profile.
+const { model: STUDIO_MODEL, reasoningEffort: STUDIO_REASONING_EFFORT } = generationModelPolicy("balanced");
 
 interface RpcMessage {
   id?: number;

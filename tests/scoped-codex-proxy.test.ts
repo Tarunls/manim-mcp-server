@@ -5,7 +5,9 @@ import {
   codexCostLimitMicrousd,
   codexPolicy,
   constrainCodexRequest,
+  estimatedCostMicrousd,
 } from "../server/scoped-codex-proxy.js";
+import { generationPreferencesFor } from "../server/studio-service.js";
 import type { HostedJob } from "../server/hosted-generation-service.js";
 
 function job(effort: HostedJob["effort"]): HostedJob {
@@ -23,10 +25,17 @@ function job(effort: HostedJob["effort"]): HostedJob {
   };
 }
 
-test("Codex policy uses the cost-efficient model unless thorough reasoning is purchased", () => {
+test("Faster stays economical and Astra gets bounded reasoning for paid work", () => {
   assert.equal(codexPolicy("quick").model, "gpt-5.6-terra");
-  assert.equal(codexPolicy("balanced").model, "gpt-5.6-terra");
-  assert.equal(codexPolicy("thorough").model, "gpt-5.6-sol");
+  assert.equal(codexPolicy("balanced").model, "gpt-6-astra");
+  assert.equal(codexPolicy("balanced").reasoningEffort, "medium");
+  assert.equal(codexPolicy("thorough").model, "gpt-6-astra");
+  assert.equal(codexPolicy("thorough").reasoningEffort, "high");
+  for (const effort of ["quick", "balanced", "thorough"] as const) {
+    const local = generationPreferencesFor(effort);
+    assert.equal(local.model, codexPolicy(effort).model);
+    assert.equal(local.reasoningEffort, codexPolicy(effort).reasoningEffort);
+  }
 });
 
 test("Codex cost policy bounds normal work and gives thorough work a larger envelope", () => {
@@ -41,10 +50,38 @@ test("Codex proxy overrides model selection and caps output tokens", () => {
     max_output_tokens: 999_999,
     input: "lesson",
   });
-  assert.equal(constrained.model, "gpt-5.6-terra");
+  assert.equal(constrained.model, "gpt-6-astra");
   assert.equal(constrained.max_output_tokens, 12_000);
   assert.equal(constrained.input, "lesson");
   assert.throws(() => constrainCodexRequest(job("quick"), []), /invalid/);
+});
+
+test("an agent cannot upgrade reasoning or buy priority processing", () => {
+  const constrained = constrainCodexRequest(job("balanced"), {
+    input: "lesson",
+    reasoning: { effort: "max", summary: "auto" },
+    service_tier: "priority",
+    max_output_tokens: 8000,
+  });
+  assert.deepEqual(constrained.reasoning, { effort: "medium", summary: "auto" });
+  assert.equal(constrained.service_tier, "default");
+  assert.equal(constrained.max_output_tokens, 8000);
+  const compact = constrainCodexRequest(job("balanced"), { input: "lesson" }, true);
+  assert.equal("max_output_tokens" in compact, false);
+  assert.equal("reasoning" in compact, false);
+  assert.equal("service_tier" in compact, false);
+});
+
+test("Astra accounting includes cached input, reasoning output and long-context rates", () => {
+  assert.equal(estimatedCostMicrousd("gpt-6-astra", {
+    inputTokens: 10000, cachedInputTokens: 6000, outputTokens: 2000,
+  }), 156000);
+  assert.equal(estimatedCostMicrousd("gpt-6-astra", {
+    inputTokens: 300000, cachedInputTokens: 200000, outputTokens: 2000,
+  }), 3050000);
+  assert.throws(() => estimatedCostMicrousd("unknown", {
+    inputTokens: 1, cachedInputTokens: 0, outputTokens: 0,
+  }), /Missing model pricing/);
 });
 
 test("Codex proxy never lets the sandbox persist responses or attach metadata", () => {
