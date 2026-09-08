@@ -1,6 +1,6 @@
 # Astra: quality and cost
 
-Policy prepared September 7, 2026. This change is local until the API and E2B template are deployed together.
+Policy prepared September 7, 2026. The API and matching E2B template are deployed; see [release evidence](releases/2026-09-07-astra.md).
 
 | Studio setting | Model | Reasoning | Hosted estimated-spend stop threshold |
 | --- | --- | --- | --- |
@@ -22,7 +22,7 @@ The $3.50/$7 figures are soft admission thresholds. They are checked against rec
 
 ## Rollout and validation
 
-1. Use an OpenAI project key with Astra access. This checkout currently has no `OPENAI_API_KEY`, so live availability and generation quality have not been benchmarked here.
+1. Use an OpenAI project key with Astra access. Production's Secret Manager key passed medium/high access checks and one Balanced silent pipeline example. This checkout has no local `OPENAI_API_KEY`; do not copy production credentials into it. Broader quality/cost benchmarking is still needed.
 2. Run one short integral prompt with Balanced and confirm model, accepted output, visual review and provider usage. Repeat with a targeted frame edit and Try harder. Preserve the artifacts and invoice usage for comparison.
 3. Evaluate at least ten representative prompts: short and long lessons, advanced integrals, diagrams, revisions and optional narration. Compare accepted video cost, failure/retry rate, total generation time and visual correctness with the previous routing. A higher per-token price can still be worthwhile if fewer attempts are needed; that is a hypothesis until measured.
 4. Build an immutable E2B template from this branch and deploy the API/dispatcher with that same template version. Rebuilding only the frontend does not change hosted execution. Keep the previous API and template revisions available for rollback.

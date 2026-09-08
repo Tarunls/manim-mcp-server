@@ -1,6 +1,8 @@
 # GCP deployment runbook
 
-Updated: 2026-09-05
+Updated: 2026-09-07
+
+**Current release: `defaa1d`.** The API and dispatcher now run the matching image/E2B template with Astra medium for Balanced and Astra high for Try harder. Faster remains Terra low; scripts remain GPT-5.4 low. See [September 7 release evidence and rollback](releases/2026-09-07-astra.md). The `f297081` details below are historical background, not the current deployment state.
 
 Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact current release and the incomplete narrated-generation certification.
 
