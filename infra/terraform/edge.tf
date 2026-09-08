@@ -60,7 +60,7 @@ resource "google_compute_backend_service" "api" {
   # timeout_sec is intentionally absent: GCP rejects it for backend services
   # with serverless NEGs, and Cloud Run's own 3600s request timeout governs
   # long-lived streams instead.
-  security_policy       = google_compute_security_policy.edge[0].id
+  security_policy = google_compute_security_policy.edge[0].id
   backend {
     group = google_compute_region_network_endpoint_group.api[0].id
   }

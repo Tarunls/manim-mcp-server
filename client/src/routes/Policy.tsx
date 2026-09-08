@@ -47,7 +47,7 @@ export default function Policy({ kind }: { kind: "privacy" | "terms" }) {
               <h2>Service providers</h2>
               <p>
                 Processing may involve Google Cloud and Identity Platform, E2B,
-                OpenAI, Speechify, Stripe, and licensed-media sources selected
+                OpenAI, Speechify, ElevenLabs, Stripe, and licensed-media sources selected
                 in the product. We do not sell personal information.
               </p>
             </section>

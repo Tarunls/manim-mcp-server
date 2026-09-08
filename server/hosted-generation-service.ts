@@ -1,7 +1,9 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import { PRICING_PLANS } from "./billing-service.js";
-import { effortRank, generationCost, titleFromPrompt } from "./plan.js";
+import { completionMessage, effortRank, generationCost, titleFromPrompt } from "./plan.js";
+
+export { completionMessage };
 import type { Database } from "./database.js";
 import type { GenerationEffort, StudioProject } from "./types.js";
 import type { VerifiedArtifact } from "./artifact-service.js";
@@ -20,7 +22,10 @@ export type HostedJob = {
   sandboxId?: string;
   dispatchLeaseId?: string;
   reservedCredits: number;
-  input: { attachments?: Array<{ fileId: string; label: string }> };
+  input: {
+    attachments?: Array<{ fileId: string; label: string }>;
+    narrationPreferences?: StudioProject["narrationPreferences"];
+  };
 };
 
 type JobRow = {
@@ -248,7 +253,10 @@ export class HostedGenerationService {
          VALUES ($1, $2, $3, 'queued', $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
         [jobId, input.ownerId, project.id, input.prompt, project.renderer, input.effort, input.idempotencyKey,
           templateVersion, this.callbackHash(jobId), credits,
-          JSON.stringify({ attachments: input.attachments || [] })],
+          JSON.stringify({
+            attachments: input.attachments || [],
+            narrationPreferences: project.narrationPreferences,
+          })],
       );
       if (credits > 0) {
         await client.query(
@@ -447,7 +455,7 @@ export class HostedGenerationService {
       typeof input.label === "string" ? input.label.replace(/\s+/g, " ").trim() : "",
       90,
     );
-    const allowedStages = new Set(["authoring", "rendering", "inspecting"]);
+    const allowedStages = new Set(["brief", "authoring", "rendering", "inspecting"]);
     const stage =
       typeof input.stage === "string" && allowedStages.has(input.stage)
         ? (input.stage as StudioProject["stage"])
@@ -683,7 +691,7 @@ export class HostedGenerationService {
     }
   }
 
-  async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"], assistantMessage?: string) {
+  async complete(jobId: string, artifacts: VerifiedArtifact[], render: StudioProject["versions"][number]["render"]) {
     return this.db.transaction(async (client) => {
       const result = await client.query<JobRow>(
       `UPDATE generation_jobs
@@ -743,11 +751,10 @@ export class HostedGenerationService {
         action.status = "done";
         action.label = number === 1 ? "First draft ready" : `Revision ${number} ready`;
       }
-      const safeAssistantMessage = this.redactForOwner(job.id, assistantMessage, 2000);
       project.messages.push({
         id: randomUUID(),
         role: "assistant",
-        text: safeAssistantMessage || (number === 1 ? "First draft ready." : `Revision ${number} ready.`),
+        text: completionMessage(number, render),
         createdAt: new Date().toISOString(),
       });
       await client.query(

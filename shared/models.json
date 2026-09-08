@@ -1,0 +1,29 @@
+{
+  "script": {
+    "model": "gpt-5.4",
+    "reasoning": "low"
+  },
+  "code": {
+    "quick": {
+      "model": "gpt-5.6-terra",
+      "reasoning": "low"
+    },
+    "balanced": {
+      "model": "gpt-6-astra",
+      "reasoning": "medium"
+    },
+    "thorough": {
+      "model": "gpt-6-astra",
+      "reasoning": "high"
+    }
+  },
+  "env": {
+    "scriptModel": "ORUNE_SCRIPT_MODEL",
+    "scriptReasoning": "ORUNE_SCRIPT_REASONING",
+    "codeModel": "ORUNE_CODE_MODEL",
+    "balancedModel": "ORUNE_CODE_MODEL_BALANCED",
+    "codeReasoning": "ORUNE_CODE_REASONING",
+    "thoroughModel": "ORUNE_CODE_MODEL_THOROUGH",
+    "thoroughReasoning": "ORUNE_CODE_REASONING_THOROUGH"
+  }
+}

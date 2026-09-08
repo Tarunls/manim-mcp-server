@@ -1,0 +1,22 @@
+{
+  "default-female": {
+    "label": "Default female",
+    "provider": "speechify",
+    "voiceId": "geffen_32"
+  },
+  "seductive-female": {
+    "label": "Seductive female",
+    "provider": "elevenlabs",
+    "voiceId": "tQ4MEZFJOzsahSEEZtHK"
+  },
+  "seductive-male": {
+    "label": "Seductive male",
+    "provider": "elevenlabs",
+    "voiceId": "KH1SQLVulwP6uG4O3nmT"
+  },
+  "seductive-female-accent": {
+    "label": "Seductive female · accent",
+    "provider": "elevenlabs",
+    "voiceId": "YDCfZMLWcUmsGvqHq0rS"
+  }
+}

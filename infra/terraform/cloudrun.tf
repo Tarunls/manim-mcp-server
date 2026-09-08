@@ -23,15 +23,20 @@ locals {
     # repair, so keep the ceiling finite without cutting normal work short.
     CODEX_MAX_API_CALLS_PER_JOB               = tostring(var.codex_max_api_calls_per_job)
     CODEX_MAX_ESTIMATED_COST_MICROUSD_PER_JOB = tostring(var.codex_max_estimated_cost_microusd_per_job)
-    CODEX_MAX_OUTPUT_TOKENS_PER_CALL          = "12000"
-    CODEX_UPSTREAM_TIMEOUT_MS                 = "2700000"
-    E2B_SANDBOX_TIMEOUT_MS                    = "1800000"
-    E2B_DISPATCH_LEASE_MS                     = "300000"
-    E2B_MAX_DISPATCH_ATTEMPTS                 = "5"
-    GENERATION_RECONCILE_INTERVAL_MS          = "60000"
-    REQUIRE_DATABASE                          = "true"
-    DATABASE_SSL                              = "disable"
-    DATABASE_POOL_MAX                         = var.environment == "staging" ? "5" : "10"
+    CODEX_MAX_OUTPUT_TOKENS_PER_CALL          = "32000"
+    # The proxy picks the upstream model per pipeline stage from these.
+    ORUNE_SCRIPT_MODEL               = var.script_model
+    ORUNE_CODE_MODEL                 = var.code_model
+    ORUNE_CODE_MODEL_BALANCED        = var.code_model_balanced
+    ORUNE_CODE_MODEL_THOROUGH        = var.code_model_thorough
+    CODEX_UPSTREAM_TIMEOUT_MS        = "2700000"
+    E2B_SANDBOX_TIMEOUT_MS           = "1800000"
+    E2B_DISPATCH_LEASE_MS            = "300000"
+    E2B_MAX_DISPATCH_ATTEMPTS        = "5"
+    GENERATION_RECONCILE_INTERVAL_MS = "60000"
+    REQUIRE_DATABASE                 = "true"
+    DATABASE_SSL                     = "disable"
+    DATABASE_POOL_MAX                = var.environment == "staging" ? "5" : "10"
   }
   dispatcher_env = merge(local.common_env, {
     SERVICE_ROLE = "dispatcher"
@@ -55,6 +60,7 @@ locals {
     IDENTITY_PLATFORM_API_KEY = var.secret_ids.identity_api_key
     OPENAI_API_KEY            = var.secret_ids.openai_api_key
     SPEECHIFY_API_KEY         = var.secret_ids.speechify_api_key
+    ELEVENLABS_API_KEY        = var.secret_ids.elevenlabs_api_key
     STRIPE_SECRET_KEY         = var.secret_ids.stripe_api_key
     STRIPE_WEBHOOK_SECRET     = var.secret_ids.stripe_webhook
     STAFF_EMAILS              = var.secret_ids.staff_emails

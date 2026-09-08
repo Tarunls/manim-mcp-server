@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "./database.js";
 import type { HostedJob } from "./hosted-generation-service.js";
-import { generationModelPolicy } from "./generation-models.js";
+import { resolveModels } from "../scripts/lesson_pipeline.mjs";
 
 function boundedInteger(
   value: string | undefined,
@@ -35,14 +35,26 @@ type ReservedCall = {
   model: string;
 };
 
-export function codexPolicy(effort: HostedJob["effort"]) {
+export type PipelineStage = "script" | "code" | "repair" | "review";
+
+/** Which upstream model a sandbox request may use. The stage comes from the
+ * pipeline's x-orune-stage header: the script is written by the fast model,
+ * everything that produces or fixes code by the tier the user paid for. The
+ * sandbox's own model field is always overwritten. */
+export function stageFromHeader(value: unknown): PipelineStage {
+  return value === "script" || value === "repair" || value === "review" ? value : "code";
+}
+
+export function codexPolicy(effort: HostedJob["effort"], stage: PipelineStage = "code") {
+  const models = resolveModels(effort, process.env);
   return {
-    ...generationModelPolicy(effort),
+    model: stage === "script" ? models.script.model : models.code.model,
+    reasoningEffort: stage === "script" ? models.script.reasoning : models.code.reasoning,
     maxOutputTokens: boundedInteger(
       process.env.CODEX_MAX_OUTPUT_TOKENS_PER_CALL,
-      12_000,
-      1_000,
       32_000,
+      1_000,
+      128_000,
     ),
   } as const;
 }
@@ -61,10 +73,11 @@ export function constrainCodexRequest(
   job: HostedJob,
   body: unknown,
   compact = false,
+  stage: PipelineStage = "code",
 ) {
   if (!body || typeof body !== "object" || Array.isArray(body))
     throw new Error("OpenAI request is invalid.");
-  const policy = codexPolicy(job.effort);
+  const policy = codexPolicy(job.effort, stage);
   const request: Record<string, unknown> = {
     ...(body as Record<string, unknown>),
     model: policy.model,
@@ -72,10 +85,7 @@ export function constrainCodexRequest(
   };
   delete request.metadata;
   if (!compact) {
-    const reasoning = request.reasoning && typeof request.reasoning === "object" && !Array.isArray(request.reasoning)
-      ? request.reasoning as Record<string, unknown> : {};
-    request.reasoning = { ...reasoning, effort: policy.reasoningEffort };
-    // An agent cannot opt into priority/Fast pricing or a higher reasoning tier.
+    request.reasoning = { effort: policy.reasoningEffort };
     request.service_tier = "default";
     const requested = Number(request.max_output_tokens);
     request.max_output_tokens =
@@ -153,21 +163,15 @@ async function boundedResponseBody(response: Response, maximumBytes: number) {
 }
 
 export function estimatedCostMicrousd(model: string, usage: Usage) {
-  // USD per million tokens equals micro-USD per token. Astra rates verified
-  // 2026-09-07: https://developers.openai.com/api/docs/models/gpt-6-astra
-  // Conservatively allow the 1.25x cache-write rate on uncached Astra input:
-  // this relay's usage shape does not distinguish writes from ordinary input.
-  // Legacy rates remain conservative for historic jobs. Never price an
-  // unknown model as Terra: fail closed before silently undercounting spend.
-  const rates: Record<string, { input: number; cached: number; output: number }> = {
-    "gpt-6-astra": { input: 12.5, cached: 1, output: 50 },
-    "gpt-5.6-sol": { input: 5, cached: 0.5, output: 30 },
-    "gpt-5.6-terra": { input: 2.5, cached: 0.25, output: 15 },
-  };
-  const prices = rates[model];
-  if (!prices) throw new Error(`Missing model pricing: ${model}`);
-  const longContext = model === "gpt-6-astra" && usage.inputTokens > 272_000;
+  const prices =
+    // Astra uncached input conservatively includes its 1.25x cache-write rate.
+    // https://developers.openai.com/api/docs/models/gpt-6-astra (2026-09-07)
+    model === "gpt-6-astra" ? { input: 12.5, cached: 1, output: 50 }
+    : model === "gpt-5.6-sol"
+      ? { input: 5, cached: 0.5, output: 30 }
+      : { input: 2.5, cached: 0.25, output: 15 };
   const uncached = Math.max(0, usage.inputTokens - usage.cachedInputTokens);
+  const longContext = model === "gpt-6-astra" && usage.inputTokens > 272_000;
   return Math.round(
     (uncached * prices.input + usage.cachedInputTokens * prices.cached) * (longContext ? 2 : 1) +
       usage.outputTokens * prices.output * (longContext ? 1.5 : 1),
@@ -289,11 +293,12 @@ export class ScopedCodexProxy {
     options: {
       headers?: Record<string, string | undefined>;
       compact?: boolean;
+      stage?: PipelineStage;
     } = {},
   ) {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error("OpenAI is not configured.");
-    const constrained = constrainCodexRequest(job, body, options.compact);
+    const constrained = constrainCodexRequest(job, body, options.compact, options.stage);
     const serialized = JSON.stringify(constrained);
     if (!serialized || serialized.length > 16 * 1024 * 1024)
       throw new Error("OpenAI request is invalid.");

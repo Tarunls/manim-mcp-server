@@ -4,11 +4,11 @@ Policy prepared September 7, 2026. This change is local until the API and E2B te
 
 | Studio setting | Model | Reasoning | Hosted estimated-spend stop threshold |
 | --- | --- | --- | --- |
-| Faster, including Free | GPT-5.6 Terra | medium | $2 |
-| Balanced | GPT-6 Astra | medium | $2 |
-| Try harder | GPT-6 Astra | high | $4 |
+| Faster, including Free | GPT-5.6 Terra | low | $3.50 |
+| Balanced | GPT-6 Astra | medium | $3.50 |
+| Try harder | GPT-6 Astra | high | $7 |
 
-Balanced is the normal preference. Free accounts remain limited to Faster through existing server entitlements. All execution paths share `e2b/generation-models.json`. No subscription prices or generation credit charges have changed.
+Balanced is the normal preference. Free accounts remain limited to Faster through existing server entitlements. All execution paths share `shared/models.json`. These models author, repair and review scenes; script writing remains GPT-5.4 with low reasoning. `ORUNE_CODE_MODEL_BALANCED` lets production select Astra without changing Faster. No subscription prices or generation credit charges have changed. The table preserves production's existing spend thresholds; unconfigured local defaults remain $2/$4 for hosted proxy tests.
 
 ## What cheap means here
 
@@ -16,9 +16,9 @@ Astra is not a cheaper token SKU. Published standard rates are $10 input, $1 cac
 
 For illustration, 10,000 ordinary input tokens and 2,000 output tokens cost $0.20; with 6,000 of those input tokens cached, $0.146. Neither number is a video cost: an agent makes multiple calls, including code and review, and uses render compute and optional narration. The proxy conservatively counts all uncached Astra input at $12.50/million to allow for cache writes, so its estimate for the second example is $0.156.
 
-The MVP preserves reasoning for video authoring while avoiding xhigh/max defaults and priority processing. The proxy sets the model, reasoning effort and standard service tier itself, caps each response at 12,000 output tokens, and retains the existing job spend checks. It does not silently fall back to another model when Astra is unavailable.
+The MVP preserves reasoning for video authoring while avoiding xhigh/max defaults and priority processing. The proxy sets the model, reasoning effort and standard service tier itself, preserves the current 32,000-output-token limit for complete scene authoring, and retains the existing job spend checks. The fixed pipeline bounds repair/review rounds. It does not silently fall back to another model when Astra is unavailable.
 
-The $2/$4 figures are soft admission thresholds. They are checked against recorded usage before starting a call; a running call or delayed accounting can overshoot. Failed/disconnected calls without usage can also be undercounted by the existing relay. They exclude rendering, speech, storage, payment fees and refunds. Local mode uses a direct API connection and has no hosted job spend enforcement. Do not advertise a guaranteed price per video based on these thresholds.
+The $3.50/$7 figures are soft admission thresholds. They are checked against recorded usage before starting a call; a running call or delayed accounting can overshoot. Failed/disconnected calls without usage can also be undercounted by the existing relay. They exclude rendering, speech, storage, payment fees and refunds. Local mode uses a direct API connection and has no hosted job spend enforcement. Do not advertise a guaranteed price per video based on these thresholds.
 
 ## Rollout and validation
 

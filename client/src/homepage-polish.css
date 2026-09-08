@@ -1,0 +1,26 @@
+.hero-note { margin: -12px 0 0; font-size: 13px; color: var(--ink-2); }
+.marketing-shell section[id] { scroll-margin-top: calc(var(--nav-height) + 24px); }
+.mobile-site-menu { display: none; }
+.how-it-works { margin: 0 var(--gutter); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
+.how-it-works ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; max-width: var(--page); margin: 0 auto; padding: 32px 0; list-style: none; }
+.how-it-works li { display: flex; align-items: baseline; gap: 16px; }
+.step-number { font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.how-it-works h2 { margin: 0 0 8px; font-size: 23px; line-height: 1.15; }
+.how-it-works p { margin: 0; font-size: 14px; color: var(--ink-2); max-width: 30ch; }
+.chladni-visual { position: relative; }
+.motion-toggle { position: absolute; right: 8%; bottom: 0; padding: 10px 0; font: inherit; font-size: 12px; color: var(--ink-2); border-bottom: 1px solid var(--line-strong); }
+.lesson-sample { width: calc(100% - 2 * var(--gutter)); max-width: var(--page); margin: 100px auto 0; border-top: 1px solid var(--line); padding-top: 36px; }
+.sample-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.sample-heading h2 { margin: 0; font-size: clamp(28px, 3vw, 38px); line-height: 1.15; }
+.sample-heading label { font-size: 13px; color: var(--ink-2); }
+.sample-heading select { display: block; margin-top: 8px; max-width: 100%; background: transparent; color: var(--ink); font: inherit; border: 1px solid var(--line-strong); border-radius: 4px; padding: 10px; }
+.watch-video { display: block; width: 100%; max-height: 70vh; object-fit: contain; aspect-ratio: 16 / 9; }
+@media (max-width: 900px) {
+  .how-it-works ol { grid-template-columns: 1fr; gap: 28px; }
+  .how-it-works p { max-width: none; }
+  .marketing-shell .site-nav-inner { gap: 14px; }
+  .marketing-shell .site-nav nav { gap: 14px; }
+  .mobile-site-menu { display: block; }
+  .mobile-site-menu summary { cursor: pointer; font-size: 13px; padding: 12px 0; }
+  .mobile-site-menu[open] > nav { position: absolute; top: calc(var(--nav-height) - 1px); left: 0; right: 0; background: var(--paper); border-bottom: 1px solid var(--line-strong); padding: 20px var(--gutter); display: flex; flex-wrap: wrap; gap: 20px; }
+}

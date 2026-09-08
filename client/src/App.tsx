@@ -28,10 +28,12 @@ import type {
   FontCategory,
   GenerationEffort,
   GenerationIntent,
+  NarrationVoice,
   ReviewFocus,
   ReviewStrictness,
   SendMessageResult,
   StudioProject,
+  VideoFormat,
 } from "./types";
 
 const Marketing = lazy(() => import("./routes/Marketing"));
@@ -494,11 +496,14 @@ export function App() {
               fontCategory?: FontCategory;
               colorPalette?: ColorPalette;
             }) => patchProjectPrefs("design-preferences", changes)}
-            onNarrationPreferences={(enabled: boolean) =>
-              patchProjectPrefs("narration-preferences", { enabled })
+            onNarrationPreferences={(changes: {
+              enabled: boolean;
+              voice?: NarrationVoice;
+            }) =>
+              patchProjectPrefs("narration-preferences", changes)
             }
-            onGenerationPreferences={(effort: GenerationEffort) =>
-              patchProjectPrefs("generation-preferences", { effort })
+            onGenerationPreferences={(effort: GenerationEffort, format?: VideoFormat) =>
+              patchProjectPrefs("generation-preferences", { effort, format })
             }
             onNotify={notify}
             mode={chatMode}

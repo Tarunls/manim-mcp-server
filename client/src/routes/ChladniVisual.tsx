@@ -163,7 +163,7 @@ function contour(
   context.stroke();
 }
 
-export function ChladniVisual() {
+export function ChladniVisual({ className = "", id }: { className?: string; id?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const elapsedRef = useRef(0);
   const [paused, setPaused] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -369,19 +369,20 @@ export function ChladniVisual() {
   }, [paused]);
 
   return (
-    <figure
-      className="hero-visual hero-chladni"
-      id="hero-resonance"
+    <div
+      className={`chladni-visual ${className}`}
+      id={id}
+      role="group"
       aria-label="A vibrating plate organizing scattered grains into a standing-wave pattern"
     >
-      <canvas ref={canvasRef} className="hero-chladni-canvas" aria-hidden="true" />
+      <canvas ref={canvasRef} className="chladni-canvas" aria-hidden="true" />
       <button className="motion-toggle" type="button" onClick={() => setPaused((value) => !value)} aria-label={paused ? "Play background animation" : "Pause background animation"}>
         {paused ? "Play motion" : "Pause motion"}
       </button>
-      <figcaption className="visually-hidden">
+      <span className="visually-hidden">
         A simple vibration moves scattered grains into the intricate nodal lines
         of a Chladni figure, revealing the geometry of a standing wave.
-      </figcaption>
-    </figure>
+      </span>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 # GCP deployment runbook
 
-Updated: 2026-08-29
+Updated: 2026-09-05
 
 Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact current release and the incomplete narrated-generation certification.
 
@@ -16,12 +16,57 @@ Read `docs/GCP_ADMIN_LLM_HANDOFF.md` before deploying. It records the exact curr
 - Migration job: `lesson-studio-staging-migrate`
 - Legacy service `lesson-studio`: do not modify
 
-The deployed image/template are currently `004c9c7`. Candidate application image `c74eb0d` is built but not deployed; its E2B template must be built and smoked first.
+The deployed image/template are currently `f297081` (deployed 2026-09-05; E2B smoke passed, Terraform clean). Narration is one continuous read per script with beat times from the provider word timestamps and one static gain per read; gpt-5.4 writes the script. It renders animation ranges in parallel across the sandbox CPUs, reports render progress live, and makes the Manim frame-writer thread a daemon so a scene error fails in seconds instead of stalling until the twelve-minute cap. This release replaces the Codex agent with the fixed pipeline in `scripts/lesson_pipeline.mjs` (script call, voice, scene call, one render, the model's own look at the frames on Balanced and Try harder) and removes every content gate from the renderer. Models: gpt-5.4-mini writes the script; gpt-5.6-terra (Faster, Balanced) and gpt-5.6-sol (Try harder) write the scene, set through the `script_model` / `code_model` / `code_model_thorough` Terraform variables.
+
+Proven on 2026-09-05 after OpenAI credits were added: the five-brief narrated eval (`lesson-studio-staging-eval-d002d82`, results under `gs://educationalvideo-506219-lesson-studio-staging-artifacts/eval/cloud2/`) completed every lesson in 2-3 minutes, and hosted free-plan generations through the public API completed in 58-95 seconds. Narration providers are called one at a time (Speechify's plan allows one request per second).
+
+To re-prove a release:
+
+```sh
+gcloud run jobs execute lesson-studio-staging-eval-<sha> --region us-central1 --wait   # clone the job for the new image first
+APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 node --import tsx scripts/staging_generate.ts --brief "..." --format vertical
+```
+
+**Before any release, verify nothing is unpushed:** compare the `COMMIT_SHA` values in `gcloud builds list` and the live services' image tags against `git branch -r --contains <sha>`. A SHA git does not know means local work that must be recovered from `gs://educationalvideo-506219_cloudbuild/source/` before deploying over it.
+
+One item is outstanding, and one caveat applies:
+
+1. **Narrated generation is not yet re-proven end to end.** ElevenLabs is enabled and verified at the provider (see below), but a full narrated job has not run since. `smoke:staging-payment` cannot cover it while `BILLING_MODE_REQUIRED=live`, because that script pays with Stripe's `4242…` test card. Prove narration with a staff-account generation instead, or temporarily use a sandbox Stripe key.
+
+2. **Terraform drift.** `E2B_TEMPLATE_VERSION=81b9483` was set with `gcloud run services update` before Terraform ran. `staging.auto.tfvars` is now reconstructed on the release machine and the plan is clean; keep `image`/`e2b_template_version` in it current so future plans reconcile instead of reverting.
+
+### ElevenLabs narration (enabled 2026-09-02)
+
+The `elevenlabs_api_key` secret is granted to `ls-staging-api` and mounted on the API service. Verified with the exact production request shape (`eleven_multilingual_v2`, `mp3_44100_128`, the same `voice_settings`): all three configured voices in `shared/narration-voices.json` return real MP3 audio. The earlier `payment_required` no longer reproduces.
+
+**The key is a restricted key.** It has no `user_read` scope (`/v1/user/subscription` and `/v1/voices` return 401) and is scoped to specific voices — a built-in voice such as Rachel `21m00Tcm4TlvDq8ikawM` returns `voice_not_found`. So a 404 on a built-in voice is expected and is *not* evidence of a broken key; test only voice IDs the key is scoped to. Before adding a voice to `narration-voices.json`, confirm that exact `voiceId` returns 200 with this key.
+
+Granting secret access requires the project owner (`tarun.l.sankar@gmail.com`); an editor account gets 403 on `secretmanager.secrets.setIamPolicy`. Because Terraform's `google_secret_manager_secret_iam_member` performs a read-modify-write, an editor cannot apply that resource even when the binding already exists — import it into state instead:
+
+```sh
+terraform -chdir=infra/terraform import \
+  'google_secret_manager_secret_iam_member.api_existing["elevenlabs_api_key"]' \
+  "projects/educationalvideo-506219/secrets/elevenlabs_api_key roles/secretmanager.secretAccessor serviceAccount:ls-staging-api@educationalvideo-506219.iam.gserviceaccount.com"
+```
+
+### Narration audio
+
+`scripts/generate_narration.mjs` assembles the voice track. Three rules, each learned from a defect that shipped:
+
+1. **Never use `silenceremove` with `stop_periods=-1`.** It strips every silence in a passage rather than capping unusual ones. Measured on a clip whose pauses were 0.60s and 1.49s it returned 0.23s and 0.23s, so unrelated pauses collapsed to the same length and delivery alternately rushed and stalled. Raising `stop_duration` to 1.0 made it worse (0.60s → 0.05s). Trim the ends only; spoken pauses are prosody.
+2. **Never run `loudnorm` single-pass over the mixed track.** Single-pass loudnorm rides gain, so on a mostly-silent track it lifts the floor between passages and ducks each entry. Measure per passage (`print_format=json`), then apply with `measured_*` and `linear=true`, and do not normalise the mix again.
+3. **Keep intermediates PCM and pin `-ar 48000`.** MP3 intermediates stack a second lossy generation and prepend encoder delay, drifting each passage off its timeline slot. loudnorm resamples to 192kHz internally, so without an explicit rate the muxed track came out as 96kHz AAC.
+
+Do not ask a provider to speak off-tempo (`speed`, `<prosody rate>`): it warps synthesised prosody. `NARRATION_SPEED` is 1 deliberately. Pacing belongs in how much text a passage carries.
+
+Because spoken pauses are now preserved, passages are slightly longer than under the old filter, so a passage can overrun its visual slot. That failure is intentional and its message is actionable ("Shorten the passage or extend the scene"); do not fix it by compressing audio again.
+
+There is no ffmpeg on the WSL release machine. Verify audio changes in a throwaway Cloud Run job on the app image: A/B the filter chains with `silencedetect` and compare gap positions, then run the real script end to end against a stub provider via `NARRATION_PROXY_URL` (the stub must be its own process — `execFileSync` blocks the event loop).
 
 ## Release invariants
 
 1. Application and E2B releases use immutable commit tags, never only `latest`.
-2. If `e2b/`, renderer code, renderer dependencies, or the Codex bootstrap changes, build and smoke the matching E2B template before deploying the application.
+2. If `e2b/`, renderer code, renderer dependencies, or the pipeline bootstrap changes, build and smoke the matching E2B template before deploying the application.
 3. Run migrations before dispatcher and API.
 4. API and dispatcher must receive the same `E2B_TEMPLATE_VERSION`; the API persists it on job submission and the dispatcher starts that exact version.
 5. Review every Terraform plan. Do not accept unexpected replacement/destruction of Cloud SQL, GCS, networking, edge, IAM, secrets, or state.
@@ -61,7 +106,7 @@ E2B_TEMPLATE_VERSION=<commit> \
 npm run smoke:e2b
 ```
 
-The smoke must use the exact immutable tag, disable arbitrary internet access, execute `/opt/lesson-studio/app/.venv/bin/python -m manim --version`, import the Codex SDK, find FFmpeg, write/read the workspace, and terminate the sandbox in all outcomes.
+The smoke must use the exact immutable tag, disable arbitrary internet access, execute `/opt/lesson-studio/app/.venv/bin/python -m manim --version`, import the lesson pipeline module, find FFmpeg, write/read the workspace, and terminate the sandbox in all outcomes.
 
 Do not treat an existence check of `.venv/bin/manim` as sufficient. E2B image mounting can invalidate console-script shebangs; production renderers intentionally use `python -m manim`.
 
@@ -121,7 +166,7 @@ APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 npm run sm
 APP_BASE_URL=https://useorune.com GCP_PROJECT=educationalvideo-506219 STAGING_SMOKE_TIMEOUT_MS=1200000 npm run smoke:staging-payment
 ```
 
-`smoke:staging-payment` is the release gate for hosted payment plus narration. It must prove hosted Checkout, signed webhook activation, Customer Portal, credit debit, narrated E2B generation, Speechify metadata/audio, private MP4 download, cancellation, and account cleanup.
+`smoke:staging-payment` is the release gate for hosted payment plus narration. It must prove hosted Checkout, signed webhook activation, Customer Portal, credit debit, narrated E2B generation, approved-provider metadata/audio, private MP4 download, cancellation, and account cleanup. The default voice exercises Speechify; release-specific checks should also exercise any newly enabled ElevenLabs voice after provider billing is active.
 
 After a failed smoke, confirm that the subscription, test identity, project, job, and E2B sandbox were removed or terminated. Failure cleanup is implemented but must be verified.
 

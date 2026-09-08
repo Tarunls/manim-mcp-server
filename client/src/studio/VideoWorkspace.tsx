@@ -220,13 +220,13 @@ export function VideoWorkspace({
               {selectedVersion?.render?.narration?.enabled && (
                 <span
                   className="ai-voice"
-                  title={`${selectedVersion.render.narration.model || "Speechify"}, ${selectedVersion.render.narration.voice || "configured voice"}`}
+                  title={`${selectedVersion.render.narration.model || "AI narration"}, ${selectedVersion.render.narration.voice || "configured voice"}`}
                 >
                   <SpeakerHigh size={14} /> AI voice
                 </span>
               )}
               {selectedVersion?.render?.narration?.status ===
-                "setup_required" && <span>Speechify setup needed</span>}
+                "setup_required" && <span>Voice setup needed</span>}
             </>
           ) : (
             <span>16:9 · no render yet</span>

@@ -10,7 +10,7 @@ Show a real prompt, its rendered result, and one visible correction. Frame annot
 
 ## Homepage changes in this branch
 
-The warm paper, serif display type, restrained colors and resonance animation stay. The supporting sentence explains the product and frame feedback. A three-step row now answers the navigation's “How it works” link. Each existing example selects a playable video. Mobile visitors can reach navigation links. Animation can be paused, pauses when offscreen, and starts still for reduced-motion preferences. Lower images reserve their dimensions and load lazily; share metadata describes the product directly.
+The warm paper, serif display type, restrained colors, circle-to-triangle hero and three animated demonstrations stay. The supporting sentence explains the product and frame feedback. A three-step row now answers the navigation's “How it works” link. A separate sample player offers three existing videos. Mobile visitors can reach navigation links. The resonance canvas can be paused, pauses when offscreen, and starts still for reduced-motion preferences; the other existing visuals retain their own motion behavior. Lower images reserve their dimensions and load lazily; share metadata describes the product directly.
 
 These decisions follow NN/g's emphasis on immediately explaining a site's purpose and giving visitors a clear next action. They are usability improvements, not a forecast of higher conversion. [Homepage design principles](https://www.nngroup.com/articles/homepage-design-principles/). Motion preferences also need a meaningful alternative. [web.dev guidance](https://web.dev/articles/prefers-reduced-motion).
 

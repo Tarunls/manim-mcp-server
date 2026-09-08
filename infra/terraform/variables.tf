@@ -134,24 +134,50 @@ variable "codex_max_estimated_cost_microusd_per_job" {
   }
 }
 
+variable "code_model_balanced" {
+  type        = string
+  default     = "gpt-6-astra"
+  description = "Model for Balanced scene authoring and review, independent of Faster."
+}
+
 variable "secret_ids" {
   type = object({
-    identity_api_key  = string
-    openai_api_key    = string
-    e2b_api_key       = string
-    speechify_api_key = string
-    stripe_api_key    = string
-    stripe_webhook    = string
-    staff_emails      = string
+    identity_api_key   = string
+    openai_api_key     = string
+    e2b_api_key        = string
+    speechify_api_key  = string
+    elevenlabs_api_key = string
+    stripe_api_key     = string
+    stripe_webhook     = string
+    staff_emails       = string
   })
   description = "Existing Secret Manager secret IDs. Terraform never reads their plaintext into configuration."
   default = {
-    identity_api_key  = "identity_platform_api_key"
-    openai_api_key    = "openai_api_key"
-    e2b_api_key       = "e2b_api_key"
-    speechify_api_key = "speechify_key"
-    stripe_api_key    = "stripe_sandbox_api_key"
-    stripe_webhook    = "stripe_webhook_secret"
-    staff_emails      = "staff_emails"
+    identity_api_key   = "identity_platform_api_key"
+    openai_api_key     = "openai_api_key"
+    e2b_api_key        = "e2b_api_key"
+    speechify_api_key  = "speechify_key"
+    elevenlabs_api_key = "elevenlabs_api_key"
+    stripe_api_key     = "stripe_sandbox_api_key"
+    stripe_webhook     = "stripe_webhook_secret"
+    staff_emails       = "staff_emails"
   }
+}
+
+variable "script_model" {
+  description = "OpenAI model that writes the storyboard. The narration's flow comes from here, so it is worth the few extra seconds over the mini model."
+  type        = string
+  default     = "gpt-5.4"
+}
+
+variable "code_model" {
+  description = "OpenAI model that writes and repairs the Manim scene for Faster and Balanced work."
+  type        = string
+  default     = "gpt-5.6-terra"
+}
+
+variable "code_model_thorough" {
+  description = "OpenAI model that writes and repairs the Manim scene for Try harder work."
+  type        = string
+  default     = "gpt-6-astra"
 }

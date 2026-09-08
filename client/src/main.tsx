@@ -6,6 +6,7 @@ import "@fontsource/jetbrains-mono/500.css";
 import { App } from "./App";
 import "./theme.css";
 import "./marketing.css";
+import "./homepage-polish.css";
 import "./studio.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -3,15 +3,18 @@ export type ProjectStage = "ready" | "brief" | "authoring" | "rendering" | "insp
 // The studio renders every lesson with Manim. The field is kept on stored
 // project documents so rows written before the Manim-only change still parse.
 export type RendererKind = "manim";
-export type AgentModel = "gpt-6-astra" | "gpt-5.6-sol" | "gpt-5.6-terra";
+// Model names are configuration (shared/models.json plus ORUNE_* overrides),
+// so the stored preference only records what a generation used.
+export type AgentModel = string;
 export type GenerationEffort = "quick" | "balanced" | "thorough";
-export type AgentReasoningEffort = "medium" | "high" | "xhigh";
+export type AgentReasoningEffort = string;
 export type GenerationIntent = "auto" | "new" | "revise";
 export type BillingPlanId = "free" | "creator" | "pro" | "studio";
 export type ReviewFocus = "balanced" | "layout" | "motion" | "pedagogy" | "accessibility" | "polish";
 export type ReviewStrictness = "quick" | "normal" | "obsessive";
 export type FontCategory = "serif" | "sans" | "mono";
 export type ColorPalette = "paper" | "ochre" | "sage" | "monochrome";
+export type NarrationVoice = "default-female" | "seductive-female" | "seductive-male" | "seductive-female-accent";
 
 export interface ChatMessage {
   id: string;
@@ -37,33 +40,20 @@ export interface RenderInfo {
   height?: number;
   fps?: number;
   bitRate?: number;
-  review?: {
-    strategy?: "beat-aware-v1" | "uniform-v1";
-    sampleCount?: number;
-    manifest?: string;
-  };
-  layoutAudit?: {
-    status?: "pass" | "failed";
-    checks?: {
-      inside?: number;
-      safeArea?: number;
-      overlap?: number;
-      watchedFrames?: number;
-    };
-    namedObjects?: string[];
-    violations?: number;
-  };
   narration?: {
     status?: string;
     enabled?: boolean;
+    hasAudio?: boolean;
     provider?: string;
     model?: string;
     voice?: string;
+    voiceId?: string;
     segments?: number;
     segmentDurations?: number[];
     audioFormat?: string;
     style?: string;
     rate?: string;
+    pausePolicy?: string;
     disclosure?: string;
   };
 }
@@ -116,12 +106,19 @@ export interface DesignPreferences {
 
 export interface NarrationPreferences {
   enabled: boolean;
+  voice?: NarrationVoice;
 }
+
+export type VideoFormat = "landscape" | "vertical";
 
 export interface GenerationPreferences {
   effort: GenerationEffort;
   model: AgentModel;
   reasoningEffort: AgentReasoningEffort;
+  /** The frame the lesson is composed for. "vertical" is the 9:16 phone cut
+   * used for TikTok and Reels; it changes the typographic grid, not just the
+   * output size, so it must be chosen before the scene is written. */
+  format: VideoFormat;
 }
 
 export interface StudioProject {
@@ -198,7 +195,8 @@ export interface AuthState {
 }
 
 export interface RuntimeState {
-  codex: boolean;
+  /** A model endpoint is configured, so scripts and scenes can be written. */
+  model: boolean;
   manim: boolean;
   ffmpeg: boolean;
 }

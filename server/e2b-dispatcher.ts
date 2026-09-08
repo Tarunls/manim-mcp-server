@@ -112,6 +112,7 @@ export class E2BDispatcher {
         prompt: job.prompt,
         renderer: job.renderer,
         effort: job.effort,
+        format: project.generationPreferences?.format === "vertical" ? "vertical" : "landscape",
         projectId: job.projectId,
         designPreferences: project.designPreferences,
         reviewPreferences: project.reviewPreferences,
