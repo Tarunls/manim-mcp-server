@@ -8,7 +8,7 @@ import { fetchVerifiedCommonsImage } from "./hosted-media-service.js";
 import { narrationVoiceOrDefault } from "./narration.js";
 import { manimPath } from "./platform.js";
 import { completionMessage, titleFromPrompt } from "./plan.js";
-import { authorLesson, resolveModels } from "../scripts/lesson_pipeline.mjs";
+import { authorLesson, resolveDesign, resolveModels } from "../scripts/lesson_pipeline.mjs";
 import type { Storyboard } from "../scripts/lesson_pipeline.mjs";
 import type { AuthState, BillingState, ColorPalette, FontCategory, FrameReview, GenerationEffort, GenerationIntent, NarrationVoice, ProjectAsset, ProjectVersion, RendererKind, RenderInfo, ReviewFocus, ReviewStrictness, RuntimeState, SendMessageResult, StudioEvent, StudioProject, VideoFormat } from "./types.js";
 
@@ -37,30 +37,14 @@ function normalizeGenerationPreferences(preferences?: Partial<StudioProject["gen
 export const DEFAULT_FONT_CATEGORY: FontCategory = "serif";
 export const DEFAULT_COLOR_PALETTE: ColorPalette = "paper";
 
-// The repository ships "Orune Serif"; the images install it as a system family.
-// The alternates name faces that are guaranteed present in the render images.
-const FONT_PRESETS = {
-  serif: { manim: "Orune Serif", css: '"Orune Serif", "Newsreader", Georgia, serif', character: "editorial book serif" },
-  sans: { manim: "DejaVu Sans", css: '"Inter", "DejaVu Sans", sans-serif', character: "plain grotesque sans" },
-  mono: { manim: "DejaVu Sans Mono", css: '"JetBrains Mono", "DejaVu Sans Mono", monospace', character: "precise monospaced" },
-} as const;
-
-// Palettes are offered to the model as defaults; nothing enforces them.
-const COLOR_PRESETS = {
-  paper: { background: "#FBFAF7", surface: "#FFFFFF", text: "#1A1917", muted: "#8A857D", rule: "#D9D4CA", primary: "#2E5266", accent: "#B07548" },
-  ochre: { background: "#FCF9F2", surface: "#FFFFFF", text: "#1B1813", muted: "#8C8474", rule: "#DED6C4", primary: "#7A5B23", accent: "#9B4722" },
-  sage: { background: "#F8FAF6", surface: "#FFFFFF", text: "#171A16", muted: "#83887E", rule: "#D3D9CC", primary: "#3C5A45", accent: "#B0603C" },
-  monochrome: { background: "#FAFAF9", surface: "#FFFFFF", text: "#141413", muted: "#8A8A85", rule: "#D6D6D2", primary: "#3A3A36", accent: "#0B0B0A" },
-} as const;
-
 export function fontCategoryOrDefault(value: unknown): FontCategory {
-  return Object.hasOwn(FONT_PRESETS, String(value)) ? (value as FontCategory) : DEFAULT_FONT_CATEGORY;
+  return resolveDesign({ fontCategory: value }).fontCategory as FontCategory;
 }
 
 // Projects saved before the current palettes existed still have to load, so an
 // unrecognised name resolves to the default instead of throwing.
 export function colorPaletteOrDefault(value: unknown): ColorPalette {
-  return Object.hasOwn(COLOR_PRESETS, String(value)) ? (value as ColorPalette) : DEFAULT_COLOR_PALETTE;
+  return resolveDesign({ colorPalette: value }).colorPalette as ColorPalette;
 }
 
 // Documents written by earlier versions of the studio are still in local and
@@ -260,9 +244,7 @@ export class StudioService extends EventEmitter {
   }
 
   private designConfig(project: StudioProject) {
-    const fontCategory = fontCategoryOrDefault(project.designPreferences?.fontCategory);
-    const colorPalette = colorPaletteOrDefault(project.designPreferences?.colorPalette);
-    return { fontCategory, font: FONT_PRESETS[fontCategory], colorPalette, colors: COLOR_PRESETS[colorPalette] };
+    return resolveDesign(project.designPreferences);
   }
 
   private writeDesignConfig(project: StudioProject) {

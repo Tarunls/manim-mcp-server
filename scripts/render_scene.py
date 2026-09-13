@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Render one lesson project into browser-facing assets.
-
-This is a renderer, not a critic. It checks the things that make a render
-impossible or unplayable - the scene class exists and parses, Manim succeeds,
-the frame is the size the format promised - and otherwise trusts the scene.
-"""
+"""Render one lesson project into browser-facing assets with layout checks."""
 
 from __future__ import annotations
 
@@ -16,6 +11,8 @@ import re
 import subprocess
 import sys
 import time
+
+from PIL import Image
 
 
 QUALITY_ARGS = {
@@ -62,9 +59,88 @@ def defines_generated_scene(code: str) -> bool:
     return False
 
 
+def uses_quality_scene(code: str) -> bool:
+    """Generated scenes use the common key-state layout checks."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef) or node.name != "GeneratedScene":
+            continue
+        for base in node.bases:
+            if isinstance(base, ast.Name) and base.id == "QualityScene":
+                return True
+            if isinstance(base, ast.Attribute) and base.attr == "QualityScene":
+                return True
+    return False
+
+
 def progress(message: str) -> None:
     """Progress lines go to stderr so the pipeline can relay them to the UI."""
     print(message, file=sys.stderr, flush=True)
+
+
+def review_timestamps(project_dir: Path, duration: float) -> list[float]:
+    """Sample the beginning, explanatory middle, and result of every beat."""
+    values: list[float] = []
+    try:
+        storyboard = json.loads((project_dir / "storyboard.json").read_text(encoding="utf-8"))
+        for beat in storyboard.get("beats") or []:
+            start = max(0.0, float(beat.get("start", 0.0)))
+            end = min(duration, float(beat.get("end", start)))
+            if end <= start:
+                continue
+            values.extend((start + 0.06, start + (end - start) * 0.5, max(start, end - 0.08)))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        values = []
+    if not values:
+        values = [duration * (index + 0.5) / 18 for index in range(18)]
+    unique = sorted({round(min(max(value, 0.0), max(duration - 0.04, 0.0)), 3) for value in values})
+    if len(unique) <= 24:
+        return unique
+    return [unique[round(index * (len(unique) - 1) / 23)] for index in range(24)]
+
+
+def create_review_sheets(project_dir: Path, output: Path, duration: float) -> list[str]:
+    timestamps = review_timestamps(project_dir, duration)
+    frame_dir = project_dir / ".review-frames"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    frames: list[tuple[float, Path]] = []
+    for index, timestamp in enumerate(timestamps):
+        target = frame_dir / f"{index:02d}.png"
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-ss", f"{timestamp:.3f}", "-i", str(output), "-frames:v", "1", "-vf", "scale=540:-2", str(target)],
+            text=True, capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            fail(result.stderr[-2000:] or "Could not extract review frames.")
+        frames.append((timestamp, target))
+    sheet_names: list[str] = []
+    for sheet_index, offset in enumerate(range(0, len(frames), 12), start=1):
+        group = frames[offset:offset + 12]
+        opened = [Image.open(file).convert("RGB") for _, file in group]
+        tile_width = max(image.width for image in opened)
+        tile_height = max(image.height for image in opened) + 34
+        sheet = Image.new("RGB", (tile_width * 3, tile_height * 4), "white")
+        from PIL import ImageDraw
+        draw = ImageDraw.Draw(sheet)
+        for index, ((timestamp, _), image) in enumerate(zip(group, opened)):
+            x = (index % 3) * tile_width
+            y = (index // 3) * tile_height
+            sheet.paste(image, (x, y + 34))
+            draw.text((x + 10, y + 8), f"{timestamp:.2f}s", fill="#111111")
+        name = f"review-sheet-{sheet_index}.png"
+        sheet.save(project_dir / name)
+        sheet_names.append(name)
+        for image in opened:
+            image.close()
+    if sheet_names:
+        Image.open(project_dir / sheet_names[0]).save(project_dir / "contact-sheet.png")
+    (project_dir / "review-frames.json").write_text(
+        json.dumps({"timestamps": timestamps, "sheets": sheet_names}, indent=2), encoding="utf-8"
+    )
+    return sheet_names
 
 
 def count_animations(base_command: list[str], source: Path, media_dir: Path, project_dir: Path, environment: dict) -> int:
@@ -108,7 +184,13 @@ def render_in_parallel(base_command: list[str], source: Path, media_dir: Path, p
     chunk; the chunks are concatenated in order without re-encoding.
     """
     total = count_animations(base_command, source, media_dir, project_dir, environment)
-    workers = int(os.environ.get("ORUNE_RENDER_WORKERS", "0") or 0) or min(4, os.cpu_count() or 1)
+    # Range rendering reconstructs the scene in separate processes and then
+    # concatenates variable-frame-rate chunks. In real narrated lessons that
+    # shifted later visual events hundreds of milliseconds earlier than the
+    # scene clock, so word-timed actions no longer matched the rendered MP4.
+    # Keep the correct single timeline unless an operator explicitly opts into
+    # parallel rendering for a timing-insensitive diagnostic.
+    workers = int(os.environ.get("ORUNE_RENDER_WORKERS", "1") or 1)
     workers = max(1, min(workers, total if total else 1))
     if quality in CACHED_QUALITIES:
         workers = 1
@@ -204,6 +286,8 @@ def main() -> None:
     code = source.read_text(encoding="utf-8")
     if not defines_generated_scene(code):
         fail("scene.py must define a class named GeneratedScene that subclasses a Manim Scene.")
+    if not uses_quality_scene(code):
+        fail("GeneratedScene must subclass QualityScene from scripts.manim_quality so stable layouts are checked.")
 
     override_python = os.environ.get("MANIM_PYTHON", "").strip()
     venv = root / (".venv" if (root / ".venv").exists() else "venv")
@@ -218,7 +302,7 @@ def main() -> None:
     media_dir = project_dir / ".media"
     started = time.time()
     environment = dict(os.environ)
-    environment["PYTHONPATH"] = str(project_dir) + os.pathsep + environment.get("PYTHONPATH", "")
+    environment["PYTHONPATH"] = str(project_dir) + os.pathsep + str(root) + os.pathsep + environment.get("PYTHONPATH", "")
     base_command = [str(python), str(root / "scripts" / "manim_runner.py"), "render", *QUALITY_ARGS[quality]]
     if quality not in CACHED_QUALITIES:
         base_command.append("--disable_caching")
@@ -318,18 +402,7 @@ def main() -> None:
     if frame.returncode != 0:
         fail(frame.stderr[-2000:] or "Could not extract the poster frame.")
 
-    contact_sheet = project_dir / "contact-sheet.png"
-    interval = max(duration / 12.0, 0.12)
-    sheet = subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", str(output),
-            "-vf", f"fps=1/{interval:.4f},scale=360:-2,tile=4x3:padding=8:margin=8:color=white",
-            "-frames:v", "1", str(contact_sheet),
-        ],
-        text=True, capture_output=True, timeout=90,
-    )
-    if sheet.returncode != 0:
-        fail(sheet.stderr[-2000:] or "Could not create the contact sheet.")
+    review_sheets = create_review_sheets(project_dir, output, duration)
 
     metadata = {
         "scene": "GeneratedScene",
@@ -346,6 +419,7 @@ def main() -> None:
         "output": "output.mp4",
         "poster": "poster.png",
         "contactSheet": "contact-sheet.png",
+        "reviewSheets": review_sheets,
         "narration": narration_result,
     }
     (project_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

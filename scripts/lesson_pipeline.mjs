@@ -13,12 +13,32 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import designCatalog from "../shared/design-system.json" with { type: "json" };
 import modelCatalog from "../shared/models.json" with { type: "json" };
 import { buildTimeline, narrationProviderFromEnv, synthesizeScript } from "./narration.mjs";
 
 export const STORYBOARD_FILE = "storyboard.json";
 export const SCENE_FILE = "scene.py";
 export const NARRATION_FILE = "narration.json";
+
+export function resolveDesign(input = {}) {
+  const requestedFont = String(input?.fontCategory || "");
+  const requestedPalette = String(input?.colorPalette || "");
+  const fontCategory = Object.hasOwn(designCatalog.fonts, requestedFont)
+    ? requestedFont
+    : designCatalog.defaultFontCategory;
+  const colorPalette = Object.hasOwn(designCatalog.palettes, requestedPalette)
+    ? requestedPalette
+    : designCatalog.defaultColorPalette;
+  return {
+    fontCategory,
+    font: designCatalog.fonts[fontCategory],
+    colorPalette,
+    colors: designCatalog.palettes[colorPalette],
+    typography: designCatalog.typography,
+    layout: designCatalog.layout,
+  };
+}
 
 /** Which model each stage uses. Environment variables override the catalog so
  * a cheaper or newer model can be tried without a code change. */
@@ -46,18 +66,34 @@ export function resolveModels(effort = "balanced", env = process.env) {
 const STORYBOARD_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "beats"],
+  required: ["title", "teachingGoal", "visualLanguage", "facts", "beats"],
   properties: {
     title: { type: "string", description: "A short title for the video." },
+    teachingGoal: { type: "string", description: "One observable thing the viewer should understand or be able to explain after watching." },
+    visualLanguage: { type: "string", description: "A concise art direction for shape, line, texture, motion, camera, and composition that fits this specific subject." },
+    facts: {
+      type: "array",
+      description: "The claims and quantities that must stay true in narration and pictures.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["claim", "visualProof"],
+        properties: {
+          claim: { type: "string", description: "A fact, relationship, or causal claim used by the explanation." },
+          visualProof: { type: "string", description: "What the picture must show so the claim is demonstrated rather than merely stated." },
+        },
+      },
+    },
     beats: {
       type: "array",
       description: "The video in order, one entry per beat.",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "narration", "visual", "seconds"],
+        required: ["id", "purpose", "narration", "visual", "actions", "onScreenText", "checks", "seconds"],
         properties: {
           id: { type: "string", description: "A short stable slug for this beat." },
+          purpose: { type: "string", description: "Why this beat exists in the explanation and what changes in the viewer's understanding." },
           narration: {
             type: "string",
             description: "Exactly what the narrator says during this beat, as spoken words. Empty when the video has no narration.",
@@ -65,6 +101,31 @@ const STORYBOARD_SCHEMA = {
           visual: {
             type: "string",
             description: "What is on screen and how it moves during this beat, concretely enough that an animator can build it: the objects, any labels or numbers, what appears, what changes, what stays.",
+          },
+          actions: {
+            type: "array",
+            minItems: 1,
+            description: "Ordered animation events inside the beat, each tied to the words that should trigger it.",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "cue", "instruction"],
+              properties: {
+                id: { type: "string", description: "A stable short identifier unique inside this beat." },
+                cue: { type: "string", description: "An exact short phrase copied from this beat's narration. Use an empty string only for a silent beat." },
+                instruction: { type: "string", description: "The visible change at this cue, naming persistent objects and exact spatial or causal behavior." },
+              },
+            },
+          },
+          onScreenText: {
+            type: "array",
+            items: { type: "string" },
+            description: "Every exact string that may be readable on screen in this beat. Keep this minimal.",
+          },
+          checks: {
+            type: "array",
+            items: { type: "string" },
+            description: "Concrete visual facts a reviewer can verify in a still frame or transition, including counts, geometry, labels, and relationships.",
           },
           seconds: {
             type: "number",
@@ -85,14 +146,29 @@ const SCENE_SCHEMA = {
   },
 };
 
-const REVIEW_SCHEMA = {
+export const REVIEW_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["changed", "notes", "scene_py"],
+  required: ["passed", "score", "issues", "notes"],
   properties: {
-    changed: { type: "boolean", description: "True when scene_py differs from the current file." },
-    notes: { type: "string", description: "What was wrong and what changed, or why nothing needed to." },
-    scene_py: { type: "string", description: "The complete scene.py to use. Return the current file unchanged when nothing needs to change." },
+    passed: { type: "boolean", description: "True only when there are no critical or major issues." },
+    score: { type: "number", description: "Overall quality score from 0 to 100 after considering the listed issues." },
+    issues: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["severity", "category", "time", "description", "requiredFix"],
+        properties: {
+          severity: { type: "string", enum: ["critical", "major", "minor"] },
+          category: { type: "string", enum: ["teaching", "accuracy", "timing", "layout", "typography", "motion", "style"] },
+          time: { type: "number", description: "Approximate seconds into the video." },
+          description: { type: "string" },
+          requiredFix: { type: "string" },
+        },
+      },
+    },
+    notes: { type: "string", description: "A concise overall verdict explaining the score." },
   },
 };
 
@@ -103,15 +179,12 @@ function frameFacts(format) {
 }
 
 function describeDesign(design) {
-  if (!design) return "";
-  const font = design.font?.manim;
-  const colors = design.colors || {};
+  const resolved = resolveDesign(design);
+  const font = resolved.font.manim;
+  const colors = resolved.colors;
   const swatches = Object.entries(colors).map(([name, value]) => `${name} ${value}`).join(", ");
-  return [
-    font ? `The studio's default font family is "${font}".` : "",
-    swatches ? `Its default palette is: ${swatches}.` : "",
-    "These are defaults, not requirements; do what serves the video.",
-  ].filter(Boolean).join(" ");
+  const type = resolved.typography;
+  return `Use the requested font family "${font}" consistently. Use this palette by semantic role: ${swatches}. Use one stable type scale: title ${type.title}, section ${type.section}, label ${type.label}, annotation ${type.annotation}; never render readable text below ${type.minimum}. Keep peer elements at least ${resolved.layout.minimumGap} scene units apart and meaningful content at least ${resolved.layout.safeMargin} units inside the frame. Treat these as constraints unless the user's brief explicitly asks for a different visual identity.`;
 }
 
 function readJson(file, fallback) {
@@ -120,6 +193,39 @@ function readJson(file, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function cueTokens(value) {
+  return String(value || "").toLowerCase().match(/[a-z0-9]+/g) || [];
+}
+
+function timedActions(beat) {
+  const actions = Array.isArray(beat.actions) ? beat.actions : [];
+  const words = Array.isArray(beat._wordMarks) ? beat._wordMarks : [];
+  const wordTokens = words.map((word) => cueTokens(word.text)[0] || "");
+  const result = actions.map((action, index) => {
+    const requested = cueTokens(action.cue);
+    let matched = -1;
+    if (requested.length && words.length) {
+      for (let start = 0; start <= wordTokens.length - requested.length; start += 1) {
+        if (requested.every((token, offset) => wordTokens[start + offset] === token)) {
+          matched = start;
+          break;
+        }
+      }
+    }
+    const fallback = beat.start + beat.duration * ((index + 0.5) / Math.max(actions.length, 1));
+    return {
+      id: String(action.id || `action-${index + 1}`).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 40) || `action-${index + 1}`,
+      cue: String(action.cue || "").trim(),
+      instruction: String(action.instruction || "").trim(),
+      at: Number((matched >= 0 ? beat._chunkStart + words[matched].startOffset : fallback).toFixed(3)),
+      timingSource: matched >= 0 ? "word" : "estimated",
+    };
+  });
+  delete beat._wordMarks;
+  delete beat._chunkStart;
+  return result;
 }
 
 function imageContent(imagePath) {
@@ -207,19 +313,26 @@ class ModelClient {
   }
 }
 
-const SCRIPT_INSTRUCTIONS = `You write short educational videos that are rendered as 2D animations with a narrator.
-You are given a brief. Decide everything yourself: the angle, the opening, the length, the tone, the number of beats, what gets shown and in what order.
-The rest of the pipeline needs only a list of beats. For each beat give the narration exactly as it will be spoken, and a concrete description of what is on screen and how it moves.
-Assume the viewer just arrived with no context and has never seen the topic. Make sure they know what they are looking at before anything is done with it, and that whatever the narration mentions is visible when it is mentioned.
-The narration is read aloud by a text-to-speech voice as ONE continuous take, in beat order, and the beats are only where the picture changes. So write the narration as a single flowing piece of speech that happens to be split across beats: every line continues the thought of the line before it, names things before pronouns stand in for them, and sounds like one person talking, not a list of captions.
-The speech engine reads exactly what is written. It says single letters as letter names, and it reads "pi r" as the letters P R, so write symbols and formulas the way they should be spoken, for example "pi times r squared". Keep the written characters for the screen.`;
+const SCRIPT_INSTRUCTIONS = `You are the director and teacher for a short, high-fidelity animated video. The subject can be mathematics, science, history, design, culture, a process, a story, or a general visual explanation.
+You are given a brief. Decide the teaching goal, the explanatory argument, the art direction, the number of beats, and the exact relationship between words and pictures.
 
-function scriptContent({ brief, format, narrationEnabled, previous, revisionRequest }) {
+Build the explanation before writing prose. Record every fact or causal relationship the video depends on and specify how the picture will demonstrate it. Never use a visually convenient stand-in that contradicts the claim. Preserve object identity, scale relationships, counts, orientation, and cause-and-effect across beats.
+
+For each beat, say why it exists, list every exact string shown on screen, and break the motion into actions. Each narrated action's cue must be a short exact phrase copied word-for-word from that beat's narration. These cues are aligned to provider word timestamps after speech is synthesized. Make checks specific enough that a reviewer can reject a wrong count, shape, placement, scale, label, or transition.
+
+Assume the viewer just arrived with no context. Identify an object before transforming it, show the operation itself when the operation carries the idea, and let the result remain visible long enough to understand. Whatever the narration mentions must be visible when those words are spoken.
+The narration is read aloud by a text-to-speech voice as ONE continuous take, in beat order, and the beats are only where the picture changes. So write the narration as a single flowing piece of speech that happens to be split across beats: every line continues the thought of the line before it, names things before pronouns stand in for them, and sounds like one person talking, not a list of captions.
+The speech engine reads exactly what is written. It says single letters as letter names, and it reads "pi r" as the letters P R, so write symbols and formulas the way they should be spoken, for example "pi times r squared". Keep written notation only in onScreenText.
+
+Use little on-screen text. Do not invent app chrome, dashboards, cards, badges, or decorative interface panels unless the subject itself is software. Prefer one strong visual argument over a collage of widgets.`;
+
+function scriptContent({ brief, format, narrationEnabled, design, previous, revisionRequest }) {
   const frame = frameFacts(format);
   const lines = [
     `Brief:\n${brief}`,
     "",
     `Frame: ${frame.label}.`,
+    `Design system: ${describeDesign(design)}`,
     format === "vertical" ? "On phones the social app's own captions and buttons cover roughly the bottom fifth of the frame, so nothing important should sit there. Do not draw anything to mark that area." : "",
     narrationEnabled
       ? "The video is narrated. Each beat's narration is synthesised as one clip; the clips decide the timing."
@@ -247,7 +360,7 @@ function sceneInstructions({ format, design, assets }) {
   return `You write Manim Community Edition v0.19 scenes. Return the complete contents of scene.py.
 
 Facts about the render environment:
-- The file must define one class named GeneratedScene that subclasses Scene. That is the class the renderer runs.
+- Import QualityScene with \`from scripts.manim_quality import QualityScene\`. The file must define one class named GeneratedScene that subclasses QualityScene. The renderer rejects any other base. QualityScene checks every stable key state for cropped, unreadably small, or overlapping Text.
 - There is no LaTeX installed, so Tex, MathTex and anything that shells out to LaTeX will fail. Use Text and MarkupText for everything, including formulas.
 - The frame is ${frame.width}x${frame.height} pixels (${frame.label}). Manim maps it to ${frame.units}. One unit is 135 pixels. For scale: Text at font_size=48 is about 0.58 units tall and a 12-character line at that size is about 3.6 units wide; font_size=32 is about 0.39 units tall. Default constants like UP, DOWN, LEFT, RIGHT are one unit; to_edge and to_corner respect this frame.
 - Installed font families: "Orune Serif", "Orune Serif Text", "DejaVu Sans", "DejaVu Sans Mono".
@@ -256,6 +369,10 @@ Facts about the render environment:
 ${assetLines ? `- ${assetLines}` : ""}
 
 Rendering cost: the renderer takes roughly 0.1 seconds of CPU per frame in which anything changes, at 30 frames per second, and a still frame held with self.wait costs nothing. So ten seconds of continuous motion costs about thirty seconds to render, and a scene where several always_redraw objects change on every frame for a minute takes many minutes. Recreating Text inside always_redraw is especially slow. Spend motion where it carries the idea.
+
+Visual truth: animate the real operation the narration names. A fold must visibly rotate one side around a crease and land with the correct resulting shape; a stack representing powers of two must encode exponential growth rather than grow by equal increments. Keep persistent objects geometrically consistent between beats. Do not substitute a generic morph when the spatial operation itself is the explanation.
+
+Composition: establish a small set of persistent regions before animating. Keep headings, diagrams, labels, counters, and annotations in their regions; remove obsolete text before its replacement enters. Use the storyboard's exact onScreenText instead of inventing extra UI. Never put a line, arrow, shape, or panel through readable text. Center deliberately within a known region or align to one shared edge; do not position unrelated objects with scattered magic coordinates.
 
 Timing: each beat in the storyboard has a start and an end in seconds. The narration clips are laid onto the finished video at exactly those times and nothing else keeps voice and picture together, so the scene's elapsed time must track them: the run_time of the animations you play for a beat plus any self.wait() should add up to that beat's duration, and the total run time should equal the final end time. When a beat needs to hold on the finished picture, use self.wait for the remaining seconds.`;
 }
@@ -418,7 +535,8 @@ export async function authorLesson(options) {
     signal,
     log = () => {},
     maxRepairs = 3,
-    review = effort !== "quick",
+    maxReviewRepairs = 3,
+    review = true,
     env = process.env,
   } = options;
   if (!brief?.trim()) throw new Error("A brief is required.");
@@ -449,6 +567,7 @@ export async function authorLesson(options) {
       brief,
       format,
       narrationEnabled: narration.enabled !== false,
+      design,
       previous: previousStoryboard ? { title: previousStoryboard.title, beats: previousStoryboard.beats } : undefined,
       revisionRequest: revision?.request,
     }),
@@ -459,14 +578,23 @@ export async function authorLesson(options) {
   checkCancelled();
   const beats = (storyboardResult.beats || []).map((beat, index) => ({
     id: String(beat.id || `beat-${index + 1}`).replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 40) || `beat-${index + 1}`,
+    purpose: String(beat.purpose || "").trim(),
     narration: narration.enabled === false ? "" : String(beat.narration || "").trim(),
     visual: String(beat.visual || "").trim(),
+    actions: (Array.isArray(beat.actions) ? beat.actions : []).map((action) => ({
+      id: action.id,
+      cue: narration.enabled === false ? "" : action.cue,
+      instruction: action.instruction,
+    })),
+    onScreenText: (Array.isArray(beat.onScreenText) ? beat.onScreenText : []).map((value) => String(value).trim()).filter(Boolean),
+    checks: (Array.isArray(beat.checks) ? beat.checks : []).map((value) => String(value).trim()).filter(Boolean),
     seconds: Math.max(1, Number(beat.seconds) || 4),
   }));
   if (!beats.length) throw new Error("The script came back with no beats.");
   if (env.ORUNE_STORYBOARD_ONLY) {
-    fs.writeFileSync(path.join(projectDir, STORYBOARD_FILE), JSON.stringify({ version: 2, title: storyboardResult.title, brief, format, beats }, null, 2));
-    return { storyboard: { title: storyboardResult.title, beats }, scene: "", metadata: {} };
+    const storyboardOnly = { version: 3, title: storyboardResult.title, teachingGoal: storyboardResult.teachingGoal, visualLanguage: storyboardResult.visualLanguage, facts: storyboardResult.facts, brief, format, beats };
+    fs.writeFileSync(path.join(projectDir, STORYBOARD_FILE), JSON.stringify(storyboardOnly, null, 2));
+    return { storyboard: storyboardOnly, scene: "", metadata: {} };
   }
 
   // 2. Voice, then the timeline. The script is read continuously and each
@@ -501,6 +629,8 @@ export async function authorLesson(options) {
       if (offsets && activeChunk) {
         beat.start = Number((chunkStart + offsets.startOffset).toFixed(3));
         beat.end = Number((chunkStart + offsets.endOffset).toFixed(3));
+        beat._wordMarks = offsets.words;
+        beat._chunkStart = chunkStart;
         if (activeChunk.beats.at(-1).id === beat.id) {
           clock = chunkStart + activeChunk.duration + gap;
           activeChunk = null;
@@ -531,9 +661,18 @@ export async function authorLesson(options) {
     });
     fs.rmSync(path.join(projectDir, NARRATION_FILE), { force: true });
   }
+  beats.forEach((beat) => {
+    beat.actions = timedActions(beat);
+  });
   const storyboard = {
-    version: 2,
+    version: 3,
     title: String(storyboardResult.title || "").trim() || brief.slice(0, 80),
+    teachingGoal: String(storyboardResult.teachingGoal || "").trim(),
+    visualLanguage: String(storyboardResult.visualLanguage || "").trim(),
+    facts: (Array.isArray(storyboardResult.facts) ? storyboardResult.facts : []).map((fact) => ({
+      claim: String(fact.claim || "").trim(),
+      visualProof: String(fact.visualProof || "").trim(),
+    })).filter((fact) => fact.claim && fact.visualProof),
     brief,
     format,
     narration: narrationMeta,
@@ -545,7 +684,14 @@ export async function authorLesson(options) {
   // 3. Scene code.
   await progress("authoring", revision ? "Rewriting the animation" : "Writing the animation");
   const instructions = sceneInstructions({ format, design, assets });
-  const storyboardForModel = { title: storyboard.title, totalSeconds: storyboard.totalSeconds, beats };
+  const storyboardForModel = {
+    title: storyboard.title,
+    teachingGoal: storyboard.teachingGoal,
+    visualLanguage: storyboard.visualLanguage,
+    facts: storyboard.facts,
+    totalSeconds: storyboard.totalSeconds,
+    beats,
+  };
   const sceneResult = await client.json({
     stage: "code",
     model: models.code.model,
@@ -601,43 +747,87 @@ export async function authorLesson(options) {
     }
   }
 
-  // 5. The model looks at its own render (Balanced and Try harder). This is
-  // not a rule: it is the same model deciding whether what it drew is what it
-  // meant, with the frames in front of it.
-  const contactSheet = path.join(projectDir, "contact-sheet.png");
-  if (review && fs.existsSync(contactSheet)) {
-    await progress("inspecting", "Looking over the rendered frames");
-    const reviewed = await client.json({
-      stage: "review",
-      model: models.code.model,
-      reasoning: models.code.reasoning,
-      instructions,
-      content: [
-        { type: "input_text", text: `Brief:\n${brief}\n\nStoryboard with timeline:\n${JSON.stringify(storyboardForModel, null, 2)}\n\nCurrent scene.py:\n${scene}\n\nBelow is a contact sheet of twelve frames sampled evenly from the rendered video, in reading order. Look for anything broken: text or objects cut off by the frame edge, things drawn on top of each other so neither can be read, a beat whose picture does not show what its storyboard entry describes. If something needs fixing, return the corrected complete scene.py with changed=true. Otherwise return the file unchanged with changed=false.` },
-        imageContent(contactSheet),
-      ],
-      schemaName: "review",
-      schema: REVIEW_SCHEMA,
-      signal,
-    });
-    checkCancelled();
-    if (reviewed.changed && reviewed.scene_py?.trim() && reviewed.scene_py !== scene) {
-      log(`review: ${reviewed.notes}`);
+  // 5. Inspect beat-aware frames, repair at most twice, and always inspect the
+  // revised render again. A repair is never accepted on code alone.
+  if (review) {
+    const reports = [];
+    let passed = false;
+    for (let round = 0; round <= maxReviewRepairs; round += 1) {
+      const reviewSheets = (metadata.reviewSheets || [metadata.contactSheet || "contact-sheet.png"])
+        .map((file) => path.join(projectDir, file))
+        .filter((file) => fs.existsSync(file));
+      if (!reviewSheets.length) throw new Error("The renderer produced no frames for quality review.");
+      await progress("inspecting", round ? `Verifying the revised video (${round + 1} of ${maxReviewRepairs + 1})` : "Checking teaching, timing, layout, and motion");
+      const content = [{
+        type: "input_text",
+        text: `Act as a strict animation director, teacher, fact checker, and visual QA critic. Diagnose only; do not write or propose code.\n\nBrief:\n${brief}\n\nStoryboard with word-timed actions and acceptance checks:\n${JSON.stringify(storyboardForModel, null, 2)}\n\nThe attached sheets show frames sampled at the start, middle, and end of each beat; timestamps are printed above the frames and sheets are chronological. Compare every frame and transition to the teaching goal, facts, visualProof statements, action cues, onScreenText, and beat checks. Reject wrong geometry, counts, scale relationships, object identity, causality, or motion semantics even when the frame looks polished. Reject narration that gets ahead of the picture. Reject clipped, tiny, inconsistent, off-grid, or overlapping text; meaningless UI; lines through labels; unstable component sizes; arbitrary alignment; and style drift. A fold must read as a fold around a crease, not a generic polygon morph.\n\nSet passed=true only if there are no critical or major issues and the score is at least 85. Otherwise list a minimal, precise set of observable issues with timestamps and required outcomes. Describe what must become visible, correct, or legible; leave implementation to the scene author.`,
+      }];
+      for (const sheet of reviewSheets) content.push(imageContent(sheet));
+      const reviewed = await client.json({
+        stage: "review",
+        model: models.code.model,
+        reasoning: models.code.reasoning,
+        instructions,
+        content,
+        schemaName: "review",
+        schema: REVIEW_SCHEMA,
+        signal,
+      });
+      checkCancelled();
+      const report = {
+        round: round + 1,
+        passed: reviewed.passed === true,
+        score: Math.max(0, Math.min(100, Number(reviewed.score) || 0)),
+        issues: Array.isArray(reviewed.issues) ? reviewed.issues : [],
+        notes: String(reviewed.notes || ""),
+      };
+      reports.push(report);
+      fs.writeFileSync(path.join(projectDir, "review-report.json"), JSON.stringify({ passed: report.passed, rounds: reports }, null, 2));
+      log(`review ${round + 1}: score ${report.score}; ${report.notes}`);
+      if (report.passed) {
+        passed = true;
+        break;
+      }
+      if (round >= maxReviewRepairs) {
+        throw new Error(`The rendered video did not pass quality review after ${maxReviewRepairs} repairs: ${report.notes || "major issues remain"}`);
+      }
+      await progress("authoring", `Repairing quality issues ${round + 1} of ${maxReviewRepairs}`);
+      const repaired = await client.json({
+        stage: "repair",
+        model: models.code.model,
+        reasoning: models.code.reasoning,
+        instructions,
+        content: sceneContent({
+          brief,
+          storyboard: storyboardForModel,
+          previousScene: scene,
+          repairError: `The rendered scene failed visual quality review. Correct every issue without regressing facts or checks that already pass.\n\n${JSON.stringify(report, null, 2)}`,
+          attachments: reviewSheets.map((sheet, index) => ({ path: sheet, label: `Chronological review sheet ${index + 1}` })),
+        }),
+        schemaName: "scene",
+        schema: SCENE_SCHEMA,
+        signal,
+      });
+      checkCancelled();
+      const replacement = String(repaired.scene_py || "");
+      if (!replacement.trim() || replacement === scene) {
+        throw new Error(`The scene repair did not address the failed quality review: ${report.notes || "major issues remain"}`);
+      }
       const previousScene = scene;
-      scene = reviewed.scene_py;
+      scene = replacement;
+      fs.writeFileSync(path.join(projectDir, `scene.before-review-${round + 1}.py`), previousScene);
       fs.writeFileSync(scenePath, scene);
-      await progress("rendering", "Rendering the reviewed version");
+      await progress("rendering", `Rendering quality revision ${round + 1} of ${maxReviewRepairs}`);
       try {
         metadata = await renderProject({ root, projectDir, quality, signal, env });
       } catch (error) {
         checkCancelled();
-        // A failed review edit must not lose the working video.
-        log(`review render failed, keeping the earlier render: ${String(error.message).slice(-400)}`);
         scene = previousScene;
         fs.writeFileSync(scenePath, scene);
-        metadata = await renderProject({ root, projectDir, quality, signal, env });
+        throw new Error(`The quality-review edit failed to render: ${String(error.message).slice(-1200)}`);
       }
     }
+    if (!passed) throw new Error("The rendered video exhausted quality review without passing.");
   }
 
   return { storyboard, scene, metadata };

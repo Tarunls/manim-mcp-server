@@ -26,9 +26,12 @@ locals {
     CODEX_MAX_OUTPUT_TOKENS_PER_CALL          = "32000"
     # The proxy picks the upstream model per pipeline stage from these.
     ORUNE_SCRIPT_MODEL               = var.script_model
+    ORUNE_SCRIPT_REASONING           = var.script_reasoning
     ORUNE_CODE_MODEL                 = var.code_model
     ORUNE_CODE_MODEL_BALANCED        = var.code_model_balanced
     ORUNE_CODE_MODEL_THOROUGH        = var.code_model_thorough
+    ORUNE_CODE_REASONING             = var.code_reasoning
+    ORUNE_CODE_REASONING_THOROUGH    = var.code_reasoning_thorough
     CODEX_UPSTREAM_TIMEOUT_MS        = "2700000"
     E2B_SANDBOX_TIMEOUT_MS           = "1800000"
     E2B_DISPATCH_LEASE_MS            = "300000"

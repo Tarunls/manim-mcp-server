@@ -26,16 +26,16 @@ function job(effort: HostedJob["effort"]): HostedJob {
   };
 }
 
-test("the script stage uses the fast model and code stages use the purchased tier", () => {
+test("every creative stage uses Sol high", () => {
   const models = { quick: resolveModels("quick"), balanced: resolveModels("balanced"), thorough: resolveModels("thorough") };
   assert.equal(codexPolicy("quick", "script").model, models.quick.script.model);
   assert.equal(codexPolicy("thorough", "script").model, models.thorough.script.model);
   assert.equal(codexPolicy("quick", "code").model, models.quick.code.model);
   assert.equal(codexPolicy("balanced", "repair").model, models.balanced.code.model);
   assert.equal(codexPolicy("thorough", "review").model, models.thorough.code.model);
-  assert.equal(codexPolicy("balanced", "code").model, "gpt-6-astra");
-  assert.equal(codexPolicy("thorough", "code").model, "gpt-6-astra");
-  assert.equal(codexPolicy("balanced", "code").reasoningEffort, "medium");
+  assert.equal(codexPolicy("balanced", "code").model, "gpt-5.6-sol");
+  assert.equal(codexPolicy("thorough", "code").model, "gpt-5.6-sol");
+  assert.equal(codexPolicy("balanced", "code").reasoningEffort, "high");
   assert.equal(codexPolicy("thorough", "code").reasoningEffort, "high");
 });
 
@@ -52,24 +52,28 @@ test("unknown stage headers fall back to the code tier", () => {
   assert.equal(stageFromHeader("anything-else"), "code");
 });
 
-test("Balanced override leaves Faster affordable and the script model unchanged", () => {
+test("stage-specific environment overrides remain available", () => {
   const env = { ORUNE_CODE_MODEL: "gpt-5.6-terra", ORUNE_CODE_MODEL_BALANCED: "gpt-6-astra" };
   assert.equal(resolveModels("quick", env).code.model, "gpt-5.6-terra");
   assert.equal(resolveModels("balanced", env).code.model, "gpt-6-astra");
-  assert.equal(resolveModels("balanced", env).script.model, "gpt-5.4");
+  assert.equal(resolveModels("balanced", env).script.model, "gpt-5.6-sol");
 });
 
 test("sandbox requests cannot increase reasoning or buy priority processing", () => {
   const constrained = constrainCodexRequest(job("balanced"), {
     reasoning: { effort: "max" }, service_tier: "priority", input: "lesson",
   });
-  assert.deepEqual(constrained.reasoning, { effort: "medium" });
+  assert.deepEqual(constrained.reasoning, { effort: "high" });
   assert.equal(constrained.service_tier, "default");
 });
 
 test("Astra usage accounting includes caching and long-context surcharge", () => {
   assert.equal(estimatedCostMicrousd("gpt-6-astra", { inputTokens: 10000, cachedInputTokens: 6000, outputTokens: 2000 }), 156000);
   assert.equal(estimatedCostMicrousd("gpt-6-astra", { inputTokens: 300000, cachedInputTokens: 200000, outputTokens: 2000 }), 3050000);
+});
+
+test("Sol usage accounting matches the configured model price", () => {
+  assert.equal(estimatedCostMicrousd("gpt-5.6-sol", { inputTokens: 10000, cachedInputTokens: 6000, outputTokens: 2000 }), 58_400);
 });
 
 test("cost policy bounds normal work and gives thorough work a larger envelope", () => {

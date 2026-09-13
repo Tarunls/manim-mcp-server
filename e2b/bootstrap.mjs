@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { authorLesson } from "../scripts/lesson_pipeline.mjs";
+import { authorLesson, resolveDesign } from "../scripts/lesson_pipeline.mjs";
 import { startNarrationProxy } from "./narration-proxy.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -179,7 +179,7 @@ try {
     await download(attachment.url, target);
     attachments.push({ path: target, label: String(attachment.label || "Attached image").slice(0, 200) });
   }
-  const design = job.designPreferences || { fontCategory: "serif", colorPalette: "paper" };
+  const design = resolveDesign(job.designPreferences);
   const narration = job.narrationPreferences || { enabled: false };
   await Promise.all([
     fs.writeFile(path.join(projectRoot, "generation-request.json"), JSON.stringify({
@@ -269,6 +269,7 @@ try {
     throw new Error(`output.mp4 is ${width}x${height}, but this lesson must be ${expectedWidth}x${expectedHeight}.`);
   const narrationEnabled = narration.enabled === true;
   const rendererMetadata = await readJson(path.join(projectRoot, "metadata.json"));
+  const qualityReview = await readJson(path.join(projectRoot, "review-report.json"));
   const spokenLines = narrationEnabled ? (await readJson(path.join(projectRoot, "narration.json")))?.segments?.length || 0 : 0;
   if (narrationEnabled && spokenLines && !hasAudio) {
     throw new Error("Narration is enabled but the rendered video has no audio track.");
@@ -294,11 +295,18 @@ try {
           }
         : {}),
     },
+    qualityReview: qualityReview && typeof qualityReview === "object"
+      ? {
+          passed: qualityReview.passed === true,
+          rounds: Array.isArray(qualityReview.rounds) ? qualityReview.rounds.length : 0,
+          score: Number(qualityReview.rounds?.at(-1)?.score || 0),
+        }
+      : undefined,
   };
   await fs.writeFile(path.join(projectRoot, "metadata.json"), JSON.stringify(derivedMetadata, null, 2));
   await assertNoSecretMaterial(projectRoot, [apiKey, callbackToken]);
   await execFileAsync("tar", [
-    "--exclude=.git", "--exclude=.env", "--exclude=.media", "--exclude=output.mp4", "--exclude=poster.png", "--exclude=contact-sheet.png",
+    "--exclude=.git", "--exclude=.env", "--exclude=.media", "--exclude=.review-frames", "--exclude=output.mp4", "--exclude=poster.png", "--exclude=contact-sheet.png", "--exclude=review-sheet-*.png",
     "-czf", "/workspace/source.tar.gz", "-C", projectRoot, ".",
   ]);
 

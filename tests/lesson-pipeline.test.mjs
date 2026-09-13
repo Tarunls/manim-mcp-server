@@ -6,7 +6,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { authorLesson, resolveModels } from "../scripts/lesson_pipeline.mjs";
+import { authorLesson, resolveDesign, resolveModels } from "../scripts/lesson_pipeline.mjs";
 import { buildTimeline } from "../scripts/narration.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,8 +15,9 @@ const canRender = fs.existsSync(manimPython) && spawnSync("ffmpeg", ["-version"]
 const skipRender = canRender ? false : "Manim or FFmpeg is unavailable";
 
 const GOOD_SCENE = `from manim import *
+from scripts.manim_quality import QualityScene
 
-class GeneratedScene(Scene):
+class GeneratedScene(QualityScene):
     def construct(self):
         self.camera.background_color = "#FBFAF7"
         square = Square(color="#2E5266", fill_opacity=0.2)
@@ -27,8 +28,9 @@ class GeneratedScene(Scene):
 `;
 
 const BROKEN_SCENE = `from manim import *
+from scripts.manim_quality import QualityScene
 
-class GeneratedScene(Scene):
+class GeneratedScene(QualityScene):
     def construct(self):
         self.play(Create(ThisDoesNotExist()))
 `;
@@ -77,11 +79,19 @@ function temporaryProject(context) {
   return projectDir;
 }
 
-test("model catalog resolves a fast script model and effort-tiered code models", () => {
+test("model catalog resolves Sol high for every creative stage", () => {
   const models = resolveModels("balanced", {});
-  assert.ok(models.script.model);
-  assert.ok(models.code.model);
+  assert.deepEqual(models.script, { model: "gpt-5.6-sol", reasoning: "high" });
+  assert.deepEqual(models.code, { model: "gpt-5.6-sol", reasoning: "high" });
   assert.equal(resolveModels("thorough", {}).code.reasoning, "high");
+});
+
+test("hosted design preference names resolve to the full render design", () => {
+  const design = resolveDesign({ fontCategory: "serif", colorPalette: "paper" });
+  assert.equal(design.font.manim, "Orune Serif");
+  assert.equal(design.colors.background, "#FBFAF7");
+  assert.equal(design.typography.minimum, 19);
+  assert.equal(resolveDesign({ fontCategory: "unknown" }).fontCategory, "serif");
 });
 
 test("timeline lays clips end to end with a breath between them", () => {
@@ -109,6 +119,7 @@ test("a silent lesson goes script -> scene -> render, and a broken scene is repa
       format: "landscape",
       effort: "quick",
       narration: { enabled: false },
+      review: false,
       openai: { baseUrl: model.baseUrl, apiKey: "test-key" },
       onProgress: (event) => progress.push(event),
       env: process.env,
@@ -149,6 +160,7 @@ test("a revision hands the model the previous storyboard and scene", { skip: ski
     await authorLesson({
       root, projectDir, brief: previous.brief, format: "landscape", effort: "quick",
       narration: { enabled: false },
+      review: false,
       revision: { request: "Make the square blue.", storyboard: previous, scene: GOOD_SCENE },
       openai: { baseUrl: model.baseUrl, apiKey: "test-key" },
       env: process.env,

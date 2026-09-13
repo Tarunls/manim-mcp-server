@@ -136,7 +136,7 @@ variable "codex_max_estimated_cost_microusd_per_job" {
 
 variable "code_model_balanced" {
   type        = string
-  default     = "gpt-6-astra"
+  default     = "gpt-5.6-sol"
   description = "Model for Balanced scene authoring and review, independent of Faster."
 }
 
@@ -167,17 +167,35 @@ variable "secret_ids" {
 variable "script_model" {
   description = "OpenAI model that writes the storyboard. The narration's flow comes from here, so it is worth the few extra seconds over the mini model."
   type        = string
-  default     = "gpt-5.4"
+  default     = "gpt-5.6-sol"
+}
+
+variable "script_reasoning" {
+  description = "Reasoning effort for storyboard and teaching-plan authoring."
+  type        = string
+  default     = "high"
 }
 
 variable "code_model" {
   description = "OpenAI model that writes and repairs the Manim scene for Faster and Balanced work."
   type        = string
-  default     = "gpt-5.6-terra"
+  default     = "gpt-5.6-sol"
+}
+
+variable "code_reasoning" {
+  description = "Reasoning effort for scene authoring, repair, and review."
+  type        = string
+  default     = "high"
 }
 
 variable "code_model_thorough" {
   description = "OpenAI model that writes and repairs the Manim scene for Try harder work."
   type        = string
-  default     = "gpt-6-astra"
+  default     = "gpt-5.6-sol"
+}
+
+variable "code_reasoning_thorough" {
+  description = "Reasoning effort for Try harder scene authoring, repair, and review."
+  type        = string
+  default     = "high"
 }

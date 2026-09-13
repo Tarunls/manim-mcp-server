@@ -1,19 +1,19 @@
 {
   "script": {
-    "model": "gpt-5.4",
-    "reasoning": "low"
+    "model": "gpt-5.6-sol",
+    "reasoning": "high"
   },
   "code": {
     "quick": {
-      "model": "gpt-5.6-terra",
-      "reasoning": "low"
+      "model": "gpt-5.6-sol",
+      "reasoning": "high"
     },
     "balanced": {
-      "model": "gpt-6-astra",
-      "reasoning": "medium"
+      "model": "gpt-5.6-sol",
+      "reasoning": "high"
     },
     "thorough": {
-      "model": "gpt-6-astra",
+      "model": "gpt-5.6-sol",
       "reasoning": "high"
     }
   },

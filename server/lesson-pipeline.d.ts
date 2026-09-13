@@ -2,8 +2,18 @@
 declare module "*/scripts/lesson_pipeline.mjs" {
   export interface StoryboardBeat {
     id: string;
+    purpose: string;
     narration: string;
     visual: string;
+    actions: Array<{
+      id: string;
+      cue: string;
+      instruction: string;
+      at: number;
+      timingSource: "word" | "estimated";
+    }>;
+    onScreenText: string[];
+    checks: string[];
     seconds: number;
     start: number;
     end: number;
@@ -13,6 +23,9 @@ declare module "*/scripts/lesson_pipeline.mjs" {
   export interface Storyboard {
     version: number;
     title: string;
+    teachingGoal: string;
+    visualLanguage: string;
+    facts: Array<{ claim: string; visualProof: string }>;
     brief: string;
     format: "landscape" | "vertical";
     narration: { enabled: boolean; provider?: string; model?: string; voice?: string; voiceId?: string };
@@ -58,6 +71,7 @@ declare module "*/scripts/lesson_pipeline.mjs" {
     signal?: AbortSignal;
     log?: (line: string) => void;
     maxRepairs?: number;
+    maxReviewRepairs?: number;
     review?: boolean;
     env?: NodeJS.ProcessEnv;
   }
@@ -72,6 +86,17 @@ declare module "*/scripts/lesson_pipeline.mjs" {
     effort?: "quick" | "balanced" | "thorough",
     env?: NodeJS.ProcessEnv,
   ): { script: { model: string; reasoning: string }; code: { model: string; reasoning: string } };
+  export function resolveDesign(input?: {
+    fontCategory?: unknown;
+    colorPalette?: unknown;
+  }): {
+    fontCategory: string;
+    font: { manim: string; text: string; css: string; character: string };
+    colorPalette: string;
+    colors: Record<string, string>;
+    typography: Record<string, number>;
+    layout: Record<string, number>;
+  };
   export function authorLesson(options: AuthorLessonOptions): Promise<AuthorLessonResult>;
   export function renderProject(options: {
     root: string;

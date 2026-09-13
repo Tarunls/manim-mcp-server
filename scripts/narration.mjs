@@ -352,6 +352,11 @@ export async function synthesizeScript({ projectDir, beats, voiceKey, provider, 
           id: span.id,
           startOffset: Number(Math.min(...words.map((word) => word.startTime)).toFixed(3)),
           endOffset: Number(Math.min(duration, Math.max(...words.map((word) => word.endTime))).toFixed(3)),
+          words: words.map((word) => ({
+            text: joined.slice(word.start, word.end),
+            startOffset: Number(word.startTime.toFixed(3)),
+            endOffset: Number(Math.min(duration, Number(word.endTime) || word.startTime).toFixed(3)),
+          })),
         };
       }
       // No timestamps from this provider: share the read by character count.
@@ -359,6 +364,7 @@ export async function synthesizeScript({ projectDir, beats, voiceKey, provider, 
         id: span.id,
         startOffset: Number(((span.start / joined.length) * duration).toFixed(3)),
         endOffset: Number(((span.end / joined.length) * duration).toFixed(3)),
+        words: [],
       };
     });
     chunks.push({ text: joined, audio: path.relative(projectDir, clean), duration: Number(duration.toFixed(3)), beats: beatTimes, hasMarks: marks.length > 0 });

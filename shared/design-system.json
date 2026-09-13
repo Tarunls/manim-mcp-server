@@ -1,0 +1,17 @@
+{
+  "defaultFontCategory": "serif",
+  "defaultColorPalette": "paper",
+  "fonts": {
+    "serif": { "manim": "Orune Serif", "text": "Orune Serif Text", "css": "\"Orune Serif\", \"Newsreader\", Georgia, serif", "character": "editorial book serif" },
+    "sans": { "manim": "DejaVu Sans", "text": "DejaVu Sans", "css": "\"Inter\", \"DejaVu Sans\", sans-serif", "character": "plain grotesque sans" },
+    "mono": { "manim": "DejaVu Sans Mono", "text": "DejaVu Sans Mono", "css": "\"JetBrains Mono\", \"DejaVu Sans Mono\", monospace", "character": "precise monospaced" }
+  },
+  "palettes": {
+    "paper": { "background": "#FBFAF7", "surface": "#FFFFFF", "text": "#1A1917", "muted": "#8A857D", "rule": "#D9D4CA", "primary": "#2E5266", "accent": "#B07548" },
+    "ochre": { "background": "#FCF9F2", "surface": "#FFFFFF", "text": "#1B1813", "muted": "#8C8474", "rule": "#DED6C4", "primary": "#7A5B23", "accent": "#9B4722" },
+    "sage": { "background": "#F8FAF6", "surface": "#FFFFFF", "text": "#171A16", "muted": "#83887E", "rule": "#D3D9CC", "primary": "#3C5A45", "accent": "#B0603C" },
+    "monochrome": { "background": "#FAFAF9", "surface": "#FFFFFF", "text": "#141413", "muted": "#8A8A85", "rule": "#D6D6D2", "primary": "#3A3A36", "accent": "#0B0B0A" }
+  },
+  "typography": { "title": 42, "section": 32, "label": 25, "annotation": 21, "minimum": 19 },
+  "layout": { "safeMargin": 0.35, "minimumGap": 0.18, "verticalBottomReserve": 0.2 }
+}

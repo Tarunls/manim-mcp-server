@@ -168,7 +168,8 @@ export function estimatedCostMicrousd(model: string, usage: Usage) {
     // https://developers.openai.com/api/docs/models/gpt-6-astra (2026-09-07)
     model === "gpt-6-astra" ? { input: 12.5, cached: 1, output: 50 }
     : model === "gpt-5.6-sol"
-      ? { input: 5, cached: 0.5, output: 30 }
+      // https://developers.openai.com/api/docs/models/gpt-5.6-sol (2026-09-12)
+      ? { input: 4, cached: 0.4, output: 20 }
       : { input: 2.5, cached: 0.25, output: 15 };
   const uncached = Math.max(0, usage.inputTokens - usage.cachedInputTokens);
   const longContext = model === "gpt-6-astra" && usage.inputTokens > 272_000;
